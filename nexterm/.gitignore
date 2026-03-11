@@ -63,3 +63,5 @@ tasks/
 # Tauri signing keys
 *.key
 tauri-signing-*
+
+FUNCIONALIDADES.md

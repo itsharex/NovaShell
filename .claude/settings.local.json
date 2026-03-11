@@ -27,7 +27,21 @@
       "Bash(cd \"C:\\\\Users\\\\edgar\\\\Desktop\\\\NovaShell\\\\nexterm\" && npx @tauri-apps/cli build 2>&1)",
       "Bash(echo \"NovaTerm resources\" > \"C:\\\\Users\\\\edgar\\\\Desktop\\\\NovaShell\\\\nexterm\\\\src-tauri\\\\resources\\\\.gitkeep\")",
       "Bash(grep -r \"NovaShell\" src/ src-tauri/ --include=\"*.ts\" --include=\"*.tsx\" --include=\"*.rs\" --include=\"*.json\" 2>/dev/null | head -20)",
-      "Bash(find src-tauri/icons -type f -name \"*.png\" -o -name \"*.ico\" -o -name \"*.icns\" | xargs ls -lh 2>/dev/null | head -30)"
+      "Bash(find src-tauri/icons -type f -name \"*.png\" -o -name \"*.ico\" -o -name \"*.icns\" | xargs ls -lh 2>/dev/null | head -30)",
+      "Bash(grep -r \"nexterm\\\\|NexTerm\" src/ src-tauri/ --include=\"*.ts\" --include=\"*.tsx\" --include=\"*.rs\" --include=\"*.json\" 2>/dev/null | head -10)",
+      "Bash(grep -r \"NovaShell\\\\|novaShell\" . --include=\"*.ts\" --include=\"*.tsx\" --include=\"*.rs\" --include=\"*.json\" --include=\"*.md\" 2>/dev/null | grep -v node_modules | grep -v target | grep -v dist)",
+      "Bash(find . -name \"*.png\" -type f -size -100c 2>/dev/null | grep -v node_modules | grep -v target)",
+      "Bash(cd \"C:\\\\Users\\\\edgar\\\\Desktop\\\\NovaShell\\\\nexterm\" && rm -rf dist && npm run build 2>&1)",
+      "Bash(where gh:*)",
+      "Read(//c/Program Files/GitHub CLI/**)",
+      "Read(//c/Users/edgar/Desktop/NovaShell/nexterm/$LOCALAPPDATA/GitHub CLI/**)",
+      "Read(//c/Users/edgar/AppData/Local/GitHub CLI/**)",
+      "Bash(winget install:*)",
+      "Bash(export PATH=\"$PATH:/c/Program Files/GitHub CLI\" && gh --version 2>&1)",
+      "Bash(export PATH=\"$PATH:/c/Program Files/GitHub CLI\" && gh auth status 2>&1)",
+      "Bash(cd \"C:\\\\Users\\\\edgar\\\\Desktop\\\\NovaShell\\\\nexterm\" && npm install --save-dev @tauri-apps/cli 2>&1 | tail -5)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:api.github.com)"
     ]
   }
 }

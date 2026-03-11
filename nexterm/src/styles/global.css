@@ -768,6 +768,15 @@ body {
 .animate-slide-up { animation: slideUp 0.3s ease; }
 .animate-pulse { animation: pulse 2s ease-in-out infinite; }
 
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+@keyframes pulse-glow {
+  0%, 100% { box-shadow: 0 4px 12px rgba(88,166,255,0.3); transform: scale(1); }
+  50% { box-shadow: 0 4px 20px rgba(88,166,255,0.6); transform: scale(1.05); }
+}
+
 [data-theme="cyberpunk"] .titlebar {
   box-shadow: 0 0 20px rgba(0, 255, 204, 0.05);
 }
@@ -1048,7 +1057,61 @@ body {
   display: none;
 }
 
+/* SSH Panel Styles */
+.ssh-connection-card {
+  padding: 10px 12px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  margin-bottom: 8px;
+  transition: var(--transition-fast);
+}
+
+.ssh-connection-card:hover {
+  border-color: var(--accent-primary);
+}
+
+.ssh-status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  transition: background 0.3s ease;
+}
+
+.ssh-terminal-container .xterm {
+  height: 100%;
+}
+
 [data-theme="cyberpunk"] .achievement-toast {
   border-color: var(--accent-primary);
   box-shadow: 0 8px 32px rgba(0, 255, 204, 0.3), 0 0 20px rgba(0, 255, 204, 0.1);
+}
+
+/* Debug Panel */
+.debug-log-container {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-subtle) transparent;
+}
+
+.debug-log-container::-webkit-scrollbar {
+  width: 4px;
+}
+
+.debug-log-container::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.debug-log-container::-webkit-scrollbar-thumb {
+  background: var(--border-subtle);
+  border-radius: 2px;
+}
+
+.debug-log-entry {
+  border-radius: 2px;
+  transition: background 0.15s ease;
+}
+
+.debug-log-entry:hover {
+  filter: brightness(1.15);
 }

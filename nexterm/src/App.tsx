@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, memo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { TitleBar } from "./components/TitleBar";
 import { TabBar } from "./components/TabBar";
@@ -6,10 +6,17 @@ import { TerminalPanel } from "./components/TerminalPanel";
 import { Sidebar } from "./components/Sidebar";
 import { StatusBar } from "./components/StatusBar";
 import { AchievementToast } from "./components/AchievementToast";
+import { UpdateNotification } from "./components/UpdateNotification";
 import { useAppStore } from "./store/appStore";
 
+const MemoizedTerminalPanel = memo(TerminalPanel);
+const MemoizedTabBar = memo(TabBar);
+const MemoizedStatusBar = memo(StatusBar);
+
 function App() {
-  const { theme, sidebarOpen, focusMode } = useAppStore();
+  const theme = useAppStore((s) => s.theme);
+  const sidebarOpen = useAppStore((s) => s.sidebarOpen);
+  const focusMode = useAppStore((s) => s.focusMode);
 
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", theme);
@@ -20,8 +27,8 @@ function App() {
       <TitleBar />
       <div className="app-body">
         <div className="main-area">
-          <TabBar />
-          <TerminalPanel />
+          <MemoizedTabBar />
+          <MemoizedTerminalPanel />
         </div>
         <AnimatePresence>
           {sidebarOpen && (
@@ -37,8 +44,9 @@ function App() {
           )}
         </AnimatePresence>
       </div>
-      <StatusBar />
+      <MemoizedStatusBar />
       <AchievementToast />
+      <UpdateNotification />
     </div>
   );
 }

@@ -1,18 +1,50 @@
-# TODO - NexTerm (Terminal Profesional)
+# NovaTerm - Tasks
 
-## En Progreso
-- [x] Crear estructura completa del proyecto
-- [x] Configurar Tauri + React + TypeScript
-- [x] Implementar componentes UI principales
-- [x] Sistema de terminal con xterm.js
-- [x] Sistema de temas y personalización
-- [x] Panel lateral con historial, snippets, previews
-- [x] Sistema de plugins
-- [x] Mini dashboard de sistema
-- [x] Documentación completa
+## Completed
+- [x] SSH Backend (Rust): ssh_manager.rs with ssh2 crate
+- [x] SSH Tauri commands: ssh_connect, ssh_write, ssh_resize, ssh_disconnect, ssh_test_connection
+- [x] SSH Frontend: SSHPanel.tsx component
+- [x] SSH State: Zustand store with SSHConnection type, localStorage persistence
+- [x] Sidebar: SSH tab added with Monitor icon
+- [x] CSS: SSH connection card styles
+- [x] Rust compilation verified
+- [x] TypeScript compilation verified
+- [x] Performance: Cached sysinfo::System in AppState
+- [x] Performance: Cached PATH commands in AppState
+- [x] Performance: Cached Tauri dynamic imports
+- [x] Performance: Debounced autocomplete suggestions (150ms)
+- [x] Performance: Reduced TerminalPanel useEffect deps with refs
+- [x] Performance: Merged StatusBar useEffects, increased intervals
+- [x] Performance: Reduced scrollback from 10000 to 5000
+- [x] SSH UX: Session password memory + "Remember for session" checkbox
+- [x] Keychain: keyring crate v2 cross-platform credential storage
+- [x] Keychain: keychain_manager.rs + 3 Tauri commands
+- [x] Keychain: Password prompt with 3 save modes (keychain/session/none)
+- [x] Keychain: Auto-retrieval from keychain on connect
+- [x] Keychain: ShieldCheck indicator + cleanup on delete
+- [x] Debug: DebugPanel with live log viewer (level/search/source filters)
+- [x] Debug: Log level detection (ERROR, WARN, INFO, DEBUG, TRACE, OUTPUT)
+- [x] Debug: PTY + SSH output interception → debug store
+- [x] Debug: Pause/resume, export, clear, enable/disable
+- [x] Debug: Expandable multiline entries, ANSI stripping
+- [x] Debug: Persistent log storage to disk (JSONL files)
+- [x] Debug: log_manager.rs backend (append, list, load, delete, cleanup)
+- [x] Debug: 6 Tauri commands (save, list, load, delete, cleanup, get_dir)
+- [x] Debug: Batched writes (2s interval) for performance
+- [x] Debug: History view - browse/search/delete past sessions
+- [x] Debug: Auto-cleanup logs older than 7 days
+- [x] Debug: Persistence toggle (HardDrive icon) saved to localStorage
+- [x] Debug: Live/History tab switcher
 
-## Pendiente
-- [ ] Compilar y probar en Windows/Mac/Linux
-- [ ] Marketplace de plugins
-- [ ] Gamificación avanzada
-- [ ] Tests unitarios y e2e
+- [x] Snippets: Secuencias multilinea (textarea, badge N cmds)
+- [x] Snippets: Shell-native sequencing (&&/;) en vez de delays
+- [x] Snippets: runMode por snippet (stop-on-error / run-all)
+- [x] Snippets: Selector de modo en formulario add/edit
+- [x] Snippets: Badge visual del modo (&&/;) en tarjeta
+- [x] Snippets: Edit inline (nombre + comandos + modo)
+- [x] Snippets: Vista expandida con numeros de linea
+- [x] Snippets: Ejemplo "Git Quick Push" por defecto
+
+## Pending
+- [ ] Test full SSH flow end-to-end
+- [ ] Test debug panel with real terminal output

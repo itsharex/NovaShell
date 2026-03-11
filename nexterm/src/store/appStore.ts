@@ -1,7 +1,7 @@
 import { create } from "zustand";
 
 export type ThemeName = "dark" | "light" | "cyberpunk" | "retro";
-export type SidebarTab = "history" | "snippets" | "preview" | "plugins" | "stats";
+export type SidebarTab = "history" | "snippets" | "preview" | "plugins" | "stats" | "ssh" | "debug";
 
 interface Tab {
   id: string;
@@ -10,11 +10,14 @@ interface Tab {
   sessionId: string | null;
 }
 
+export type SnippetRunMode = "stop-on-error" | "run-all";
+
 interface Snippet {
   id: string;
   name: string;
   command: string;
   icon?: string;
+  runMode?: SnippetRunMode;
 }
 
 interface HistoryEntry {
@@ -30,6 +33,29 @@ export interface PluginEntry {
   name: string;
   desc: string;
   enabled: boolean;
+}
+
+export interface SSHConnection {
+  id: string;
+  name: string;
+  host: string;
+  port: number;
+  username: string;
+  privateKey?: string;
+  sessionPassword?: string; // In-memory only, never persisted to disk
+  status: "disconnected" | "connecting" | "connected" | "error";
+  sessionId?: string;
+  errorMessage?: string;
+}
+
+export type LogLevel = "error" | "warn" | "info" | "debug" | "trace" | "output";
+
+export interface DebugLogEntry {
+  id: string;
+  timestamp: number;
+  level: LogLevel;
+  message: string;
+  source: string; // tab name or SSH connection
 }
 
 export interface Achievement {
@@ -84,8 +110,8 @@ interface AppState {
   incrementCommandCount: () => void;
   incrementErrorCount: () => void;
 
-  executeSnippet: ((command: string) => void) | null;
-  setExecuteSnippet: (fn: ((command: string) => void) | null) => void;
+  executeSnippet: ((command: string, runMode?: SnippetRunMode) => void) | null;
+  setExecuteSnippet: (fn: ((command: string, runMode?: SnippetRunMode) => void) | null) => void;
 
   plugins: PluginEntry[];
   togglePlugin: (id: string) => void;
@@ -107,6 +133,19 @@ interface AppState {
 
   achievements: Achievement[];
   checkAchievements: () => void;
+
+  sshConnections: SSHConnection[];
+  addSSHConnection: (conn: Omit<SSHConnection, "id" | "status">) => void;
+  updateSSHConnection: (id: string, updates: Partial<SSHConnection>) => void;
+  removeSSHConnection: (id: string) => void;
+
+  debugLogs: DebugLogEntry[];
+  debugEnabled: boolean;
+  debugPersist: boolean;
+  addDebugLog: (entry: Omit<DebugLogEntry, "id" | "timestamp">) => void;
+  clearDebugLogs: () => void;
+  toggleDebug: () => void;
+  toggleDebugPersist: () => void;
 }
 
 let tabCounter = 0;
@@ -175,6 +214,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     { id: "s2", name: "List Files", command: "ls -la", icon: "folder" },
     { id: "s3", name: "Docker PS", command: "docker ps", icon: "container" },
     { id: "s4", name: "NPM Install", command: "npm install", icon: "package" },
+    { id: "s5", name: "Git Quick Push", command: "git add .\ngit status\ngit commit -m \"update\"\ngit push", icon: "git-branch", runMode: "stop-on-error" },
   ],
   addSnippet: (snippet) =>
     set((s) => ({
@@ -261,4 +301,106 @@ export const useAppStore = create<AppState>((set, get) => ({
       set({ achievements: updated });
     }
   },
+
+  sshConnections: (() => {
+    try {
+      const saved = localStorage.getItem("novaterm-ssh-connections");
+      if (saved) {
+        const parsed = JSON.parse(saved) as SSHConnection[];
+        return parsed.map((c) => ({ ...c, status: "disconnected" as const, sessionId: undefined, errorMessage: undefined }));
+      }
+    } catch {}
+    return [];
+  })(),
+
+  addSSHConnection: (conn) => {
+    const newConn: SSHConnection = { ...conn, id: crypto.randomUUID(), status: "disconnected" };
+    set((s) => {
+      const updated = [...s.sshConnections, newConn];
+      localStorage.setItem("novaterm-ssh-connections", JSON.stringify(updated.map(({ status, sessionId, errorMessage, sessionPassword, ...rest }) => rest)));
+      return { sshConnections: updated };
+    });
+  },
+
+  updateSSHConnection: (id, updates) =>
+    set((s) => {
+      const updated = s.sshConnections.map((c) => (c.id === id ? { ...c, ...updates } : c));
+      localStorage.setItem("novaterm-ssh-connections", JSON.stringify(updated.map(({ status, sessionId, errorMessage, sessionPassword, ...rest }) => rest)));
+      return { sshConnections: updated };
+    }),
+
+  removeSSHConnection: (id) =>
+    set((s) => {
+      const updated = s.sshConnections.filter((c) => c.id !== id);
+      localStorage.setItem("novaterm-ssh-connections", JSON.stringify(updated.map(({ status, sessionId, errorMessage, sessionPassword, ...rest }) => rest)));
+      return { sshConnections: updated };
+    }),
+
+  debugLogs: [],
+  debugEnabled: true,
+  debugPersist: (() => {
+    try { return localStorage.getItem("novaterm-debug-persist") !== "false"; } catch { return true; }
+  })(),
+  addDebugLog: (entry) =>
+    set((s) => {
+      if (!s.debugEnabled) return s;
+      const newEntry: DebugLogEntry = {
+        ...entry,
+        id: crypto.randomUUID(),
+        timestamp: Date.now(),
+      };
+      const logs = [newEntry, ...s.debugLogs];
+      if (logs.length > 2000) logs.length = 2000;
+      // Queue for disk persistence
+      if (s.debugPersist) {
+        debugPersistQueue.push(newEntry);
+        scheduleFlush();
+      }
+      return { debugLogs: logs };
+    }),
+  clearDebugLogs: () => set({ debugLogs: [] }),
+  toggleDebug: () => set((s) => ({ debugEnabled: !s.debugEnabled })),
+  toggleDebugPersist: () => set((s) => {
+    const next = !s.debugPersist;
+    localStorage.setItem("novaterm-debug-persist", String(next));
+    return { debugPersist: next };
+  }),
 }));
+
+// === Batched disk persistence for debug logs ===
+const debugPersistQueue: DebugLogEntry[] = [];
+let flushTimer: ReturnType<typeof setTimeout> | null = null;
+
+function scheduleFlush() {
+  if (flushTimer) return;
+  flushTimer = setTimeout(flushToDisk, 2000);
+}
+
+async function flushToDisk() {
+  flushTimer = null;
+  if (debugPersistQueue.length === 0) return;
+  const batch = debugPersistQueue.splice(0, debugPersistQueue.length);
+  try {
+    const { invoke } = await import("@tauri-apps/api/core");
+    await invoke("debug_log_save", {
+      entries: batch.map((e) => ({
+        id: e.id,
+        timestamp: e.timestamp,
+        level: e.level,
+        message: e.message,
+        source: e.source,
+      })),
+    });
+  } catch {
+    // If save fails, don't crash — logs are still in memory
+  }
+}
+
+// Flush on page unload
+if (typeof window !== "undefined") {
+  window.addEventListener("beforeunload", () => {
+    if (debugPersistQueue.length > 0) {
+      flushToDisk();
+    }
+  });
+}

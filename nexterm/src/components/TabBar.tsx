@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { Plus, X, ChevronDown, Terminal as TermIcon } from "lucide-react";
+import { Plus, X } from "lucide-react";
 import { useAppStore } from "../store/appStore";
 
 const shellIcons: Record<string, string> = {
@@ -10,7 +10,11 @@ const shellIcons: Record<string, string> = {
 };
 
 export function TabBar() {
-  const { tabs, activeTabId, addTab, closeTab, setActiveTab } = useAppStore();
+  const tabs = useAppStore((s) => s.tabs);
+  const activeTabId = useAppStore((s) => s.activeTabId);
+  const addTab = useAppStore((s) => s.addTab);
+  const closeTab = useAppStore((s) => s.closeTab);
+  const setActiveTab = useAppStore((s) => s.setActiveTab);
   const [showShellMenu, setShowShellMenu] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 

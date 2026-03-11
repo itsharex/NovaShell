@@ -7,6 +7,50 @@ import "@xterm/xterm/css/xterm.css";
 import { useAppStore } from "../store/appStore";
 import { SearchOverlay } from "./SearchOverlay";
 import { Autocomplete } from "./Autocomplete";
+import { parseTerminalOutput } from "./DebugPanel";
+import type { SnippetRunMode } from "../store/appStore";
+
+let tauriCore: { invoke: typeof import("@tauri-apps/api/core")["invoke"] } | null = null;
+let tauriEvent: { listen: typeof import("@tauri-apps/api/event")["listen"] } | null = null;
+
+async function getTauriCore() {
+  if (!tauriCore) tauriCore = await import("@tauri-apps/api/core");
+  return tauriCore;
+}
+
+async function getTauriEvent() {
+  if (!tauriEvent) tauriEvent = await import("@tauri-apps/api/event");
+  return tauriEvent;
+}
+
+// Batched async debug log parsing - never blocks terminal rendering
+const debugParseQueue: Array<{ data: string; source: string }> = [];
+let debugParseScheduled = false;
+
+function queueDebugParse(data: string, source: string) {
+  const store = useAppStore.getState();
+  if (!store.debugEnabled) return;
+  debugParseQueue.push({ data, source });
+  if (!debugParseScheduled) {
+    debugParseScheduled = true;
+    requestIdleCallback ? requestIdleCallback(flushDebugParse) : setTimeout(flushDebugParse, 50);
+  }
+}
+
+function flushDebugParse() {
+  debugParseScheduled = false;
+  if (debugParseQueue.length === 0) return;
+  const items = debugParseQueue.splice(0, debugParseQueue.length);
+  const store = useAppStore.getState();
+  // Merge all chunks then parse once
+  const bySource = new Map<string, string>();
+  for (const item of items) {
+    bySource.set(item.source, (bySource.get(item.source) || "") + item.data);
+  }
+  bySource.forEach((data, source) => {
+    parseTerminalOutput(data, source, store.addDebugLog);
+  });
+}
 
 interface TerminalRef {
   terminal: Terminal;
@@ -65,11 +109,14 @@ const themeColors: Record<string, Record<string, string>> = {
 };
 
 export function TerminalPanel() {
-  const {
-    tabs, activeTabId, theme, updateTab, setExecuteSnippet,
-    incrementCommandCount, addHistory, searchOpen, toggleSearch,
-    splitMode, checkAchievements,
-  } = useAppStore();
+  const tabs = useAppStore((s) => s.tabs);
+  const activeTabId = useAppStore((s) => s.activeTabId);
+  const theme = useAppStore((s) => s.theme);
+  const updateTab = useAppStore((s) => s.updateTab);
+  const setExecuteSnippet = useAppStore((s) => s.setExecuteSnippet);
+  const searchOpen = useAppStore((s) => s.searchOpen);
+  const toggleSearch = useAppStore((s) => s.toggleSearch);
+  const splitMode = useAppStore((s) => s.splitMode);
   const terminalsRef = useRef<Map<string, TerminalRef>>(new Map());
   const containersRef = useRef<Map<string, HTMLDivElement>>(new Map());
 
@@ -77,6 +124,14 @@ export function TerminalPanel() {
   const [selectedSuggestion, setSelectedSuggestion] = useState(0);
   const [showAutocomplete, setShowAutocomplete] = useState(false);
   const inputBufferRef = useRef("");
+
+  // Store suggestions in refs so initTerminal doesn't need them as deps
+  const suggestionsRef = useRef(suggestions);
+  const showAutocompleteRef = useRef(showAutocomplete);
+  const selectedSuggestionRef = useRef(selectedSuggestion);
+  suggestionsRef.current = suggestions;
+  showAutocompleteRef.current = showAutocomplete;
+  selectedSuggestionRef.current = selectedSuggestion;
 
   useEffect(() => {
     const ref = terminalsRef.current.get(activeTabId);
@@ -96,11 +151,6 @@ export function TerminalPanel() {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [toggleSearch]);
 
-  useEffect(() => {
-    const interval = setInterval(checkAchievements, 5000);
-    return () => clearInterval(interval);
-  }, [checkAchievements]);
-
   const handleSearch = useCallback((query: string, direction: "next" | "prev") => {
     const ref = terminalsRef.current.get(activeTabId);
     if (!ref || !query) return;
@@ -111,53 +161,68 @@ export function TerminalPanel() {
     }
   }, [activeTabId]);
 
-  const fetchSuggestions = useCallback(async (prefix: string) => {
+  // Debounced suggestion fetcher
+  const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const fetchSuggestions = useCallback((prefix: string) => {
     if (prefix.length < 1) {
       setSuggestions([]);
       setShowAutocomplete(false);
       return;
     }
-    try {
-      const { invoke } = await import("@tauri-apps/api/core");
-      const result = await invoke<string[]>("get_command_suggestions", { prefix });
-      setSuggestions(result);
-      setSelectedSuggestion(0);
-      setShowAutocomplete(result.length > 0);
-    } catch {
-      const demoCommands = [
-        "help", "neofetch", "clear", "colors", "matrix", "theme", "date",
-        "git status", "git add", "git commit", "git push", "git pull",
-        "npm install", "npm run", "npm start", "docker ps", "docker images",
-      ];
-      const filtered = demoCommands.filter((c) => c.startsWith(prefix.toLowerCase()));
-      setSuggestions(filtered.slice(0, 10));
-      setSelectedSuggestion(0);
-      setShowAutocomplete(filtered.length > 0);
-    }
+    if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+    debounceTimerRef.current = setTimeout(async () => {
+      try {
+        const { invoke } = await getTauriCore();
+        const result = await invoke<string[]>("get_command_suggestions", { prefix });
+        setSuggestions(result);
+        setSelectedSuggestion(0);
+        setShowAutocomplete(result.length > 0);
+      } catch {
+        const demoCommands = [
+          "help", "neofetch", "clear", "colors", "matrix", "theme", "date",
+          "git status", "git add", "git commit", "git push", "git pull",
+          "npm install", "npm run", "npm start", "docker ps", "docker images",
+        ];
+        const filtered = demoCommands.filter((c) => c.startsWith(prefix.toLowerCase()));
+        setSuggestions(filtered.slice(0, 10));
+        setSelectedSuggestion(0);
+        setShowAutocomplete(filtered.length > 0);
+      }
+    }, 150);
   }, []);
 
   useEffect(() => {
-    setExecuteSnippet((command: string) => {
+    setExecuteSnippet((command: string, runMode?: "stop-on-error" | "run-all") => {
       const ref = terminalsRef.current.get(activeTabId);
       if (!ref) return;
 
+      // Split multiline into individual commands
+      const commands = command.split("\n").map((c) => c.trim()).filter((c) => c.length > 0);
+
+      // Join with shell-native separator so the shell handles sequencing
+      // && = stop on first error, ; = run all regardless
+      const separator = runMode === "run-all" ? " ; " : " && ";
+      const joined = commands.length > 1 ? commands.join(separator) : commands[0] || "";
+
       if (ref.sessionId) {
-        import("@tauri-apps/api/core").then(({ invoke }) => {
-          invoke("write_to_pty", { sessionId: ref.sessionId, data: command + "\r" });
+        getTauriCore().then(({ invoke }) => {
+          invoke("write_to_pty", { sessionId: ref.sessionId, data: joined + "\r" });
         }).catch(() => {});
       } else {
-        ref.terminal.write(command);
+        // Demo mode - execute first command only
+        ref.terminal.write(joined);
         ref.terminal.write("\r\n");
-        handleDemoCommand(ref.terminal, command.trim());
+        handleDemoCommand(ref.terminal, commands[0] || joined);
         ref.terminal.write("\x1b[32mnovashell\x1b[0m \x1b[34m~\x1b[0m $ ");
       }
-      incrementCommandCount();
-      addHistory({ command, shell: "terminal" });
-      checkAchievements();
+
+      useAppStore.getState().incrementCommandCount();
+      useAppStore.getState().addHistory({ command: joined, shell: "terminal" });
+      useAppStore.getState().checkAchievements();
     });
 
     return () => setExecuteSnippet(null);
-  }, [activeTabId, setExecuteSnippet, incrementCommandCount, addHistory, checkAchievements]);
+  }, [activeTabId, setExecuteSnippet]);
 
   const initTerminal = useCallback(
     async (tabId: string, container: HTMLDivElement) => {
@@ -175,7 +240,7 @@ export function TerminalPanel() {
         cursorStyle: "bar",
         theme: colors,
         allowProposedApi: true,
-        scrollback: 10000,
+        scrollback: 5000,
         tabStopWidth: 4,
       });
 
@@ -191,10 +256,10 @@ export function TerminalPanel() {
 
       let sessionId: string | null = null;
       try {
-        const { invoke } = await import("@tauri-apps/api/core");
-        const { listen } = await import("@tauri-apps/api/event");
+        const { invoke } = await getTauriCore();
+        const { listen } = await getTauriEvent();
 
-        const tab = tabs.find((t) => t.id === tabId);
+        const tab = useAppStore.getState().tabs.find((t) => t.id === tabId);
         const shellMap: Record<string, string> = {
           powershell: "powershell.exe",
           cmd: "cmd.exe",
@@ -206,18 +271,31 @@ export function TerminalPanel() {
         sessionId = await invoke<string>("create_pty_session", { shellPath });
         updateTab(tabId, { sessionId });
 
+        const tabName = tab?.title || tabId;
         const unlistenData = await listen<string>(`pty-data-${sessionId}`, (event) => {
           terminal.write(event.payload);
+          // Feed to debug log asynchronously - don't block terminal rendering
+          queueDebugParse(event.payload, tabName);
         });
         unlisteners.push(unlistenData);
 
         const unlistenExit = await listen(`pty-exit-${sessionId}`, () => {
           terminal.write("\r\n\x1b[31m[Process exited]\x1b[0m\r\n");
+          useAppStore.getState().addDebugLog({
+            level: "warn",
+            message: "Process exited",
+            source: tabName,
+          });
         });
         unlisteners.push(unlistenExit);
 
         const unlistenError = await listen<string>(`pty-error-${sessionId}`, (event) => {
           terminal.write(`\r\n\x1b[31m[Error: ${event.payload}]\x1b[0m\r\n`);
+          useAppStore.getState().addDebugLog({
+            level: "error",
+            message: event.payload,
+            source: tabName,
+          });
         });
         unlisteners.push(unlistenError);
 
@@ -228,9 +306,9 @@ export function TerminalPanel() {
           if (data === "\r" || data === "\n") {
             const cmd = ptyInputBuffer.trim();
             if (cmd) {
-              addHistory({ command: cmd, shell: tab?.shellType || "powershell" });
-              incrementCommandCount();
-              checkAchievements();
+              useAppStore.getState().addHistory({ command: cmd, shell: tab?.shellType || "powershell" });
+              useAppStore.getState().incrementCommandCount();
+              useAppStore.getState().checkAchievements();
             }
             ptyInputBuffer = "";
             setShowAutocomplete(false);
@@ -242,8 +320,8 @@ export function TerminalPanel() {
               setShowAutocomplete(false);
             }
           } else if (data === "\t") {
-            if (suggestions.length > 0 && showAutocomplete) {
-              const selected = suggestions[selectedSuggestion] || suggestions[0];
+            if (suggestionsRef.current.length > 0 && showAutocompleteRef.current) {
+              const selected = suggestionsRef.current[selectedSuggestionRef.current] || suggestionsRef.current[0];
               const remaining = selected.slice(ptyInputBuffer.length);
               if (remaining) {
                 invoke("write_to_pty", { sessionId, data: remaining });
@@ -292,9 +370,9 @@ export function TerminalPanel() {
             setShowAutocomplete(false);
             if (lineBuffer.trim()) {
               handleDemoCommand(terminal, lineBuffer.trim());
-              addHistory({ command: lineBuffer.trim(), shell: "demo" });
-              incrementCommandCount();
-              checkAchievements();
+              useAppStore.getState().addHistory({ command: lineBuffer.trim(), shell: "demo" });
+              useAppStore.getState().incrementCommandCount();
+              useAppStore.getState().checkAchievements();
             }
             lineBuffer = "";
             inputBufferRef.current = "";
@@ -311,8 +389,8 @@ export function TerminalPanel() {
               }
             }
           } else if (data === "\t") {
-            if (suggestions.length > 0 && showAutocomplete) {
-              const selected = suggestions[selectedSuggestion] || suggestions[0];
+            if (suggestionsRef.current.length > 0 && showAutocompleteRef.current) {
+              const selected = suggestionsRef.current[selectedSuggestionRef.current] || suggestionsRef.current[0];
               const remaining = selected.slice(lineBuffer.length);
               terminal.write(remaining);
               lineBuffer = selected;
@@ -338,7 +416,7 @@ export function TerminalPanel() {
         unlisteners,
       });
     },
-    [theme, tabs, updateTab, incrementCommandCount, addHistory, checkAchievements, fetchSuggestions, suggestions, showAutocomplete, selectedSuggestion]
+    [theme, updateTab, fetchSuggestions]
   );
 
   useEffect(() => {
@@ -348,7 +426,7 @@ export function TerminalPanel() {
         ref.disposables.forEach((d) => d.dispose());
         ref.unlisteners.forEach((fn) => fn());
         if (ref.sessionId) {
-          import("@tauri-apps/api/core").then(({ invoke }) => {
+          getTauriCore().then(({ invoke }) => {
             invoke("close_pty_session", { sessionId: ref.sessionId });
           }).catch(() => {});
         }
@@ -384,7 +462,7 @@ export function TerminalPanel() {
         ref.disposables.forEach((d) => d.dispose());
         ref.unlisteners.forEach((fn) => fn());
         if (ref.sessionId) {
-          import("@tauri-apps/api/core").then(({ invoke }) => {
+          getTauriCore().then(({ invoke }) => {
             invoke("close_pty_session", { sessionId: ref.sessionId });
           }).catch(() => {});
         }
@@ -399,7 +477,7 @@ export function TerminalPanel() {
     if (!ref) return;
 
     if (ref.sessionId) {
-      import("@tauri-apps/api/core").then(({ invoke }) => {
+      getTauriCore().then(({ invoke }) => {
         const remaining = cmd.slice(inputBufferRef.current.length);
         if (remaining) {
           invoke("write_to_pty", { sessionId: ref.sessionId, data: remaining });

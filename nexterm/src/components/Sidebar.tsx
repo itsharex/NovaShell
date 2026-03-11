@@ -25,9 +25,13 @@ import {
   Layers,
   Clock,
   Columns,
+  Monitor,
+  Bug,
 } from "lucide-react";
 import { useAppStore } from "../store/appStore";
 import type { SidebarTab } from "../store/appStore";
+import { SSHPanel } from "./SSHPanel";
+import { DebugPanel } from "./DebugPanel";
 
 const sidebarTabs: { id: SidebarTab; icon: typeof History; label: string }[] = [
   { id: "history", icon: History, label: "History" },
@@ -35,10 +39,13 @@ const sidebarTabs: { id: SidebarTab; icon: typeof History; label: string }[] = [
   { id: "preview", icon: Eye, label: "Preview" },
   { id: "plugins", icon: Puzzle, label: "Plugins" },
   { id: "stats", icon: BarChart3, label: "Stats" },
+  { id: "ssh", icon: Monitor, label: "SSH" },
+  { id: "debug", icon: Bug, label: "Debug" },
 ];
 
 export function Sidebar() {
-  const { sidebarTab, setSidebarTab } = useAppStore();
+  const sidebarTab = useAppStore((s) => s.sidebarTab);
+  const setSidebarTab = useAppStore((s) => s.setSidebarTab);
 
   return (
     <div className="sidebar">
@@ -61,13 +68,17 @@ export function Sidebar() {
         {sidebarTab === "preview" && <PreviewPanel />}
         {sidebarTab === "plugins" && <PluginsPanel />}
         {sidebarTab === "stats" && <StatsPanel />}
+        {sidebarTab === "ssh" && <SSHPanel />}
+        {sidebarTab === "debug" && <DebugPanel />}
       </div>
     </div>
   );
 }
 
 function HistoryPanel() {
-  const { history, clearHistory, executeSnippet } = useAppStore();
+  const history = useAppStore((s) => s.history);
+  const clearHistory = useAppStore((s) => s.clearHistory);
+  const executeSnippet = useAppStore((s) => s.executeSnippet);
   const [filter, setFilter] = useState("");
 
   const filtered = history.filter((h) =>
@@ -123,52 +134,295 @@ function HistoryPanel() {
 }
 
 function SnippetsPanel() {
-  const { snippets, addSnippet, removeSnippet, executeSnippet } = useAppStore();
+  const snippets = useAppStore((s) => s.snippets);
+  const addSnippet = useAppStore((s) => s.addSnippet);
+  const removeSnippet = useAppStore((s) => s.removeSnippet);
+  const executeSnippet = useAppStore((s) => s.executeSnippet);
   const [adding, setAdding] = useState(false);
   const [newName, setNewName] = useState("");
   const [newCmd, setNewCmd] = useState("");
+  const [newRunMode, setNewRunMode] = useState<"stop-on-error" | "run-all">("stop-on-error");
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editName, setEditName] = useState("");
+  const [editCmd, setEditCmd] = useState("");
+  const [editRunMode, setEditRunMode] = useState<"stop-on-error" | "run-all">("stop-on-error");
 
   const handleAdd = () => {
     if (newName && newCmd) {
-      addSnippet({ name: newName, command: newCmd });
-      setNewName(""); setNewCmd(""); setAdding(false);
+      addSnippet({ name: newName, command: newCmd, runMode: newRunMode });
+      setNewName(""); setNewCmd(""); setNewRunMode("stop-on-error"); setAdding(false);
     }
+  };
+
+  const startEdit = (snippet: { id: string; name: string; command: string; runMode?: "stop-on-error" | "run-all" }) => {
+    setEditingId(snippet.id);
+    setEditName(snippet.name);
+    setEditCmd(snippet.command);
+    setEditRunMode(snippet.runMode || "stop-on-error");
+  };
+
+  const saveEdit = () => {
+    if (editingId && editName && editCmd) {
+      const { snippets: current } = useAppStore.getState();
+      useAppStore.setState({
+        snippets: current.map((s) => s.id === editingId ? { ...s, name: editName, command: editCmd, runMode: editRunMode } : s),
+      });
+      setEditingId(null);
+    }
+  };
+
+  const getCommandCount = (cmd: string) => {
+    return cmd.split("\n").filter((l) => l.trim().length > 0).length;
+  };
+
+  const inputBase: React.CSSProperties = {
+    padding: "6px 8px",
+    background: "var(--bg-primary)",
+    border: "1px solid var(--border-subtle)",
+    borderRadius: "var(--radius-sm)",
+    color: "var(--text-primary)",
+    fontSize: 12,
+    fontFamily: "inherit",
+    outline: "none",
+    width: "100%",
   };
 
   return (
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
         <span className="sidebar-section-title" style={{ margin: 0 }}>Quick Commands</span>
-        <button onClick={() => setAdding(!adding)} style={{ background: "none", border: "none", color: "var(--accent-primary)", cursor: "pointer", padding: 4 }} aria-label="Add snippet">
+        <button onClick={() => { setAdding(!adding); setEditingId(null); }} style={{ background: "none", border: "none", color: "var(--accent-primary)", cursor: "pointer", padding: 4 }} aria-label="Add snippet">
           <Plus size={14} />
         </button>
       </div>
 
       {adding && (
         <div style={{ padding: 10, background: "var(--bg-tertiary)", borderRadius: "var(--radius-md)", marginBottom: 10, display: "flex", flexDirection: "column", gap: 6 }}>
-          <input placeholder="Name" value={newName} onChange={(e) => setNewName(e.target.value)}
-            style={{ padding: "6px 8px", background: "var(--bg-primary)", border: "1px solid var(--border-subtle)", borderRadius: "var(--radius-sm)", color: "var(--text-primary)", fontSize: 12, fontFamily: "inherit", outline: "none" }} />
-          <input placeholder="Command" value={newCmd} onChange={(e) => setNewCmd(e.target.value)} onKeyDown={(e) => e.key === "Enter" && handleAdd()}
-            style={{ padding: "6px 8px", background: "var(--bg-primary)", border: "1px solid var(--border-subtle)", borderRadius: "var(--radius-sm)", color: "var(--text-primary)", fontSize: 12, fontFamily: "inherit", outline: "none" }} />
-          <button onClick={handleAdd} style={{ padding: "6px", background: "var(--accent-primary)", border: "none", borderRadius: "var(--radius-sm)", color: "white", fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>
+          <input
+            placeholder="Name (e.g. Deploy Script)"
+            value={newName}
+            onChange={(e) => setNewName(e.target.value)}
+            style={inputBase}
+          />
+          <textarea
+            placeholder={"Command or sequence (one per line):\ngit add .\ngit commit -m \"deploy\"\ngit push origin main"}
+            value={newCmd}
+            onChange={(e) => setNewCmd(e.target.value)}
+            rows={3}
+            style={{ ...inputBase, resize: "vertical", minHeight: 60, lineHeight: 1.5 }}
+          />
+          <div style={{ fontSize: 10, color: "var(--text-muted)", display: "flex", justifyContent: "space-between" }}>
+            <span>One command per line for sequences</span>
+            {newCmd && <span>{getCommandCount(newCmd)} cmd{getCommandCount(newCmd) !== 1 ? "s" : ""}</span>}
+          </div>
+          {getCommandCount(newCmd) > 1 && (
+            <div style={{ display: "flex", gap: 4 }}>
+              <button
+                onClick={() => setNewRunMode("stop-on-error")}
+                style={{
+                  flex: 1, padding: "4px", border: "none", borderRadius: "var(--radius-sm)",
+                  background: newRunMode === "stop-on-error" ? "var(--accent-primary)" : "var(--bg-active)",
+                  color: newRunMode === "stop-on-error" ? "white" : "var(--text-muted)",
+                  fontSize: 10, cursor: "pointer", fontFamily: "inherit",
+                }}
+              >
+                Stop on error (&&)
+              </button>
+              <button
+                onClick={() => setNewRunMode("run-all")}
+                style={{
+                  flex: 1, padding: "4px", border: "none", borderRadius: "var(--radius-sm)",
+                  background: newRunMode === "run-all" ? "var(--accent-warning)" : "var(--bg-active)",
+                  color: newRunMode === "run-all" ? "white" : "var(--text-muted)",
+                  fontSize: 10, cursor: "pointer", fontFamily: "inherit",
+                }}
+              >
+                Run all (;)
+              </button>
+            </div>
+          )}
+          <button onClick={handleAdd} disabled={!newName || !newCmd} style={{
+            padding: "6px",
+            background: !newName || !newCmd ? "var(--bg-active)" : "var(--accent-primary)",
+            border: "none",
+            borderRadius: "var(--radius-sm)",
+            color: !newName || !newCmd ? "var(--text-muted)" : "white",
+            fontSize: 12,
+            cursor: !newName || !newCmd ? "default" : "pointer",
+            fontFamily: "inherit",
+          }}>
             Add Snippet
           </button>
         </div>
       )}
 
-      {snippets.map((snippet) => (
-        <div key={snippet.id} className="snippet-card">
-          <div className="snippet-icon"><Code2 size={16} /></div>
-          <div className="snippet-info">
-            <div className="snippet-name">{snippet.name}</div>
-            <div className="snippet-cmd">{snippet.command}</div>
+      {snippets.map((snippet) => {
+        const cmdCount = getCommandCount(snippet.command);
+        const isMulti = cmdCount > 1;
+        const isExpanded = expandedId === snippet.id;
+        const isEditing = editingId === snippet.id;
+        const lines = snippet.command.split("\n").filter((l) => l.trim());
+
+        if (isEditing) {
+          return (
+            <div key={snippet.id} style={{ padding: 10, background: "var(--bg-tertiary)", borderRadius: "var(--radius-md)", marginBottom: 6, display: "flex", flexDirection: "column", gap: 6, border: "1px solid var(--accent-primary)" }}>
+              <input
+                value={editName}
+                onChange={(e) => setEditName(e.target.value)}
+                style={inputBase}
+              />
+              <textarea
+                value={editCmd}
+                onChange={(e) => setEditCmd(e.target.value)}
+                rows={Math.max(3, lines.length + 1)}
+                style={{ ...inputBase, resize: "vertical", minHeight: 60, lineHeight: 1.5 }}
+              />
+              {getCommandCount(editCmd) > 1 && (
+                <div style={{ display: "flex", gap: 4 }}>
+                  <button
+                    onClick={() => setEditRunMode("stop-on-error")}
+                    style={{
+                      flex: 1, padding: "4px", border: "none", borderRadius: "var(--radius-sm)",
+                      background: editRunMode === "stop-on-error" ? "var(--accent-primary)" : "var(--bg-active)",
+                      color: editRunMode === "stop-on-error" ? "white" : "var(--text-muted)",
+                      fontSize: 10, cursor: "pointer", fontFamily: "inherit",
+                    }}
+                  >
+                    Stop on error (&&)
+                  </button>
+                  <button
+                    onClick={() => setEditRunMode("run-all")}
+                    style={{
+                      flex: 1, padding: "4px", border: "none", borderRadius: "var(--radius-sm)",
+                      background: editRunMode === "run-all" ? "var(--accent-warning)" : "var(--bg-active)",
+                      color: editRunMode === "run-all" ? "white" : "var(--text-muted)",
+                      fontSize: 10, cursor: "pointer", fontFamily: "inherit",
+                    }}
+                  >
+                    Run all (;)
+                  </button>
+                </div>
+              )}
+              <div style={{ display: "flex", gap: 4 }}>
+                <button onClick={saveEdit} style={{ flex: 1, padding: "5px", background: "var(--accent-primary)", border: "none", borderRadius: "var(--radius-sm)", color: "white", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>
+                  Save
+                </button>
+                <button onClick={() => setEditingId(null)} style={{ padding: "5px 8px", background: "var(--bg-active)", border: "none", borderRadius: "var(--radius-sm)", color: "var(--text-secondary)", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>
+                  Cancel
+                </button>
+              </div>
+            </div>
+          );
+        }
+
+        return (
+          <div key={snippet.id} className="snippet-card" style={{ flexDirection: "column", alignItems: "stretch", gap: 0 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <div className="snippet-icon"><Code2 size={16} /></div>
+              <div className="snippet-info" style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <div className="snippet-name">{snippet.name}</div>
+                  {isMulti && (
+                    <>
+                      <span style={{
+                        fontSize: 9,
+                        background: "var(--accent-primary)",
+                        color: "white",
+                        padding: "0 5px",
+                        borderRadius: 8,
+                        fontWeight: 700,
+                        lineHeight: "16px",
+                        flexShrink: 0,
+                      }}>
+                        {cmdCount} cmds
+                      </span>
+                      <span style={{
+                        fontSize: 9,
+                        background: snippet.runMode === "run-all" ? "var(--accent-warning)" : "var(--accent-secondary)",
+                        color: "white",
+                        padding: "0 4px",
+                        borderRadius: 8,
+                        fontWeight: 700,
+                        lineHeight: "16px",
+                        flexShrink: 0,
+                      }}>
+                        {snippet.runMode === "run-all" ? ";" : "&&"}
+                      </span>
+                    </>
+                  )}
+                </div>
+                <div className="snippet-cmd" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {isMulti ? lines[0] + (lines.length > 1 ? ` (+${lines.length - 1} more)` : "") : snippet.command}
+                </div>
+              </div>
+              <div style={{ display: "flex", gap: 2, flexShrink: 0 }}>
+                {isMulti && (
+                  <button
+                    onClick={() => setExpandedId(isExpanded ? null : snippet.id)}
+                    style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", padding: 2, display: "flex" }}
+                    title="View sequence"
+                  >
+                    {isExpanded ? <Activity size={13} /> : <Eye size={13} />}
+                  </button>
+                )}
+                <button
+                  onClick={() => startEdit(snippet)}
+                  style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", padding: 2, display: "flex" }}
+                  title="Edit"
+                >
+                  <Code2 size={13} />
+                </button>
+                <button className="snippet-run" title={`Run${isMulti ? " sequence" : ""}: ${snippet.name}`} aria-label={`Run ${snippet.name}`}
+                  onClick={() => executeSnippet && executeSnippet(snippet.command, snippet.runMode)}>
+                  <Play size={14} />
+                </button>
+              </div>
+            </div>
+
+            {/* Expanded sequence view */}
+            {isExpanded && isMulti && (
+              <div style={{
+                marginTop: 8,
+                padding: "6px 8px",
+                background: "var(--bg-primary)",
+                borderRadius: "var(--radius-sm)",
+                border: "1px solid var(--border-subtle)",
+              }}>
+                {lines.map((line, i) => (
+                  <div key={i} style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 6,
+                    padding: "3px 0",
+                    borderBottom: i < lines.length - 1 ? "1px solid var(--border-subtle)" : "none",
+                  }}>
+                    <span style={{
+                      fontSize: 9,
+                      color: "var(--text-muted)",
+                      fontFamily: "monospace",
+                      minWidth: 16,
+                      textAlign: "right",
+                    }}>
+                      {i + 1}
+                    </span>
+                    <span style={{
+                      fontSize: 11,
+                      color: "var(--text-primary)",
+                      fontFamily: "'JetBrains Mono', monospace",
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                    }}>
+                      {line}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
-          <button className="snippet-run" title={`Run: ${snippet.command}`} aria-label={`Run ${snippet.name}`}
-            onClick={() => executeSnippet && executeSnippet(snippet.command)}>
-            <Play size={14} />
-          </button>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }
@@ -182,7 +436,8 @@ interface FileEntry {
 }
 
 function PreviewPanel() {
-  const { previewFile, setPreviewFile } = useAppStore();
+  const previewFile = useAppStore((s) => s.previewFile);
+  const setPreviewFile = useAppStore((s) => s.setPreviewFile);
   const [files, setFiles] = useState<FileEntry[]>([]);
   const [currentPath, setCurrentPath] = useState<string>("");
   const [loading, setLoading] = useState(false);
@@ -325,7 +580,8 @@ function PreviewPanel() {
 }
 
 function PluginsPanel() {
-  const { plugins, togglePlugin } = useAppStore();
+  const plugins = useAppStore((s) => s.plugins);
+  const togglePlugin = useAppStore((s) => s.togglePlugin);
 
   return (
     <div>
@@ -350,7 +606,12 @@ const achievementIcons: Record<string, typeof Terminal> = {
 };
 
 function StatsPanel() {
-  const { systemStats, sessionStartTime, commandCount, errorCount, achievements, checkAchievements } = useAppStore();
+  const systemStats = useAppStore((s) => s.systemStats);
+  const sessionStartTime = useAppStore((s) => s.sessionStartTime);
+  const commandCount = useAppStore((s) => s.commandCount);
+  const errorCount = useAppStore((s) => s.errorCount);
+  const achievements = useAppStore((s) => s.achievements);
+  const checkAchievements = useAppStore((s) => s.checkAchievements);
   const [sessionTime, setSessionTime] = useState("0m");
 
   useEffect(() => {
@@ -365,9 +626,14 @@ function StatsPanel() {
       }
     };
     updateTime();
-    const interval = setInterval(() => { updateTime(); checkAchievements(); }, 10000);
+    const interval = setInterval(updateTime, 30000);
     return () => clearInterval(interval);
-  }, [sessionStartTime, checkAchievements]);
+  }, [sessionStartTime]);
+
+  // Check achievements only when command count changes
+  useEffect(() => {
+    checkAchievements();
+  }, [commandCount, checkAchievements]);
 
   const stats = systemStats || { cpu: 23, memoryUsed: 8_500_000_000, memoryTotal: 16_000_000_000, memoryPercent: 53, processes: 142 };
   const formatBytes = (bytes: number) => `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;

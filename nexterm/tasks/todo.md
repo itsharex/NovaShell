@@ -34,6 +34,19 @@
 - [x] Build Windows NSIS installer (NovaTerm_1.0.0_x64-setup.exe - 2.9MB)
 - [x] Build Windows MSI installer (NovaTerm_1.0.0_x64_en-US.msi - 3.6MB)
 
+- [x] Add system keychain credential storage (keyring crate, cross-platform)
+- [x] Add debug console with log monitoring, level filters, search, export
+- [x] Add debug log persistence to disk (JSONL, session files, 7-day rotation)
+- [x] Add snippet command sequences (multi-line, shell-native && / ; operators)
+- [x] Deep performance optimization: individual Zustand selectors across all components
+- [x] React.memo for App children (TerminalPanel, TabBar, StatusBar)
+- [x] useMemo for filtered debug logs and level counts
+- [x] Async debug log parsing via requestIdleCallback (non-blocking)
+- [x] Reduce timer intervals (clock, stats, git branch, session time)
+- [x] Move achievement checks from timer to commandCount-driven useEffect
+
+- [x] Auto-update system: signing keys, UpdateNotification component, CI/CD with latest.json
+
 ## Pending
 - [ ] Code signing for Windows (requires certificate)
 - [ ] Code signing for macOS (requires Apple Developer account)

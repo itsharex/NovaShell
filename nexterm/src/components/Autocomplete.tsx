@@ -1,3 +1,5 @@
+import { memo } from "react";
+
 interface AutocompleteProps {
   suggestions: string[];
   onSelect: (cmd: string) => void;
@@ -5,7 +7,7 @@ interface AutocompleteProps {
   selectedIndex: number;
 }
 
-export function Autocomplete({ suggestions, onSelect, visible, selectedIndex }: AutocompleteProps) {
+export const Autocomplete = memo(function Autocomplete({ suggestions, onSelect, visible, selectedIndex }: AutocompleteProps) {
   if (!visible || suggestions.length === 0) return null;
 
   return (
@@ -22,4 +24,4 @@ export function Autocomplete({ suggestions, onSelect, visible, selectedIndex }: 
       ))}
     </div>
   );
-}
+});

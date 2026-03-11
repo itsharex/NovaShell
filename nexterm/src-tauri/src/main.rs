@@ -1,6 +1,9 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod keychain_manager;
+mod log_manager;
 mod pty_manager;
+mod ssh_manager;
 mod system_info;
 
 use serde::{Deserialize, Serialize};
@@ -10,6 +13,10 @@ use tauri::State;
 
 pub struct AppState {
     pub sessions: Mutex<HashMap<String, pty_manager::PtySession>>,
+    pub ssh_sessions: Mutex<HashMap<String, ssh_manager::SshSession>>,
+    pub system: Mutex<sysinfo::System>,
+    pub cached_path_commands: Mutex<Option<Vec<String>>>,
+    pub log_manager: Mutex<log_manager::LogManager>,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -129,8 +136,10 @@ fn close_pty_session(
 }
 
 #[tauri::command]
-fn get_system_info() -> system_info::SystemStats {
-    system_info::get_stats()
+fn get_system_info(state: State<'_, AppState>) -> Result<system_info::SystemStats, String> {
+    let mut sys = state.system.lock()
+        .map_err(|e| format!("System lock error: {}", e))?;
+    Ok(system_info::get_stats(&mut sys))
 }
 
 #[tauri::command]
@@ -208,7 +217,7 @@ fn read_file_preview(path: String) -> Result<String, String> {
 }
 
 #[tauri::command]
-fn get_command_suggestions(prefix: String) -> Vec<String> {
+fn get_command_suggestions(prefix: String, state: State<'_, AppState>) -> Vec<String> {
     let mut suggestions = Vec::new();
 
     let common_commands = [
@@ -232,14 +241,16 @@ fn get_command_suggestions(prefix: String) -> Vec<String> {
         }
     }
 
-    if let Ok(path_var) = std::env::var("PATH") {
-        let separator = if cfg!(windows) { ';' } else { ':' };
-        for dir in path_var.split(separator) {
-            if let Ok(entries) = std::fs::read_dir(dir) {
-                for entry in entries.flatten() {
-                    let name = entry.file_name().to_string_lossy().to_string();
-                    let name_lower = name.to_lowercase();
-                    if name_lower.starts_with(&prefix_lower) && suggestions.len() < 20 {
+    // Use cached PATH commands or build cache on first call
+    let mut cache = state.cached_path_commands.lock().unwrap_or_else(|e| e.into_inner());
+    if cache.is_none() {
+        let mut path_cmds = Vec::new();
+        if let Ok(path_var) = std::env::var("PATH") {
+            let separator = if cfg!(windows) { ';' } else { ':' };
+            for dir in path_var.split(separator) {
+                if let Ok(entries) = std::fs::read_dir(dir) {
+                    for entry in entries.flatten() {
+                        let name = entry.file_name().to_string_lossy().to_string();
                         let clean_name = if cfg!(windows) {
                             name.strip_suffix(".exe")
                                 .or_else(|| name.strip_suffix(".cmd"))
@@ -249,10 +260,22 @@ fn get_command_suggestions(prefix: String) -> Vec<String> {
                         } else {
                             name.clone()
                         };
-                        if !suggestions.contains(&clean_name) {
-                            suggestions.push(clean_name);
+                        if !path_cmds.contains(&clean_name) {
+                            path_cmds.push(clean_name);
                         }
                     }
+                }
+            }
+        }
+        path_cmds.sort();
+        *cache = Some(path_cmds);
+    }
+
+    if let Some(ref path_cmds) = *cache {
+        for cmd in path_cmds {
+            if cmd.to_lowercase().starts_with(&prefix_lower) && suggestions.len() < 20 {
+                if !suggestions.contains(cmd) {
+                    suggestions.push(cmd.clone());
                 }
             }
         }
@@ -263,6 +286,168 @@ fn get_command_suggestions(prefix: String) -> Vec<String> {
     suggestions
 }
 
+#[tauri::command]
+async fn ssh_connect(
+    host: String,
+    port: u16,
+    username: String,
+    password: Option<String>,
+    private_key: Option<String>,
+    state: State<'_, AppState>,
+    app_handle: tauri::AppHandle,
+) -> Result<String, String> {
+    let session_id = uuid::Uuid::new_v4().to_string();
+    let session = ssh_manager::SshSession::new(
+        &host,
+        port,
+        &username,
+        password.as_deref(),
+        private_key.as_deref(),
+        &session_id,
+        app_handle,
+    )?;
+
+    state.ssh_sessions.lock()
+        .map_err(|e| format!("SSH session lock error: {}", e))?
+        .insert(session_id.clone(), session);
+
+    Ok(session_id)
+}
+
+#[tauri::command]
+fn ssh_write(
+    session_id: String,
+    data: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let sessions = state.ssh_sessions.lock()
+        .map_err(|e| format!("SSH session lock error: {}", e))?;
+    if let Some(session) = sessions.get(&session_id) {
+        session.write(data.as_bytes())
+    } else {
+        Err(format!("SSH session '{}' not found", session_id))
+    }
+}
+
+#[tauri::command]
+fn ssh_resize(
+    session_id: String,
+    cols: u32,
+    rows: u32,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let sessions = state.ssh_sessions.lock()
+        .map_err(|e| format!("SSH session lock error: {}", e))?;
+    if let Some(session) = sessions.get(&session_id) {
+        session.resize(cols, rows)
+    } else {
+        Err(format!("SSH session '{}' not found", session_id))
+    }
+}
+
+#[tauri::command]
+fn ssh_disconnect(
+    session_id: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let mut sessions = state.ssh_sessions.lock()
+        .map_err(|e| format!("SSH session lock error: {}", e))?;
+    if sessions.remove(&session_id).is_some() {
+        Ok(())
+    } else {
+        Err(format!("SSH session '{}' not found", session_id))
+    }
+}
+
+#[tauri::command]
+async fn ssh_test_connection(
+    host: String,
+    port: u16,
+    username: String,
+    password: Option<String>,
+    private_key: Option<String>,
+) -> Result<String, String> {
+    ssh_manager::test_ssh_connection(
+        &host,
+        port,
+        &username,
+        password.as_deref(),
+        private_key.as_deref(),
+    )
+}
+
+#[tauri::command]
+fn debug_log_save(
+    entries: Vec<log_manager::LogEntry>,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let mgr = state.log_manager.lock()
+        .map_err(|e| format!("Log lock error: {}", e))?;
+    mgr.append_batch(&entries)
+}
+
+#[tauri::command]
+fn debug_log_list_sessions(
+    state: State<'_, AppState>,
+) -> Result<Vec<log_manager::LogSessionInfo>, String> {
+    let mgr = state.log_manager.lock()
+        .map_err(|e| format!("Log lock error: {}", e))?;
+    mgr.list_sessions()
+}
+
+#[tauri::command]
+fn debug_log_load_session(
+    filename: String,
+    state: State<'_, AppState>,
+) -> Result<Vec<log_manager::LogEntry>, String> {
+    let mgr = state.log_manager.lock()
+        .map_err(|e| format!("Log lock error: {}", e))?;
+    mgr.load_session(&filename)
+}
+
+#[tauri::command]
+fn debug_log_delete_session(
+    filename: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let mgr = state.log_manager.lock()
+        .map_err(|e| format!("Log lock error: {}", e))?;
+    mgr.delete_session(&filename)
+}
+
+#[tauri::command]
+fn debug_log_cleanup(
+    state: State<'_, AppState>,
+) -> Result<u32, String> {
+    let mgr = state.log_manager.lock()
+        .map_err(|e| format!("Log lock error: {}", e))?;
+    mgr.cleanup_old()
+}
+
+#[tauri::command]
+fn debug_log_get_dir(
+    state: State<'_, AppState>,
+) -> Result<String, String> {
+    let mgr = state.log_manager.lock()
+        .map_err(|e| format!("Log lock error: {}", e))?;
+    Ok(mgr.get_log_dir())
+}
+
+#[tauri::command]
+fn keychain_save_password(connection_id: String, password: String) -> Result<(), String> {
+    keychain_manager::save_password(&connection_id, &password)
+}
+
+#[tauri::command]
+fn keychain_get_password(connection_id: String) -> Result<Option<String>, String> {
+    keychain_manager::get_password(&connection_id)
+}
+
+#[tauri::command]
+fn keychain_delete_password(connection_id: String) -> Result<(), String> {
+    keychain_manager::delete_password(&connection_id)
+}
+
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
@@ -271,6 +456,10 @@ fn main() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(AppState {
             sessions: Mutex::new(HashMap::new()),
+            ssh_sessions: Mutex::new(HashMap::new()),
+            system: Mutex::new(sysinfo::System::new_all()),
+            cached_path_commands: Mutex::new(None),
+            log_manager: Mutex::new(log_manager::LogManager::new()),
         })
         .invoke_handler(tauri::generate_handler![
             get_available_shells,
@@ -283,6 +472,20 @@ fn main() {
             list_directory,
             read_file_preview,
             get_command_suggestions,
+            ssh_connect,
+            ssh_write,
+            ssh_resize,
+            ssh_disconnect,
+            ssh_test_connection,
+            keychain_save_password,
+            keychain_get_password,
+            keychain_delete_password,
+            debug_log_save,
+            debug_log_list_sessions,
+            debug_log_load_session,
+            debug_log_delete_session,
+            debug_log_cleanup,
+            debug_log_get_dir,
         ])
         .run(tauri::generate_context!())
         .expect("error while running NovaTerm");

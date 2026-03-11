@@ -93,9 +93,12 @@ jobs:
           ls public/fonts/*.woff2
           ls src-tauri/icons/icon.ico src-tauri/icons/icon.icns src-tauri/icons/icon.png
 
-      - name: Build Tauri app
+      - name: Build Tauri app (signed for updater)
         working-directory: nexterm
         shell: bash
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: npx tauri build --target ${{ matrix.target }}
 
       - name: Upload Windows artifacts
@@ -105,7 +108,9 @@ jobs:
           name: windows-installers
           path: |
             nexterm/src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe
+            nexterm/src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe.sig
             nexterm/src-tauri/target/x86_64-pc-windows-msvc/release/bundle/msi/*.msi
+            nexterm/src-tauri/target/x86_64-pc-windows-msvc/release/bundle/msi/*.msi.sig
 
       - name: Upload macOS ARM artifacts
         if: matrix.target == 'aarch64-apple-darwin'
@@ -113,6 +118,8 @@ jobs:
         with:
           name: macos-arm-installers
           path: |
+            nexterm/src-tauri/target/aarch64-apple-darwin/release/bundle/macos/*.app.tar.gz
+            nexterm/src-tauri/target/aarch64-apple-darwin/release/bundle/macos/*.app.tar.gz.sig
             nexterm/src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/*.dmg
 
       - name: Upload macOS Intel artifacts
@@ -121,6 +128,8 @@ jobs:
         with:
           name: macos-intel-installers
           path: |
+            nexterm/src-tauri/target/x86_64-apple-darwin/release/bundle/macos/*.app.tar.gz
+            nexterm/src-tauri/target/x86_64-apple-darwin/release/bundle/macos/*.app.tar.gz.sig
             nexterm/src-tauri/target/x86_64-apple-darwin/release/bundle/dmg/*.dmg
 
       - name: Upload Linux artifacts
@@ -129,9 +138,10 @@ jobs:
         with:
           name: linux-installers
           path: |
+            nexterm/src-tauri/target/x86_64-unknown-linux-gnu/release/bundle/appimage/*.AppImage
+            nexterm/src-tauri/target/x86_64-unknown-linux-gnu/release/bundle/appimage/*.AppImage.sig
             nexterm/src-tauri/target/x86_64-unknown-linux-gnu/release/bundle/deb/*.deb
             nexterm/src-tauri/target/x86_64-unknown-linux-gnu/release/bundle/rpm/*.rpm
-            nexterm/src-tauri/target/x86_64-unknown-linux-gnu/release/bundle/appimage/*.AppImage
 
   release:
     needs: build
@@ -140,6 +150,13 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/v')
 
     steps:
+      - name: Checkout (for version)
+        uses: actions/checkout@v4
+
+      - name: Get version from tag
+        id: version
+        run: echo "version=${GITHUB_REF_NAME#v}" >> $GITHUB_OUTPUT
+
       - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
@@ -147,7 +164,82 @@ jobs:
           merge-multiple: false
 
       - name: List all artifacts
-        run: find artifacts -type f | head -50
+        run: find artifacts -type f | sort
+
+      - name: Generate latest.json for Tauri updater
+        shell: bash
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          TAG="${GITHUB_REF_NAME}"
+          REPO="FomoDonkey/NovaShell"
+          BASE_URL="https://github.com/${REPO}/releases/download/${TAG}"
+          DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+          # Find signature files and read them
+          WIN_NSIS_SIG=""
+          MACOS_ARM_SIG=""
+          MACOS_INTEL_SIG=""
+          LINUX_SIG=""
+
+          # Windows NSIS signature
+          SIG_FILE=$(find artifacts/windows-installers -name "*.exe.sig" 2>/dev/null | head -1)
+          if [ -f "$SIG_FILE" ]; then
+            WIN_NSIS_SIG=$(cat "$SIG_FILE")
+          fi
+
+          # macOS ARM signature
+          SIG_FILE=$(find artifacts/macos-arm-installers -name "*.app.tar.gz.sig" 2>/dev/null | head -1)
+          if [ -f "$SIG_FILE" ]; then
+            MACOS_ARM_SIG=$(cat "$SIG_FILE")
+          fi
+
+          # macOS Intel signature
+          SIG_FILE=$(find artifacts/macos-intel-installers -name "*.app.tar.gz.sig" 2>/dev/null | head -1)
+          if [ -f "$SIG_FILE" ]; then
+            MACOS_INTEL_SIG=$(cat "$SIG_FILE")
+          fi
+
+          # Linux AppImage signature
+          SIG_FILE=$(find artifacts/linux-installers -name "*.AppImage.sig" 2>/dev/null | head -1)
+          if [ -f "$SIG_FILE" ]; then
+            LINUX_SIG=$(cat "$SIG_FILE")
+          fi
+
+          # Find actual filenames
+          WIN_NSIS=$(find artifacts/windows-installers -name "*.exe" ! -name "*.sig" 2>/dev/null | head -1 | xargs -r basename)
+          MACOS_ARM_TAR=$(find artifacts/macos-arm-installers -name "*.app.tar.gz" ! -name "*.sig" 2>/dev/null | head -1 | xargs -r basename)
+          MACOS_INTEL_TAR=$(find artifacts/macos-intel-installers -name "*.app.tar.gz" ! -name "*.sig" 2>/dev/null | head -1 | xargs -r basename)
+          LINUX_APPIMAGE=$(find artifacts/linux-installers -name "*.AppImage" ! -name "*.sig" 2>/dev/null | head -1 | xargs -r basename)
+
+          # Build the JSON
+          cat > latest.json << ENDJSON
+          {
+            "version": "${VERSION}",
+            "notes": "NovaTerm ${TAG} — see release notes for details.",
+            "pub_date": "${DATE}",
+            "platforms": {
+              "windows-x86_64": {
+                "signature": "${WIN_NSIS_SIG}",
+                "url": "${BASE_URL}/${WIN_NSIS}"
+              },
+              "darwin-aarch64": {
+                "signature": "${MACOS_ARM_SIG}",
+                "url": "${BASE_URL}/${MACOS_ARM_TAR}"
+              },
+              "darwin-x86_64": {
+                "signature": "${MACOS_INTEL_SIG}",
+                "url": "${BASE_URL}/${MACOS_INTEL_TAR}"
+              },
+              "linux-x86_64": {
+                "signature": "${LINUX_SIG}",
+                "url": "${BASE_URL}/${LINUX_APPIMAGE}"
+              }
+            }
+          }
+          ENDJSON
+
+          echo "Generated latest.json:"
+          cat latest.json
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
@@ -160,6 +252,7 @@ jobs:
             ## NovaTerm ${{ github.ref_name }}
 
             Download the installer for your platform below.
+            **Auto-update:** Existing installations will be notified automatically.
 
             ### Windows
             - `.exe` - NSIS installer (recommended)
@@ -177,8 +270,11 @@ jobs:
             artifacts/**/*.exe
             artifacts/**/*.msi
             artifacts/**/*.dmg
+            artifacts/**/*.app.tar.gz
             artifacts/**/*.deb
             artifacts/**/*.rpm
             artifacts/**/*.AppImage
+            artifacts/**/*.sig
+            latest.json
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

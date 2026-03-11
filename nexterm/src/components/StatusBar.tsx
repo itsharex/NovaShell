@@ -13,20 +13,36 @@ import {
 import { useAppStore } from "../store/appStore";
 
 export function StatusBar() {
-  const { tabs, activeTabId, theme, setSystemStats, gitBranch, setGitBranch, splitMode, setSplitMode } = useAppStore();
+  const activeTabId = useAppStore((s) => s.activeTabId);
+  const tabs = useAppStore((s) => s.tabs);
+  const theme = useAppStore((s) => s.theme);
+  const setSystemStats = useAppStore((s) => s.setSystemStats);
+  const gitBranch = useAppStore((s) => s.gitBranch);
+  const setGitBranch = useAppStore((s) => s.setGitBranch);
+  const splitMode = useAppStore((s) => s.splitMode);
+  const setSplitMode = useAppStore((s) => s.setSplitMode);
+
   const [time, setTime] = useState(new Date());
 
   const activeTab = tabs.find((t) => t.id === activeTabId);
 
+  // Clock - update every 30 seconds (HH:MM is enough for a status bar)
   useEffect(() => {
-    const timer = setInterval(() => setTime(new Date()), 1000);
+    const timer = setInterval(() => setTime(new Date()), 30000);
     return () => clearInterval(timer);
   }, []);
 
+  // Git branch + system stats - single effect
   useEffect(() => {
+    let invokeCache: typeof import("@tauri-apps/api/core")["invoke"] | null = null;
+    const getInvoke = async () => {
+      if (!invokeCache) invokeCache = (await import("@tauri-apps/api/core")).invoke;
+      return invokeCache;
+    };
+
     const fetchBranch = async () => {
       try {
-        const { invoke } = await import("@tauri-apps/api/core");
+        const invoke = await getInvoke();
         const branch = await invoke<string>("get_git_branch", { path: null });
         setGitBranch(branch);
       } catch {
@@ -34,14 +50,11 @@ export function StatusBar() {
       }
     };
     fetchBranch();
-    const interval = setInterval(fetchBranch, 10000);
-    return () => clearInterval(interval);
-  }, [setGitBranch]);
+    const branchInterval = setInterval(fetchBranch, 30000);
 
-  useEffect(() => {
     const fetchStats = async () => {
       try {
-        const { invoke } = await import("@tauri-apps/api/core");
+        const invoke = await getInvoke();
         const stats = await invoke<{
           cpu_usage: number;
           memory_used: number;
@@ -67,9 +80,9 @@ export function StatusBar() {
       }
     };
     fetchStats();
-    const interval = setInterval(fetchStats, 5000);
-    return () => clearInterval(interval);
-  }, [setSystemStats]);
+    const statsInterval = setInterval(fetchStats, 30000);
+    return () => { clearInterval(branchInterval); clearInterval(statsInterval); };
+  }, [setGitBranch, setSystemStats]);
 
   const shellLabels: Record<string, string> = {
     powershell: "PowerShell",
@@ -122,7 +135,7 @@ export function StatusBar() {
         </div>
         <div className="statusbar-item">
           <Clock size={12} />
-          <span>{time.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</span>
+          <span>{time.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
         </div>
       </div>
     </div>

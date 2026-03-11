@@ -13,9 +13,10 @@ pub struct SystemStats {
     pub uptime: u64,
 }
 
-pub fn get_stats() -> SystemStats {
-    let mut sys = System::new_all();
-    sys.refresh_all();
+pub fn get_stats(sys: &mut System) -> SystemStats {
+    sys.refresh_cpu();
+    sys.refresh_memory();
+    sys.refresh_processes();
 
     let memory_used = sys.used_memory();
     let memory_total = sys.total_memory();

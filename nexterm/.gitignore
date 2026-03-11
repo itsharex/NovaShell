@@ -60,8 +60,9 @@ pids
 # Task tracking (local only)
 tasks/
 
-# Tauri signing keys
-*.key
+# Tauri signing keys (private key must NEVER be committed)
+keys/*.key
+!keys/*.key.pub
 tauri-signing-*
 
 FUNCIONALIDADES.md

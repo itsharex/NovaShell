@@ -1,0 +1,110 @@
+use portable_pty::{native_pty_system, CommandBuilder, MasterPty, PtySize};
+use std::io::{Read, Write};
+use std::sync::{Arc, Mutex};
+use std::thread::JoinHandle;
+use tauri::Emitter;
+
+pub struct PtySession {
+    master: Arc<Mutex<Box<dyn MasterPty + Send>>>,
+    writer: Arc<Mutex<Box<dyn Write + Send>>>,
+    _reader_thread: Option<JoinHandle<()>>,
+    running: Arc<Mutex<bool>>,
+}
+
+impl Drop for PtySession {
+    fn drop(&mut self) {
+        if let Ok(mut running) = self.running.lock() {
+            *running = false;
+        }
+    }
+}
+
+impl PtySession {
+    pub fn new(
+        shell_path: &str,
+        session_id: &str,
+        app_handle: tauri::AppHandle,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
+        let pty_system = native_pty_system();
+
+        let pair = pty_system.openpty(PtySize {
+            rows: 24,
+            cols: 80,
+            pixel_width: 0,
+            pixel_height: 0,
+        })?;
+
+        let mut cmd = CommandBuilder::new(shell_path);
+        let cwd = dirs::home_dir()
+            .or_else(|| std::env::current_dir().ok())
+            .unwrap_or_else(|| std::path::PathBuf::from("."));
+        cmd.cwd(cwd);
+
+        cmd.env("TERM", "xterm-256color");
+        cmd.env("COLORTERM", "truecolor");
+
+        let _child = pair.slave.spawn_command(cmd)?;
+        drop(pair.slave);
+
+        let mut reader = pair.master.try_clone_reader()?;
+        let writer = pair.master.take_writer()?;
+
+        let running = Arc::new(Mutex::new(true));
+        let running_clone = Arc::clone(&running);
+        let sid = session_id.to_string();
+
+        let reader_thread = std::thread::spawn(move || {
+            let mut buf = [0u8; 4096];
+            loop {
+                if let Ok(r) = running_clone.lock() {
+                    if !*r {
+                        break;
+                    }
+                }
+
+                match reader.read(&mut buf) {
+                    Ok(0) => {
+                        let _ = app_handle.emit(&format!("pty-exit-{}", sid), ());
+                        break;
+                    }
+                    Ok(n) => {
+                        let data = String::from_utf8_lossy(&buf[..n]).to_string();
+                        let _ = app_handle.emit(&format!("pty-data-{}", sid), data);
+                    }
+                    Err(e) => {
+                        let msg = format!("PTY read error: {}", e);
+                        let _ = app_handle.emit(&format!("pty-error-{}", sid), msg);
+                        break;
+                    }
+                }
+            }
+        });
+
+        Ok(PtySession {
+            master: Arc::new(Mutex::new(pair.master)),
+            writer: Arc::new(Mutex::new(writer)),
+            _reader_thread: Some(reader_thread),
+            running,
+        })
+    }
+
+    pub fn write(&self, data: &[u8]) -> Result<(), Box<dyn std::error::Error>> {
+        let mut writer = self.writer.lock()
+            .map_err(|e| format!("Writer lock poisoned: {}", e))?;
+        writer.write_all(data)?;
+        writer.flush()?;
+        Ok(())
+    }
+
+    pub fn resize(&self, cols: u16, rows: u16) -> Result<(), Box<dyn std::error::Error>> {
+        let master = self.master.lock()
+            .map_err(|e| format!("Master lock poisoned: {}", e))?;
+        master.resize(PtySize {
+            rows,
+            cols,
+            pixel_width: 0,
+            pixel_height: 0,
+        })?;
+        Ok(())
+    }
+}

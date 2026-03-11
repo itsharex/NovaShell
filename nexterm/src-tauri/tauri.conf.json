@@ -1,0 +1,103 @@
+{
+  "$schema": "https://raw.githubusercontent.com/tauri-apps/tauri/dev/packages/api/schema.json",
+  "productName": "NovaTerm",
+  "version": "1.0.0",
+  "identifier": "com.novaterm.terminal",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://localhost:5173",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "NovaTerm",
+        "width": 1200,
+        "height": 800,
+        "minWidth": 600,
+        "minHeight": 400,
+        "resizable": true,
+        "fullscreen": false,
+        "decorations": false,
+        "transparent": true,
+        "center": true
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' asset: https://asset.localhost"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["nsis", "msi", "dmg", "app", "deb", "rpm", "appimage"],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "category": "DeveloperTool",
+    "shortDescription": "Modern terminal emulator with tabs, themes, and plugins",
+    "longDescription": "NovaTerm is a modern, cross-platform terminal emulator built with Tauri. Features include multiple tabs, split panes, 4 themes (Dark, Light, Cyberpunk, Retro), command autocomplete, snippets, file preview, system stats, and an achievement system.",
+    "copyright": "Copyright © 2024 NovaTerm Team",
+    "publisher": "NovaTerm",
+    "homepage": "",
+    "resources": [],
+    "windows": {
+      "certificateThumbprint": null,
+      "digestAlgorithm": "sha256",
+      "timestampUrl": "",
+      "webviewInstallMode": {
+        "type": "downloadBootstrapper"
+      },
+      "allowDowngrades": true,
+      "nsis": {
+        "displayLanguageSelector": true,
+        "languages": ["English", "Spanish"],
+        "installMode": "both",
+        "installerIcon": "icons/icon.ico"
+      }
+    },
+    "macOS": {
+      "frameworks": [],
+      "minimumSystemVersion": "10.15",
+      "dmg": {
+        "appPosition": {
+          "x": 180,
+          "y": 170
+        },
+        "applicationFolderPosition": {
+          "x": 480,
+          "y": 170
+        },
+        "windowSize": {
+          "width": 660,
+          "height": 400
+        }
+      }
+    },
+    "linux": {
+      "deb": {
+        "depends": ["libwebkit2gtk-4.1-0", "libgtk-3-0"],
+        "section": "utils",
+        "priority": "optional"
+      },
+      "rpm": {
+        "release": "1"
+      },
+      "appimage": {
+        "bundleMediaFramework": true
+      }
+    }
+  },
+  "plugins": {
+    "updater": {
+      "active": false,
+      "dialog": true,
+      "pubkey": "",
+      "endpoints": []
+    }
+  }
+}

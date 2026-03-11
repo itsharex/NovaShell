@@ -1,0 +1,43 @@
+# NovaTerm - Tasks
+
+## Completed
+- [x] Create package.json with dependencies
+- [x] Create tsconfig.json and tsconfig.node.json
+- [x] Create vite.config.ts
+- [x] Create index.html entry point
+- [x] Create src/main.tsx React entry
+- [x] Create src/App.tsx main layout component
+- [x] Create src/store/appStore.ts Zustand global state
+- [x] Create component stubs: TitleBar, TabBar, TerminalPanel, Sidebar, StatusBar
+- [x] Create src/styles/global.css with theme styles
+- [x] Implement xterm.js terminal integration
+- [x] Set up Tauri backend
+- [x] Add get_git_branch Tauri command
+- [x] Add list_directory Tauri command
+- [x] Add read_file_preview Tauri command
+- [x] Add get_command_suggestions Tauri command
+- [x] Register all new commands in invoke_handler
+- [x] Configure Tauri bundling for Windows (NSIS + MSI)
+- [x] Configure Tauri bundling for macOS (DMG + .app)
+- [x] Configure Tauri bundling for Linux (deb + rpm + AppImage)
+- [x] Generate proper app icons (all sizes + ICO + ICNS)
+- [x] Bundle JetBrains Mono font locally (offline-ready)
+- [x] Add CSP security policy
+- [x] Add release profile optimization (LTO, strip, codegen-units=1)
+- [x] Add tauri-plugin-single-instance (prevent duplicate windows)
+- [x] Add tauri-plugin-updater (auto-update framework)
+- [x] Add tauri-plugin-process
+- [x] Create NSIS custom installer script (desktop shortcut + context menu)
+- [x] Create BUILD.md with full packaging instructions
+- [x] Create icon generator script
+- [x] Rename product to NovaTerm
+- [x] Build Windows NSIS installer (NovaTerm_1.0.0_x64-setup.exe - 2.9MB)
+- [x] Build Windows MSI installer (NovaTerm_1.0.0_x64_en-US.msi - 3.6MB)
+
+## Pending
+- [ ] Code signing for Windows (requires certificate)
+- [ ] Code signing for macOS (requires Apple Developer account)
+- [ ] Set up auto-update server endpoints
+- [ ] Build on macOS (requires macOS machine)
+- [ ] Build on Linux (requires Linux machine)
+- [ ] CI/CD pipeline for automated cross-platform builds (GitHub Actions)

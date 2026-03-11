@@ -831,6 +831,11 @@ export function parseTerminalOutput(
     if (/^\w+@[\w.-]+[:\s~].*\$\s*$/.test(trimmed)) continue;
 
     const level = detectLevel(trimmed);
+
+    // Only log meaningful entries — skip plain "output" level to avoid noise
+    // Users see output in the terminal already; debug console is for errors/warnings/logs
+    if (level === "output") continue;
+
     addLog({ level, message: trimmed, source });
   }
 }

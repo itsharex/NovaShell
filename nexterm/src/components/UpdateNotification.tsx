@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, memo } from "react";
+import { useState, useEffect, useCallback, useRef, memo } from "react";
 import { Download, X, RefreshCw, CheckCircle, AlertCircle, Loader } from "lucide-react";
 
 type UpdateStatus =
@@ -26,6 +26,7 @@ export const UpdateNotification = memo(function UpdateNotification() {
   const [status, setStatus] = useState<UpdateStatus>({ phase: "idle" });
   const [dismissed, setDismissed] = useState(false);
   const [minimized, setMinimized] = useState(false);
+  const dismissTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const checkForUpdates = useCallback(async (silent = true) => {
     try {
@@ -45,7 +46,7 @@ export const UpdateNotification = memo(function UpdateNotification() {
         setStatus({ phase: "up-to-date" });
         if (silent) {
           // Auto-dismiss "up to date" after 3s in silent mode
-          setTimeout(() => setStatus({ phase: "idle" }), 3000);
+          dismissTimerRef.current = setTimeout(() => setStatus({ phase: "idle" }), 3000);
         }
       }
     } catch (e) {
@@ -104,7 +105,11 @@ export const UpdateNotification = memo(function UpdateNotification() {
     const timer = setTimeout(() => checkForUpdates(true), 30000);
     // Then check every 4 hours
     const interval = setInterval(() => checkForUpdates(true), 4 * 60 * 60 * 1000);
-    return () => { clearTimeout(timer); clearInterval(interval); };
+    return () => {
+      clearTimeout(timer);
+      clearInterval(interval);
+      if (dismissTimerRef.current) clearTimeout(dismissTimerRef.current);
+    };
   }, [checkForUpdates]);
 
   // Don't render anything if idle or dismissed

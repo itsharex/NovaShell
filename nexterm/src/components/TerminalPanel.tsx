@@ -136,7 +136,8 @@ export function TerminalPanel() {
   useEffect(() => {
     const ref = terminalsRef.current.get(activeTabId);
     if (ref) {
-      setTimeout(() => ref.fitAddon.fit(), 50);
+      const timer = setTimeout(() => ref.fitAddon.fit(), 50);
+      return () => clearTimeout(timer);
     }
   }, [activeTabId, splitMode]);
 

@@ -30,7 +30,7 @@ const iconMap: Record<string, typeof Terminal> = {
 };
 
 export function AchievementToast() {
-  const { achievements } = useAppStore();
+  const achievements = useAppStore((s) => s.achievements);
   const [toast, setToast] = useState<Achievement | null>(null);
   const [shown, setShown] = useState<Set<string>>(new Set());
 
@@ -41,7 +41,8 @@ export function AchievementToast() {
     if (newlyUnlocked) {
       setToast(newlyUnlocked);
       setShown((prev) => new Set(prev).add(newlyUnlocked.id));
-      setTimeout(() => setToast(null), 4000);
+      const timer = setTimeout(() => setToast(null), 4000);
+      return () => clearTimeout(timer);
     }
   }, [achievements, shown]);
 

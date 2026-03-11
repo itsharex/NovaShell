@@ -42,10 +42,15 @@ fn get_available_shells() -> Vec<ShellInfo> {
             path: "cmd.exe".to_string(),
             available: true,
         });
-        if std::path::Path::new("C:\\Program Files\\Git\\bin\\bash.exe").exists() {
+        // Check common Git Bash install locations
+        let git_bash_paths = [
+            "C:\\Program Files\\Git\\bin\\bash.exe",
+            "C:\\Program Files (x86)\\Git\\bin\\bash.exe",
+        ];
+        if let Some(path) = git_bash_paths.iter().find(|p| std::path::Path::new(p).exists()) {
             shells.push(ShellInfo {
                 name: "Git Bash".to_string(),
-                path: "C:\\Program Files\\Git\\bin\\bash.exe".to_string(),
+                path: path.to_string(),
                 available: true,
             });
         }
@@ -146,14 +151,23 @@ fn get_system_info(state: State<'_, AppState>) -> Result<system_info::SystemStat
 fn get_git_branch(path: Option<String>) -> Result<String, String> {
     let dir = path
         .map(std::path::PathBuf::from)
-        .or_else(|| dirs::home_dir())
+        .or_else(|| std::env::current_dir().ok())
         .unwrap_or_else(|| std::path::PathBuf::from("."));
 
-    let output = std::process::Command::new("git")
-        .args(["rev-parse", "--abbrev-ref", "HEAD"])
+    let mut cmd = std::process::Command::new("git");
+    cmd.args(["rev-parse", "--abbrev-ref", "HEAD"])
         .current_dir(&dir)
-        .output()
-        .map_err(|e| e.to_string())?;
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
+
+    // Prevent console window flash on Windows
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+    }
+
+    let output = cmd.output().map_err(|e| e.to_string())?;
 
     if output.status.success() {
         Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
@@ -242,7 +256,10 @@ fn get_command_suggestions(prefix: String, state: State<'_, AppState>) -> Vec<St
     }
 
     // Use cached PATH commands or build cache on first call
-    let mut cache = state.cached_path_commands.lock().unwrap_or_else(|e| e.into_inner());
+    let mut cache = match state.cached_path_commands.lock() {
+        Ok(c) => c,
+        Err(e) => e.into_inner(),
+    };
     if cache.is_none() {
         let mut path_cmds = Vec::new();
         if let Ok(path_var) = std::env::var("PATH") {

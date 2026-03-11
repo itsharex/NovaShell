@@ -337,7 +337,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     }),
 
   debugLogs: [],
-  debugEnabled: true,
+  debugEnabled: false,
   debugPersist: (() => {
     try { return localStorage.getItem("novaterm-debug-persist") !== "false"; } catch { return true; }
   })(),

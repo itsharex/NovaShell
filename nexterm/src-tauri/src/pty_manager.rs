@@ -16,6 +16,10 @@ impl Drop for PtySession {
         if let Ok(mut running) = self.running.lock() {
             *running = false;
         }
+        // Wait briefly for reader thread to finish
+        if let Some(handle) = self._reader_thread.take() {
+            let _ = handle.join();
+        }
     }
 }
 

@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use sysinfo::System;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct SystemStats {
@@ -13,10 +14,24 @@ pub struct SystemStats {
     pub uptime: u64,
 }
 
+// Refresh process count only every 5th call (~2.5 min at 30s intervals)
+// to avoid the heavy enumerate-all-processes syscall on every poll
+static CALL_COUNTER: AtomicUsize = AtomicUsize::new(0);
+static CACHED_PROCESS_COUNT: AtomicUsize = AtomicUsize::new(0);
+
 pub fn get_stats(sys: &mut System) -> SystemStats {
-    sys.refresh_cpu();
+    sys.refresh_cpu_usage();
     sys.refresh_memory();
-    sys.refresh_processes();
+
+    let count = CALL_COUNTER.fetch_add(1, Ordering::Relaxed);
+    let processes_count = if count % 5 == 0 {
+        sys.refresh_processes();
+        let n = sys.processes().len();
+        CACHED_PROCESS_COUNT.store(n, Ordering::Relaxed);
+        n
+    } else {
+        CACHED_PROCESS_COUNT.load(Ordering::Relaxed)
+    };
 
     let memory_used = sys.used_memory();
     let memory_total = sys.total_memory();
@@ -30,7 +45,7 @@ pub fn get_stats(sys: &mut System) -> SystemStats {
         } else {
             0.0
         },
-        processes_count: sys.processes().len(),
+        processes_count,
         hostname: System::host_name().unwrap_or_default(),
         os_name: System::long_os_version().unwrap_or_default(),
         uptime: System::uptime(),

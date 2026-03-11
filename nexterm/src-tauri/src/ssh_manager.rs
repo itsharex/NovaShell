@@ -17,6 +17,10 @@ impl Drop for SshSession {
         if let Ok(mut running) = self.running.lock() {
             *running = false;
         }
+        // Wait briefly for reader thread to finish
+        if let Some(handle) = self._reader_thread.take() {
+            let _ = handle.join();
+        }
         if let Ok(session) = self.session.lock() {
             let _ = session.disconnect(None, "Session closed", None);
         }
@@ -226,7 +230,7 @@ pub fn test_ssh_connection(
 
     if let Some(key_content) = private_key {
         let temp_dir = std::env::temp_dir();
-        let key_path = temp_dir.join("novaterm_ssh_test_key");
+        let key_path = temp_dir.join(format!("novaterm_ssh_test_{}", uuid::Uuid::new_v4()));
         std::fs::write(&key_path, key_content)
             .map_err(|e| format!("Failed to write temp key: {}", e))?;
 

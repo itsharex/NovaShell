@@ -1,4 +1,5 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
+import { createPortal } from "react-dom";
 import { Plus, X } from "lucide-react";
 import { useAppStore } from "../store/appStore";
 
@@ -9,6 +10,13 @@ const shellIcons: Record<string, string> = {
   zsh: "%",
 };
 
+const shells = [
+  { id: "powershell", name: "PowerShell", icon: "PS" },
+  { id: "cmd", name: "CMD", icon: ">_" },
+  { id: "bash", name: "Git Bash", icon: "$" },
+  { id: "wsl", name: "WSL", icon: "~" },
+];
+
 export function TabBar() {
   const tabs = useAppStore((s) => s.tabs);
   const activeTabId = useAppStore((s) => s.activeTabId);
@@ -16,24 +24,27 @@ export function TabBar() {
   const closeTab = useAppStore((s) => s.closeTab);
   const setActiveTab = useAppStore((s) => s.setActiveTab);
   const [showShellMenu, setShowShellMenu] = useState(false);
-  const menuRef = useRef<HTMLDivElement>(null);
+  const [menuPos, setMenuPos] = useState({ top: 0, left: 0 });
+  const btnRef = useRef<HTMLButtonElement>(null);
 
+  // Close menu on outside click
   useEffect(() => {
+    if (!showShellMenu) return;
     const handleClick = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
-        setShowShellMenu(false);
-      }
+      if (btnRef.current && btnRef.current.contains(e.target as Node)) return;
+      setShowShellMenu(false);
     };
     document.addEventListener("mousedown", handleClick);
     return () => document.removeEventListener("mousedown", handleClick);
-  }, []);
+  }, [showShellMenu]);
 
-  const shells = [
-    { id: "powershell", name: "PowerShell", icon: "PS" },
-    { id: "cmd", name: "CMD", icon: ">_" },
-    { id: "bash", name: "Git Bash", icon: "$" },
-    { id: "wsl", name: "WSL", icon: "~" },
-  ];
+  const toggleMenu = useCallback(() => {
+    if (!showShellMenu && btnRef.current) {
+      const rect = btnRef.current.getBoundingClientRect();
+      setMenuPos({ top: rect.bottom + 4, left: rect.left });
+    }
+    setShowShellMenu((v) => !v);
+  }, [showShellMenu]);
 
   return (
     <div className="tab-bar">
@@ -60,32 +71,40 @@ export function TabBar() {
           )}
         </button>
       ))}
-      <div className="shell-selector" ref={menuRef}>
-        <button
-          className="tab-add"
-          onClick={() => setShowShellMenu(!showShellMenu)}
-          title="New Tab"
+      <button
+        ref={btnRef}
+        className="tab-add"
+        onClick={toggleMenu}
+        title="New Tab"
+      >
+        <Plus size={14} />
+      </button>
+      {showShellMenu && createPortal(
+        <div
+          className="shell-dropdown animate-slide-up"
+          style={{
+            position: "fixed",
+            top: menuPos.top,
+            left: menuPos.left,
+            zIndex: 10000,
+          }}
         >
-          <Plus size={14} />
-        </button>
-        {showShellMenu && (
-          <div className="shell-dropdown animate-slide-up">
-            {shells.map((shell) => (
-              <button
-                key={shell.id}
-                className="shell-option"
-                onClick={() => {
-                  addTab(shell.id);
-                  setShowShellMenu(false);
-                }}
-              >
-                <span style={{ fontWeight: 700, width: 24 }}>{shell.icon}</span>
-                {shell.name}
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
+          {shells.map((shell) => (
+            <button
+              key={shell.id}
+              className="shell-option"
+              onClick={() => {
+                addTab(shell.id);
+                setShowShellMenu(false);
+              }}
+            >
+              <span style={{ fontWeight: 700, width: 24 }}>{shell.icon}</span>
+              {shell.name}
+            </button>
+          ))}
+        </div>,
+        document.body
+      )}
     </div>
   );
 }

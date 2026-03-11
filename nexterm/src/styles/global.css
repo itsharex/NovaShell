@@ -290,7 +290,7 @@ body {
   border-bottom: 1px solid var(--border-color);
   padding: 0 8px;
   gap: 2px;
-  overflow: visible;
+  overflow-x: auto;
   transition: var(--transition-normal);
 }
 
@@ -386,22 +386,13 @@ body {
   color: var(--accent-primary);
 }
 
-.shell-selector {
-  position: relative;
-}
-
 .shell-dropdown {
-  position: absolute;
-  top: 100%;
-  left: 0;
-  z-index: 100;
   min-width: 180px;
   background: var(--bg-secondary);
   border: 1px solid var(--border-color);
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-lg);
   padding: 4px;
-  margin-top: 4px;
 }
 
 .shell-option {

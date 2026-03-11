@@ -1,3 +1,16 @@
-
 # Claude Code
 .claude/
+
+# Build artifacts / installers (antivirus false positives)
+*.exe
+*.msi
+*.dmg
+*.AppImage
+*.deb
+*.rpm
+
+# Tauri build output
+nexterm/src-tauri/target/
+
+# Task tracking
+tasks/

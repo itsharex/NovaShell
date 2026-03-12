@@ -28,12 +28,11 @@ const debugParseQueue: Array<{ data: string; source: string }> = [];
 let debugParseScheduled = false;
 
 function queueDebugParse(data: string, source: string) {
-  const store = useAppStore.getState();
-  if (!store.debugEnabled) return;
+  if (!useAppStore.getState().debugEnabled) return;
   debugParseQueue.push({ data, source });
   if (!debugParseScheduled) {
     debugParseScheduled = true;
-    requestIdleCallback ? requestIdleCallback(flushDebugParse) : setTimeout(flushDebugParse, 50);
+    setTimeout(flushDebugParse, 200);
   }
 }
 
@@ -172,7 +171,7 @@ export function TerminalPanel() {
   // Debounced suggestion fetcher
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const fetchSuggestions = useCallback((prefix: string) => {
-    if (prefix.length < 1) {
+    if (prefix.length < 2) {
       setSuggestions([]);
       setShowAutocomplete(false);
       return;
@@ -186,17 +185,10 @@ export function TerminalPanel() {
         setSelectedSuggestion(0);
         setShowAutocomplete(result.length > 0);
       } catch {
-        const demoCommands = [
-          "help", "neofetch", "clear", "colors", "matrix", "theme", "date",
-          "git status", "git add", "git commit", "git push", "git pull",
-          "npm install", "npm run", "npm start", "docker ps", "docker images",
-        ];
-        const filtered = demoCommands.filter((c) => c.startsWith(prefix.toLowerCase()));
-        setSuggestions(filtered.slice(0, 10));
-        setSelectedSuggestion(0);
-        setShowAutocomplete(filtered.length > 0);
+        setSuggestions([]);
+        setShowAutocomplete(false);
       }
-    }, 150);
+    }, 300);
   }, []);
 
   useEffect(() => {
@@ -403,9 +395,14 @@ export function TerminalPanel() {
             // Control characters - ignore for buffer
           } else if (data >= " ") {
             ptyInputBuffer += data;
+            // Only suggest for first word of command (not arguments)
             const parts = ptyInputBuffer.split(/[|;&]/);
             const lastPart = parts[parts.length - 1].trim();
-            fetchSuggestions(lastPart);
+            if (!lastPart.includes(" ")) {
+              fetchSuggestions(lastPart);
+            } else {
+              setShowAutocomplete(false);
+            }
           }
         });
         disposables.push(dataDisposable);
@@ -508,15 +505,19 @@ export function TerminalPanel() {
   }, [tabs]);
 
   useEffect(() => {
+    let resizeTimer: ReturnType<typeof setTimeout> | null = null;
     const handleResize = () => {
-      terminalsRef.current.forEach((termRef) => {
-        termRef.fitAddon.fit();
-      });
+      if (resizeTimer) clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(() => {
+        terminalsRef.current.forEach((termRef) => {
+          termRef.fitAddon.fit();
+        });
+      }, 100);
     };
     const observer = new ResizeObserver(handleResize);
     const mainArea = document.querySelector(".terminal-panel");
     if (mainArea) observer.observe(mainArea);
-    return () => observer.disconnect();
+    return () => { observer.disconnect(); if (resizeTimer) clearTimeout(resizeTimer); };
   }, []);
 
   useEffect(() => {

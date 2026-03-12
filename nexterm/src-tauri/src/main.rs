@@ -506,19 +506,32 @@ fn run_command_output(command: String, args: Vec<String>) -> Result<String, Stri
         return Err(format!("Command '{}' is not in the allowed list", command));
     }
 
-    let mut cmd = std::process::Command::new(&command);
-    cmd.args(&args)
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped());
-
+    // On Windows, tools like npm/npx are installed as .cmd scripts,
+    // not .exe files. Command::new("npm") won't find them.
+    // Use cmd.exe /c as a wrapper so Windows can resolve .cmd/.bat files.
     #[cfg(windows)]
-    {
+    let output = {
         use std::os::windows::process::CommandExt;
-        cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
-    }
+        let mut cmd = std::process::Command::new("cmd");
+        cmd.arg("/c")
+            .arg(&command)
+            .args(&args)
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .creation_flags(0x08000000); // CREATE_NO_WINDOW
+        cmd.output()
+            .map_err(|e| format!("Failed to run '{}': {}", command, e))?
+    };
 
-    let output = cmd.output()
-        .map_err(|e| format!("Failed to run '{}': {}", command, e))?;
+    #[cfg(not(windows))]
+    let output = {
+        let mut cmd = std::process::Command::new(&command);
+        cmd.args(&args)
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped());
+        cmd.output()
+            .map_err(|e| format!("Failed to run '{}': {}", command, e))?
+    };
 
     if output.status.success() {
         Ok(String::from_utf8_lossy(&output.stdout).to_string())

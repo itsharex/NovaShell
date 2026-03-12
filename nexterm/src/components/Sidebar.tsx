@@ -717,7 +717,7 @@ function PluginsPanel() {
           if (isWin) {
             const [hostname, uptime, netstat] = await Promise.allSettled([
               runCommand("hostname", []),
-              runCommand("powershell", ["-Command", "[math]::Round((Get-Date) .Subtract((Get-CimInstance Win32_OperatingSystem).LastBootUpTime).TotalHours, 1).ToString() + ' hours'"]),
+              runCommand("powershell", ["-Command", "[math]::Round((Get-Date).Subtract((Get-CimInstance Win32_OperatingSystem).LastBootUpTime).TotalHours, 1).ToString() + ' hours'"]),
               runCommand("powershell", ["-Command", "Get-NetAdapter | Where-Object {$_.Status -eq 'Up'} | Select-Object -First 3 Name, LinkSpeed | Format-Table -AutoSize | Out-String"]),
             ]);
             const hostStr = hostname.status === "fulfilled" ? `Hostname: ${hostname.value.trim()}` : "";

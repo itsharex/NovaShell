@@ -283,12 +283,43 @@ export function SSHPanel() {
       theme: colors,
       allowProposedApi: true,
       scrollback: 3000,
+      rightClickSelectsWord: true,
     });
 
     const fitAddon = new FitAddon();
     terminal.loadAddon(fitAddon);
     terminal.open(termContainerRef.current);
     fitAddon.fit();
+
+    // Copy/paste for SSH terminal
+    const currentSessionId = activeSessionId;
+    terminal.attachCustomKeyEventHandler((e) => {
+      if (e.type !== "keydown") return true;
+      if ((e.ctrlKey || e.metaKey) && e.key === "c" && terminal.hasSelection()) {
+        navigator.clipboard.writeText(terminal.getSelection());
+        terminal.clearSelection();
+        return false;
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key === "v") {
+        navigator.clipboard.readText().then((text) => {
+          if (text) getTauriCore().then(({ invoke }) => invoke("ssh_write", { sessionId: currentSessionId, data: text }));
+        });
+        return false;
+      }
+      return true;
+    });
+
+    termContainerRef.current.addEventListener("contextmenu", (e: MouseEvent) => {
+      e.preventDefault();
+      if (terminal.hasSelection()) {
+        navigator.clipboard.writeText(terminal.getSelection());
+        terminal.clearSelection();
+      } else {
+        navigator.clipboard.readText().then((text) => {
+          if (text) getTauriCore().then(({ invoke }) => invoke("ssh_write", { sessionId: currentSessionId, data: text }));
+        });
+      }
+    });
 
     const unlisteners: Array<() => void> = [];
 

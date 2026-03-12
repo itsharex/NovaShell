@@ -249,6 +249,7 @@ export function TerminalPanel() {
         allowProposedApi: true,
         scrollback: 3000,
         tabStopWidth: 4,
+        rightClickSelectsWord: true,
       });
 
       const fitAddon = new FitAddon();
@@ -260,6 +261,65 @@ export function TerminalPanel() {
 
       terminal.open(container);
       fitAddon.fit();
+
+      // Copy: Ctrl+C with selection copies to clipboard (otherwise sends SIGINT)
+      terminal.attachCustomKeyEventHandler((e) => {
+        if (e.type !== "keydown") return true;
+        // Ctrl+C with selection = copy
+        if ((e.ctrlKey || e.metaKey) && e.key === "c" && terminal.hasSelection()) {
+          navigator.clipboard.writeText(terminal.getSelection());
+          terminal.clearSelection();
+          return false; // prevent sending to PTY
+        }
+        // Ctrl+V = paste from clipboard
+        if ((e.ctrlKey || e.metaKey) && e.key === "v") {
+          navigator.clipboard.readText().then((text) => {
+            if (text && sessionId) {
+              getTauriCore().then(({ invoke }) => {
+                invoke("write_to_pty", { sessionId, data: text });
+              });
+            }
+          });
+          return false;
+        }
+        // Ctrl+Shift+C = copy (alternative)
+        if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === "C") {
+          if (terminal.hasSelection()) {
+            navigator.clipboard.writeText(terminal.getSelection());
+            terminal.clearSelection();
+          }
+          return false;
+        }
+        // Ctrl+Shift+V = paste (alternative)
+        if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === "V") {
+          navigator.clipboard.readText().then((text) => {
+            if (text && sessionId) {
+              getTauriCore().then(({ invoke }) => {
+                invoke("write_to_pty", { sessionId, data: text });
+              });
+            }
+          });
+          return false;
+        }
+        return true;
+      });
+
+      // Right-click context menu: copy if selection, paste if no selection
+      container.addEventListener("contextmenu", (e) => {
+        e.preventDefault();
+        if (terminal.hasSelection()) {
+          navigator.clipboard.writeText(terminal.getSelection());
+          terminal.clearSelection();
+        } else {
+          navigator.clipboard.readText().then((text) => {
+            if (text && sessionId) {
+              getTauriCore().then(({ invoke }) => {
+                invoke("write_to_pty", { sessionId, data: text });
+              });
+            }
+          });
+        }
+      });
 
       let sessionId: string | null = null;
       try {
@@ -312,10 +372,11 @@ export function TerminalPanel() {
 
           if (data === "\r" || data === "\n") {
             const cmd = ptyInputBuffer.trim();
-            if (cmd) {
+            // Only record meaningful commands (not empty, not single chars, not escape sequences)
+            if (cmd && cmd.length > 1 && !cmd.startsWith("\x1b")) {
               useAppStore.getState().addHistory({ command: cmd, shell: tab?.shellType || "powershell" });
               useAppStore.getState().incrementCommandCount();
-                    }
+            }
             ptyInputBuffer = "";
             setShowAutocomplete(false);
           } else if (data === "\x7f" || data === "\b") {
@@ -336,6 +397,10 @@ export function TerminalPanel() {
               setShowAutocomplete(false);
             }
           } else if (data === "\x1b[A" || data === "\x1b[B") {
+            // Arrow up/down - clear buffer since shell is navigating history
+            ptyInputBuffer = "";
+          } else if (data.charCodeAt(0) < 32) {
+            // Control characters - ignore for buffer
           } else if (data >= " ") {
             ptyInputBuffer += data;
             const parts = ptyInputBuffer.split(/[|;&]/);

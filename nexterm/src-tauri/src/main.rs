@@ -500,7 +500,7 @@ const ALLOWED_COMMANDS: &[&str] = &[
 ];
 
 #[tauri::command]
-fn run_command_output(command: String, args: Vec<String>) -> Result<String, String> {
+fn run_command_output(command: String, args: Vec<String>, cwd: Option<String>) -> Result<String, String> {
     // Extract base command name (strip path and extension)
     let base = std::path::Path::new(&command)
         .file_stem()
@@ -512,6 +512,12 @@ fn run_command_output(command: String, args: Vec<String>) -> Result<String, Stri
         return Err(format!("Command '{}' is not in the allowed list", command));
     }
 
+    // Use provided cwd, or fall back to user's home directory
+    let work_dir = cwd
+        .map(std::path::PathBuf::from)
+        .or_else(|| dirs::home_dir())
+        .unwrap_or_else(|| std::path::PathBuf::from("."));
+
     #[cfg(windows)]
     let output = {
         use std::os::windows::process::CommandExt;
@@ -521,6 +527,7 @@ fn run_command_output(command: String, args: Vec<String>) -> Result<String, Stri
         let direct = {
             let mut cmd = std::process::Command::new(&command);
             cmd.args(&args)
+                .current_dir(&work_dir)
                 .stdout(std::process::Stdio::piped())
                 .stderr(std::process::Stdio::piped())
                 .creation_flags(CREATE_NO_WINDOW);
@@ -535,6 +542,7 @@ fn run_command_output(command: String, args: Vec<String>) -> Result<String, Stri
                 cmd.arg("/c")
                     .arg(&command)
                     .args(&args)
+                    .current_dir(&work_dir)
                     .stdout(std::process::Stdio::piped())
                     .stderr(std::process::Stdio::piped())
                     .creation_flags(CREATE_NO_WINDOW);
@@ -549,6 +557,7 @@ fn run_command_output(command: String, args: Vec<String>) -> Result<String, Stri
     let output = {
         let mut cmd = std::process::Command::new(&command);
         cmd.args(&args)
+            .current_dir(&work_dir)
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped());
         cmd.output()

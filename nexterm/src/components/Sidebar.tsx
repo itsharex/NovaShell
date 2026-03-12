@@ -164,6 +164,7 @@ function SnippetsPanel() {
   const [isDragging, setIsDragging] = useState(false);
   const dragStartPos = useRef<{ x: number; y: number } | null>(null);
   const pendingDragId = useRef<string | null>(null);
+  const dragStateRef = useRef({ isDragging: false, snippetId: null as string | null, overFolder: null as string | null });
 
   const handleAdd = () => {
     if (newName && newCmd) {
@@ -208,7 +209,6 @@ function SnippetsPanel() {
 
   // Mouse-based drag (more reliable than HTML5 DnD in WebView2/Tauri)
   const handleMouseDown = (e: React.MouseEvent, snippetId: string) => {
-    // Only left click, ignore if clicking buttons
     if (e.button !== 0) return;
     const target = e.target as HTMLElement;
     if (target.closest("button")) return;
@@ -221,8 +221,9 @@ function SnippetsPanel() {
       if (!dragStartPos.current || !pendingDragId.current) return;
       const dx = Math.abs(e.clientX - dragStartPos.current.x);
       const dy = Math.abs(e.clientY - dragStartPos.current.y);
-      // Start drag after 5px movement threshold
       if (dx > 5 || dy > 5) {
+        dragStateRef.current.snippetId = pendingDragId.current;
+        dragStateRef.current.isDragging = true;
         setDragSnippetId(pendingDragId.current);
         setIsDragging(true);
         dragStartPos.current = null;
@@ -230,9 +231,11 @@ function SnippetsPanel() {
     };
 
     const handleMouseUp = () => {
-      if (isDragging && dragSnippetId && dragOverFolder !== null) {
-        moveSnippetToFolder(dragSnippetId, dragOverFolder === "root" ? undefined : dragOverFolder);
+      const { isDragging: dragging, snippetId: sid, overFolder } = dragStateRef.current;
+      if (dragging && sid && overFolder !== null) {
+        moveSnippetToFolder(sid, overFolder === "root" ? undefined : overFolder);
       }
+      dragStateRef.current = { isDragging: false, snippetId: null, overFolder: null };
       setDragSnippetId(null);
       setDragOverFolder(null);
       setIsDragging(false);
@@ -246,16 +249,19 @@ function SnippetsPanel() {
       window.removeEventListener("mousemove", handleMouseMove);
       window.removeEventListener("mouseup", handleMouseUp);
     };
-  }, [isDragging, dragSnippetId, dragOverFolder, moveSnippetToFolder]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [moveSnippetToFolder]);
 
   const handleFolderMouseEnter = (folderId: string | null) => {
-    if (isDragging) {
+    if (dragStateRef.current.isDragging) {
+      dragStateRef.current.overFolder = folderId;
       setDragOverFolder(folderId);
     }
   };
 
   const handleFolderMouseLeave = () => {
-    if (isDragging) {
+    if (dragStateRef.current.isDragging) {
+      dragStateRef.current.overFolder = null;
       setDragOverFolder(null);
     }
   };
@@ -703,9 +709,9 @@ function PluginsPanel() {
   const togglePlugin = useAppStore((s) => s.togglePlugin);
   const [pluginData, setPluginData] = useState<Record<string, { loading: boolean; data: string | null; error: string | null }>>({});
 
-  const runCommand = useCallback(async (command: string, args: string[]): Promise<string> => {
+  const runCommand = useCallback(async (command: string, args: string[], cwd?: string): Promise<string> => {
     const { invoke } = await import("@tauri-apps/api/core");
-    return invoke<string>("run_command_output", { command, args });
+    return invoke<string>("run_command_output", { command, args, cwd: cwd || null });
   }, []);
 
   const fetchPluginData = useCallback(async (pluginId: string) => {

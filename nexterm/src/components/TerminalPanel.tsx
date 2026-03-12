@@ -335,34 +335,6 @@ export function TerminalPanel() {
         sessionId = await invoke<string>("create_pty_session", { shellPath });
         updateTab(tabId, { sessionId });
 
-        // Inject colored prompt based on shell type
-        const shellLower = shellPath.toLowerCase();
-        if (shellLower.includes("powershell")) {
-          // PowerShell: colored prompt with path in blue, arrow in green
-          const psPrompt = [
-            'function prompt { $p = $executionContext.SessionState.Path.CurrentLocation; Write-Host "" -NoNewline; Write-Host "$env:USERNAME" -ForegroundColor Cyan -NoNewline; Write-Host "@" -ForegroundColor DarkGray -NoNewline; Write-Host "$env:COMPUTERNAME" -ForegroundColor Magenta -NoNewline; Write-Host " " -NoNewline; Write-Host "$p" -ForegroundColor Blue -NoNewline; Write-Host " >" -ForegroundColor Green -NoNewline; return " " }',
-            '$Host.UI.RawUI.WindowTitle = "NovaShell"',
-            "Clear-Host",
-          ].join("; ");
-          invoke("write_to_pty", { sessionId, data: psPrompt + "\r" });
-        } else if (shellLower.includes("cmd")) {
-          // CMD: colored prompt using $E ANSI escape codes
-          // $E = ESC, user@host in cyan, path in blue, > in green
-          invoke("write_to_pty", { sessionId, data: "prompt $E[36m%USERNAME%$E[90m@$E[35m%COMPUTERNAME%$E[0m $E[34m$P$E[32m $g$E[0m \r" });
-          invoke("write_to_pty", { sessionId, data: "cls\r" });
-        } else if (shellLower.includes("bash")) {
-          // Bash: colored PS1 prompt
-          const bashPS1 = `export PS1='\\[\\e[36m\\]\\u\\[\\e[90m\\]@\\[\\e[35m\\]\\h\\[\\e[0m\\] \\[\\e[34m\\]\\w\\[\\e[32m\\] \\$\\[\\e[0m\\] ' && export CLICOLOR=1 && export LS_COLORS='di=1;34:fi=0:ln=1;36:pi=33:so=1;35:bd=1;33:cd=1;33:or=31:mi=31:ex=1;32' && clear\n`;
-          invoke("write_to_pty", { sessionId, data: bashPS1 });
-        } else if (shellLower.includes("zsh")) {
-          // Zsh: colored PROMPT
-          const zshPS1 = `export PROMPT='%F{cyan}%n%F{8}@%F{magenta}%m%f %F{blue}%~%F{green} %%%f ' && export CLICOLOR=1 && export LS_COLORS='di=1;34:fi=0:ln=1;36:pi=33:so=1;35:bd=1;33:cd=1;33:or=31:mi=31:ex=1;32' && clear\n`;
-          invoke("write_to_pty", { sessionId, data: zshPS1 });
-        } else if (shellLower.includes("fish")) {
-          // Fish: uses built-in coloring by default, just clear
-          invoke("write_to_pty", { sessionId, data: `clear\n` });
-        }
-
         const tabName = tab?.title || tabId;
         const unlistenData = await listen<string>(`pty-data-${sessionId}`, (event) => {
           terminal.write(event.payload);
@@ -450,6 +422,29 @@ export function TerminalPanel() {
           cols: terminal.cols,
           rows: terminal.rows,
         });
+
+        // Inject colored prompt after shell is ready (delay ensures shell has started)
+        const colorSid = sessionId;
+        setTimeout(() => {
+          const shellLower = shellPath.toLowerCase();
+          if (shellLower.includes("powershell")) {
+            const psPrompt = [
+              'function prompt { $p = $executionContext.SessionState.Path.CurrentLocation; Write-Host "" -NoNewline; Write-Host "$env:USERNAME" -ForegroundColor Cyan -NoNewline; Write-Host "@" -ForegroundColor DarkGray -NoNewline; Write-Host "$env:COMPUTERNAME" -ForegroundColor Magenta -NoNewline; Write-Host " " -NoNewline; Write-Host "$p" -ForegroundColor Blue -NoNewline; Write-Host " >" -ForegroundColor Green -NoNewline; return " " }',
+              '$Host.UI.RawUI.WindowTitle = "NovaShell"',
+              "Clear-Host",
+            ].join("; ");
+            invoke("write_to_pty", { sessionId: colorSid, data: psPrompt + "\r" });
+          } else if (shellLower.includes("cmd")) {
+            invoke("write_to_pty", { sessionId: colorSid, data: "prompt $E[36m%USERNAME%$E[90m@$E[35m%COMPUTERNAME%$E[0m $E[34m$P$E[32m $g$E[0m \r" });
+            setTimeout(() => invoke("write_to_pty", { sessionId: colorSid, data: "cls\r" }), 300);
+          } else if (shellLower.includes("bash")) {
+            const bashPS1 = "export PS1='\\[\\e[36m\\]\\u\\[\\e[90m\\]@\\[\\e[35m\\]\\h\\[\\e[0m\\] \\[\\e[34m\\]\\w\\[\\e[32m\\] \\$\\[\\e[0m\\] ' && export CLICOLOR=1 && export LS_COLORS='di=1;34:fi=0:ln=1;36:pi=33:so=1;35:bd=1;33:cd=1;33:or=31:mi=31:ex=1;32' && clear\n";
+            invoke("write_to_pty", { sessionId: colorSid, data: bashPS1 });
+          } else if (shellLower.includes("zsh")) {
+            const zshPS1 = "export PROMPT='%F{cyan}%n%F{8}@%F{magenta}%m%f %F{blue}%~%F{green} %%%f ' && export CLICOLOR=1 && export LS_COLORS='di=1;34:fi=0:ln=1;36:pi=33:so=1;35:bd=1;33:cd=1;33:or=31:mi=31:ex=1;32' && clear\n";
+            invoke("write_to_pty", { sessionId: colorSid, data: zshPS1 });
+          }
+        }, 800);
       } catch {
         terminal.writeln("\x1b[1;36m  _   _                  ____  _          _ _  \x1b[0m");
         terminal.writeln("\x1b[1;36m | \\ | | _____   ____ _/ ___|| |__   ___| | | \x1b[0m");

@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import {
   History,
   Code2,
@@ -15,6 +15,8 @@ import {
   HardDrive,
   Trophy,
   Folder,
+  FolderOpen,
+  FolderPlus,
   File,
   ArrowLeft,
   Terminal,
@@ -27,6 +29,11 @@ import {
   Columns,
   Monitor,
   Bug,
+  GripVertical,
+  ChevronRight,
+  ChevronDown,
+  Edit3,
+  X,
 } from "lucide-react";
 import { useAppStore } from "../store/appStore";
 import type { SidebarTab } from "../store/appStore";
@@ -133,12 +140,21 @@ function HistoryPanel() {
   );
 }
 
+const FOLDER_COLORS = ["#58a6ff", "#f78166", "#3fb950", "#d29922", "#bc8cff", "#ff7b72", "#79c0ff", "#7ee787"];
+
 function SnippetsPanel() {
   const snippets = useAppStore((s) => s.snippets);
   const addSnippet = useAppStore((s) => s.addSnippet);
   const removeSnippet = useAppStore((s) => s.removeSnippet);
   const executeSnippet = useAppStore((s) => s.executeSnippet);
+  const moveSnippetToFolder = useAppStore((s) => s.moveSnippetToFolder);
+  const folders = useAppStore((s) => s.snippetFolders);
+  const addFolder = useAppStore((s) => s.addSnippetFolder);
+  const removeFolder = useAppStore((s) => s.removeSnippetFolder);
+  const renameFolder = useAppStore((s) => s.renameSnippetFolder);
+
   const [adding, setAdding] = useState(false);
+  const [addToFolder, setAddToFolder] = useState<string | undefined>(undefined);
   const [newName, setNewName] = useState("");
   const [newCmd, setNewCmd] = useState("");
   const [newRunMode, setNewRunMode] = useState<"stop-on-error" | "run-all">("stop-on-error");
@@ -147,11 +163,18 @@ function SnippetsPanel() {
   const [editName, setEditName] = useState("");
   const [editCmd, setEditCmd] = useState("");
   const [editRunMode, setEditRunMode] = useState<"stop-on-error" | "run-all">("stop-on-error");
+  const [collapsedFolders, setCollapsedFolders] = useState<Set<string>>(new Set());
+  const [addingFolder, setAddingFolder] = useState(false);
+  const [newFolderName, setNewFolderName] = useState("");
+  const [editingFolderId, setEditingFolderId] = useState<string | null>(null);
+  const [editFolderName, setEditFolderName] = useState("");
+  const [dragSnippetId, setDragSnippetId] = useState<string | null>(null);
+  const [dragOverFolder, setDragOverFolder] = useState<string | null>(null);
 
   const handleAdd = () => {
     if (newName && newCmd) {
-      addSnippet({ name: newName, command: newCmd, runMode: newRunMode });
-      setNewName(""); setNewCmd(""); setNewRunMode("stop-on-error"); setAdding(false);
+      addSnippet({ name: newName, command: newCmd, runMode: newRunMode, folderId: addToFolder });
+      setNewName(""); setNewCmd(""); setNewRunMode("stop-on-error"); setAdding(false); setAddToFolder(undefined);
     }
   };
 
@@ -172,9 +195,41 @@ function SnippetsPanel() {
     }
   };
 
-  const getCommandCount = (cmd: string) => {
-    return cmd.split("\n").filter((l) => l.trim().length > 0).length;
+  const handleAddFolder = () => {
+    if (newFolderName.trim()) {
+      const color = FOLDER_COLORS[folders.length % FOLDER_COLORS.length];
+      addFolder(newFolderName.trim(), color);
+      setNewFolderName("");
+      setAddingFolder(false);
+    }
   };
+
+  const toggleFolder = (id: string) => {
+    setCollapsedFolders((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const handleDragStart = (snippetId: string) => {
+    setDragSnippetId(snippetId);
+  };
+
+  const handleDragOver = (e: React.DragEvent, folderId: string | null) => {
+    e.preventDefault();
+    setDragOverFolder(folderId);
+  };
+
+  const handleDrop = (folderId: string | undefined) => {
+    if (dragSnippetId) {
+      moveSnippetToFolder(dragSnippetId, folderId);
+      setDragSnippetId(null);
+      setDragOverFolder(null);
+    }
+  };
+
+  const getCommandCount = (cmd: string) => cmd.split("\n").filter((l) => l.trim().length > 0).length;
 
   const inputBase: React.CSSProperties = {
     padding: "6px 8px",
@@ -188,241 +243,249 @@ function SnippetsPanel() {
     width: "100%",
   };
 
-  return (
-    <div>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-        <span className="sidebar-section-title" style={{ margin: 0 }}>Quick Commands</span>
-        <button onClick={() => { setAdding(!adding); setEditingId(null); }} style={{ background: "none", border: "none", color: "var(--accent-primary)", cursor: "pointer", padding: 4 }} aria-label="Add snippet">
-          <Plus size={14} />
-        </button>
-      </div>
+  const rootSnippets = snippets.filter((s) => !s.folderId);
 
-      {adding && (
-        <div style={{ padding: 10, background: "var(--bg-tertiary)", borderRadius: "var(--radius-md)", marginBottom: 10, display: "flex", flexDirection: "column", gap: 6 }}>
-          <input
-            placeholder="Name (e.g. Deploy Script)"
-            value={newName}
-            onChange={(e) => setNewName(e.target.value)}
-            style={inputBase}
-          />
-          <textarea
-            placeholder={"Command or sequence (one per line):\ngit add .\ngit commit -m \"deploy\"\ngit push origin main"}
-            value={newCmd}
-            onChange={(e) => setNewCmd(e.target.value)}
-            rows={3}
-            style={{ ...inputBase, resize: "vertical", minHeight: 60, lineHeight: 1.5 }}
-          />
-          <div style={{ fontSize: 10, color: "var(--text-muted)", display: "flex", justifyContent: "space-between" }}>
-            <span>One command per line for sequences</span>
-            {newCmd && <span>{getCommandCount(newCmd)} cmd{getCommandCount(newCmd) !== 1 ? "s" : ""}</span>}
-          </div>
-          {getCommandCount(newCmd) > 1 && (
+  const renderSnippetCard = (snippet: typeof snippets[0]) => {
+    const cmdCount = getCommandCount(snippet.command);
+    const isMulti = cmdCount > 1;
+    const isExpanded = expandedId === snippet.id;
+    const isEditing = editingId === snippet.id;
+    const lines = snippet.command.split("\n").filter((l) => l.trim());
+
+    if (isEditing) {
+      return (
+        <div key={snippet.id} style={{ padding: 10, background: "var(--bg-tertiary)", borderRadius: "var(--radius-md)", marginBottom: 6, display: "flex", flexDirection: "column", gap: 6, border: "1px solid var(--accent-primary)" }}>
+          <input value={editName} onChange={(e) => setEditName(e.target.value)} style={inputBase} />
+          <textarea value={editCmd} onChange={(e) => setEditCmd(e.target.value)} rows={Math.max(3, lines.length + 1)} style={{ ...inputBase, resize: "vertical", minHeight: 60, lineHeight: 1.5 }} />
+          {getCommandCount(editCmd) > 1 && (
             <div style={{ display: "flex", gap: 4 }}>
-              <button
-                onClick={() => setNewRunMode("stop-on-error")}
-                style={{
-                  flex: 1, padding: "4px", border: "none", borderRadius: "var(--radius-sm)",
-                  background: newRunMode === "stop-on-error" ? "var(--accent-primary)" : "var(--bg-active)",
-                  color: newRunMode === "stop-on-error" ? "white" : "var(--text-muted)",
-                  fontSize: 10, cursor: "pointer", fontFamily: "inherit",
-                }}
-              >
-                Stop on error (&&)
-              </button>
-              <button
-                onClick={() => setNewRunMode("run-all")}
-                style={{
-                  flex: 1, padding: "4px", border: "none", borderRadius: "var(--radius-sm)",
-                  background: newRunMode === "run-all" ? "var(--accent-warning)" : "var(--bg-active)",
-                  color: newRunMode === "run-all" ? "white" : "var(--text-muted)",
-                  fontSize: 10, cursor: "pointer", fontFamily: "inherit",
-                }}
-              >
-                Run all (;)
-              </button>
+              <button onClick={() => setEditRunMode("stop-on-error")} style={{ flex: 1, padding: "4px", border: "none", borderRadius: "var(--radius-sm)", background: editRunMode === "stop-on-error" ? "var(--accent-primary)" : "var(--bg-active)", color: editRunMode === "stop-on-error" ? "white" : "var(--text-muted)", fontSize: 10, cursor: "pointer", fontFamily: "inherit" }}>Stop on error (&&)</button>
+              <button onClick={() => setEditRunMode("run-all")} style={{ flex: 1, padding: "4px", border: "none", borderRadius: "var(--radius-sm)", background: editRunMode === "run-all" ? "var(--accent-warning)" : "var(--bg-active)", color: editRunMode === "run-all" ? "white" : "var(--text-muted)", fontSize: 10, cursor: "pointer", fontFamily: "inherit" }}>Run all (;)</button>
             </div>
           )}
-          <button onClick={handleAdd} disabled={!newName || !newCmd} style={{
-            padding: "6px",
-            background: !newName || !newCmd ? "var(--bg-active)" : "var(--accent-primary)",
-            border: "none",
-            borderRadius: "var(--radius-sm)",
-            color: !newName || !newCmd ? "var(--text-muted)" : "white",
-            fontSize: 12,
-            cursor: !newName || !newCmd ? "default" : "pointer",
-            fontFamily: "inherit",
-          }}>
-            Add Snippet
+          <div style={{ display: "flex", gap: 4 }}>
+            <button onClick={saveEdit} style={{ flex: 1, padding: "5px", background: "var(--accent-primary)", border: "none", borderRadius: "var(--radius-sm)", color: "white", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>Save</button>
+            <button onClick={() => setEditingId(null)} style={{ padding: "5px 8px", background: "var(--bg-active)", border: "none", borderRadius: "var(--radius-sm)", color: "var(--text-secondary)", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>Cancel</button>
+          </div>
+        </div>
+      );
+    }
+
+    return (
+      <div
+        key={snippet.id}
+        className="snippet-card"
+        style={{ flexDirection: "column", alignItems: "stretch", gap: 0, cursor: "grab" }}
+        draggable
+        onDragStart={() => handleDragStart(snippet.id)}
+        onDragEnd={() => { setDragSnippetId(null); setDragOverFolder(null); }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <GripVertical size={12} style={{ color: "var(--text-muted)", opacity: 0.4, flexShrink: 0 }} />
+          <div className="snippet-info" style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <div className="snippet-name">{snippet.name}</div>
+              {isMulti && (
+                <>
+                  <span style={{ fontSize: 9, background: "var(--accent-primary)", color: "white", padding: "0 5px", borderRadius: 8, fontWeight: 700, lineHeight: "16px", flexShrink: 0 }}>{cmdCount} cmds</span>
+                  <span style={{ fontSize: 9, background: snippet.runMode === "run-all" ? "var(--accent-warning)" : "var(--accent-secondary)", color: "white", padding: "0 4px", borderRadius: 8, fontWeight: 700, lineHeight: "16px", flexShrink: 0 }}>{snippet.runMode === "run-all" ? ";" : "&&"}</span>
+                </>
+              )}
+            </div>
+            <div className="snippet-cmd" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{isMulti ? lines[0] + (lines.length > 1 ? ` (+${lines.length - 1} more)` : "") : snippet.command}</div>
+          </div>
+          <div style={{ display: "flex", gap: 2, flexShrink: 0 }}>
+            {isMulti && (
+              <button onClick={() => setExpandedId(isExpanded ? null : snippet.id)} style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", padding: 2, display: "flex" }} title="View sequence">
+                {isExpanded ? <Activity size={13} /> : <Eye size={13} />}
+              </button>
+            )}
+            <button onClick={() => startEdit(snippet)} style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", padding: 2, display: "flex" }} title="Edit"><Edit3 size={13} /></button>
+            <button onClick={() => removeSnippet(snippet.id)} style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", padding: 2, display: "flex" }} title="Delete"><Trash2 size={13} /></button>
+            <button className="snippet-run" title={`Run${isMulti ? " sequence" : ""}: ${snippet.name}`} aria-label={`Run ${snippet.name}`} onClick={() => executeSnippet && executeSnippet(snippet.command, snippet.runMode)}><Play size={14} /></button>
+          </div>
+        </div>
+        {isExpanded && isMulti && (
+          <div style={{ marginTop: 8, padding: "6px 8px", background: "var(--bg-primary)", borderRadius: "var(--radius-sm)", border: "1px solid var(--border-subtle)" }}>
+            {lines.map((line, i) => (
+              <div key={i} style={{ display: "flex", alignItems: "center", gap: 6, padding: "3px 0", borderBottom: i < lines.length - 1 ? "1px solid var(--border-subtle)" : "none" }}>
+                <span style={{ fontSize: 9, color: "var(--text-muted)", fontFamily: "monospace", minWidth: 16, textAlign: "right" }}>{i + 1}</span>
+                <span style={{ fontSize: 11, color: "var(--text-primary)", fontFamily: "'JetBrains Mono', monospace", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{line}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  const renderAddForm = () => {
+    if (!adding) return null;
+    return (
+      <div style={{ padding: 10, background: "var(--bg-tertiary)", borderRadius: "var(--radius-md)", marginBottom: 10, display: "flex", flexDirection: "column", gap: 6 }}>
+        <input placeholder="Name (e.g. Deploy Script)" value={newName} onChange={(e) => setNewName(e.target.value)} style={inputBase} />
+        <textarea placeholder={"Command or sequence (one per line):\ngit add .\ngit commit -m \"deploy\"\ngit push origin main"} value={newCmd} onChange={(e) => setNewCmd(e.target.value)} rows={3} style={{ ...inputBase, resize: "vertical", minHeight: 60, lineHeight: 1.5 }} />
+        <div style={{ fontSize: 10, color: "var(--text-muted)", display: "flex", justifyContent: "space-between" }}>
+          <span>One command per line for sequences</span>
+          {newCmd && <span>{getCommandCount(newCmd)} cmd{getCommandCount(newCmd) !== 1 ? "s" : ""}</span>}
+        </div>
+        {folders.length > 0 && (
+          <select
+            value={addToFolder || ""}
+            onChange={(e) => setAddToFolder(e.target.value || undefined)}
+            style={{ ...inputBase, cursor: "pointer" }}
+          >
+            <option value="">No folder (root)</option>
+            {folders.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
+          </select>
+        )}
+        {getCommandCount(newCmd) > 1 && (
+          <div style={{ display: "flex", gap: 4 }}>
+            <button onClick={() => setNewRunMode("stop-on-error")} style={{ flex: 1, padding: "4px", border: "none", borderRadius: "var(--radius-sm)", background: newRunMode === "stop-on-error" ? "var(--accent-primary)" : "var(--bg-active)", color: newRunMode === "stop-on-error" ? "white" : "var(--text-muted)", fontSize: 10, cursor: "pointer", fontFamily: "inherit" }}>Stop on error (&&)</button>
+            <button onClick={() => setNewRunMode("run-all")} style={{ flex: 1, padding: "4px", border: "none", borderRadius: "var(--radius-sm)", background: newRunMode === "run-all" ? "var(--accent-warning)" : "var(--bg-active)", color: newRunMode === "run-all" ? "white" : "var(--text-muted)", fontSize: 10, cursor: "pointer", fontFamily: "inherit" }}>Run all (;)</button>
+          </div>
+        )}
+        <button onClick={handleAdd} disabled={!newName || !newCmd} style={{ padding: "6px", background: !newName || !newCmd ? "var(--bg-active)" : "var(--accent-primary)", border: "none", borderRadius: "var(--radius-sm)", color: !newName || !newCmd ? "var(--text-muted)" : "white", fontSize: 12, cursor: !newName || !newCmd ? "default" : "pointer", fontFamily: "inherit" }}>Add Snippet</button>
+      </div>
+    );
+  };
+
+  return (
+    <div>
+      {/* Header */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+        <span className="sidebar-section-title" style={{ margin: 0 }}>Quick Commands</span>
+        <div style={{ display: "flex", gap: 2 }}>
+          <button onClick={() => { setAddingFolder(true); setAdding(false); }} style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", padding: 4 }} title="New folder" aria-label="New folder">
+            <FolderPlus size={14} />
           </button>
+          <button onClick={() => { setAdding(!adding); setEditingId(null); setAddingFolder(false); }} style={{ background: "none", border: "none", color: "var(--accent-primary)", cursor: "pointer", padding: 4 }} aria-label="Add snippet">
+            <Plus size={14} />
+          </button>
+        </div>
+      </div>
+
+      {/* Add folder form */}
+      {addingFolder && (
+        <div style={{ display: "flex", gap: 4, marginBottom: 10 }}>
+          <input
+            placeholder="Folder name..."
+            value={newFolderName}
+            onChange={(e) => setNewFolderName(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && handleAddFolder()}
+            autoFocus
+            style={{ ...inputBase, flex: 1 }}
+          />
+          <button onClick={handleAddFolder} disabled={!newFolderName.trim()} style={{ padding: "4px 8px", background: newFolderName.trim() ? "var(--accent-primary)" : "var(--bg-active)", border: "none", borderRadius: "var(--radius-sm)", color: newFolderName.trim() ? "white" : "var(--text-muted)", fontSize: 11, cursor: newFolderName.trim() ? "pointer" : "default", fontFamily: "inherit" }}>Add</button>
+          <button onClick={() => { setAddingFolder(false); setNewFolderName(""); }} style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", padding: 2, display: "flex", alignItems: "center" }}><X size={14} /></button>
         </div>
       )}
 
-      {snippets.map((snippet) => {
-        const cmdCount = getCommandCount(snippet.command);
-        const isMulti = cmdCount > 1;
-        const isExpanded = expandedId === snippet.id;
-        const isEditing = editingId === snippet.id;
-        const lines = snippet.command.split("\n").filter((l) => l.trim());
+      {/* Add snippet form */}
+      {renderAddForm()}
 
-        if (isEditing) {
-          return (
-            <div key={snippet.id} style={{ padding: 10, background: "var(--bg-tertiary)", borderRadius: "var(--radius-md)", marginBottom: 6, display: "flex", flexDirection: "column", gap: 6, border: "1px solid var(--accent-primary)" }}>
-              <input
-                value={editName}
-                onChange={(e) => setEditName(e.target.value)}
-                style={inputBase}
-              />
-              <textarea
-                value={editCmd}
-                onChange={(e) => setEditCmd(e.target.value)}
-                rows={Math.max(3, lines.length + 1)}
-                style={{ ...inputBase, resize: "vertical", minHeight: 60, lineHeight: 1.5 }}
-              />
-              {getCommandCount(editCmd) > 1 && (
-                <div style={{ display: "flex", gap: 4 }}>
-                  <button
-                    onClick={() => setEditRunMode("stop-on-error")}
-                    style={{
-                      flex: 1, padding: "4px", border: "none", borderRadius: "var(--radius-sm)",
-                      background: editRunMode === "stop-on-error" ? "var(--accent-primary)" : "var(--bg-active)",
-                      color: editRunMode === "stop-on-error" ? "white" : "var(--text-muted)",
-                      fontSize: 10, cursor: "pointer", fontFamily: "inherit",
-                    }}
-                  >
-                    Stop on error (&&)
-                  </button>
-                  <button
-                    onClick={() => setEditRunMode("run-all")}
-                    style={{
-                      flex: 1, padding: "4px", border: "none", borderRadius: "var(--radius-sm)",
-                      background: editRunMode === "run-all" ? "var(--accent-warning)" : "var(--bg-active)",
-                      color: editRunMode === "run-all" ? "white" : "var(--text-muted)",
-                      fontSize: 10, cursor: "pointer", fontFamily: "inherit",
-                    }}
-                  >
-                    Run all (;)
-                  </button>
-                </div>
-              )}
-              <div style={{ display: "flex", gap: 4 }}>
-                <button onClick={saveEdit} style={{ flex: 1, padding: "5px", background: "var(--accent-primary)", border: "none", borderRadius: "var(--radius-sm)", color: "white", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>
-                  Save
-                </button>
-                <button onClick={() => setEditingId(null)} style={{ padding: "5px 8px", background: "var(--bg-active)", border: "none", borderRadius: "var(--radius-sm)", color: "var(--text-secondary)", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>
-                  Cancel
-                </button>
-              </div>
-            </div>
-          );
-        }
+      {/* Folders */}
+      {folders.map((folder) => {
+        const folderSnippets = snippets.filter((s) => s.folderId === folder.id);
+        const isCollapsed = collapsedFolders.has(folder.id);
+        const isDragOver = dragOverFolder === folder.id;
+        const isEditingFolder = editingFolderId === folder.id;
 
         return (
-          <div key={snippet.id} className="snippet-card" style={{ flexDirection: "column", alignItems: "stretch", gap: 0 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <div className="snippet-icon"><Code2 size={16} /></div>
-              <div className="snippet-info" style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                  <div className="snippet-name">{snippet.name}</div>
-                  {isMulti && (
-                    <>
-                      <span style={{
-                        fontSize: 9,
-                        background: "var(--accent-primary)",
-                        color: "white",
-                        padding: "0 5px",
-                        borderRadius: 8,
-                        fontWeight: 700,
-                        lineHeight: "16px",
-                        flexShrink: 0,
-                      }}>
-                        {cmdCount} cmds
-                      </span>
-                      <span style={{
-                        fontSize: 9,
-                        background: snippet.runMode === "run-all" ? "var(--accent-warning)" : "var(--accent-secondary)",
-                        color: "white",
-                        padding: "0 4px",
-                        borderRadius: 8,
-                        fontWeight: 700,
-                        lineHeight: "16px",
-                        flexShrink: 0,
-                      }}>
-                        {snippet.runMode === "run-all" ? ";" : "&&"}
-                      </span>
-                    </>
-                  )}
-                </div>
-                <div className="snippet-cmd" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                  {isMulti ? lines[0] + (lines.length > 1 ? ` (+${lines.length - 1} more)` : "") : snippet.command}
-                </div>
-              </div>
-              <div style={{ display: "flex", gap: 2, flexShrink: 0 }}>
-                {isMulti && (
-                  <button
-                    onClick={() => setExpandedId(isExpanded ? null : snippet.id)}
-                    style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", padding: 2, display: "flex" }}
-                    title="View sequence"
-                  >
-                    {isExpanded ? <Activity size={13} /> : <Eye size={13} />}
-                  </button>
-                )}
-                <button
-                  onClick={() => startEdit(snippet)}
-                  style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", padding: 2, display: "flex" }}
-                  title="Edit"
-                >
-                  <Code2 size={13} />
-                </button>
-                <button className="snippet-run" title={`Run${isMulti ? " sequence" : ""}: ${snippet.name}`} aria-label={`Run ${snippet.name}`}
-                  onClick={() => executeSnippet && executeSnippet(snippet.command, snippet.runMode)}>
-                  <Play size={14} />
-                </button>
-              </div>
-            </div>
-
-            {/* Expanded sequence view */}
-            {isExpanded && isMulti && (
-              <div style={{
-                marginTop: 8,
+          <div
+            key={folder.id}
+            style={{ marginBottom: 6 }}
+            onDragOver={(e) => handleDragOver(e, folder.id)}
+            onDragLeave={() => setDragOverFolder(null)}
+            onDrop={() => handleDrop(folder.id)}
+          >
+            {/* Folder header */}
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 6,
                 padding: "6px 8px",
-                background: "var(--bg-primary)",
+                background: isDragOver ? "rgba(88,166,255,0.15)" : "var(--bg-tertiary)",
+                border: isDragOver ? "1px dashed var(--accent-primary)" : "1px solid var(--border-subtle)",
                 borderRadius: "var(--radius-sm)",
-                border: "1px solid var(--border-subtle)",
-              }}>
-                {lines.map((line, i) => (
-                  <div key={i} style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 6,
-                    padding: "3px 0",
-                    borderBottom: i < lines.length - 1 ? "1px solid var(--border-subtle)" : "none",
-                  }}>
-                    <span style={{
-                      fontSize: 9,
-                      color: "var(--text-muted)",
-                      fontFamily: "monospace",
-                      minWidth: 16,
-                      textAlign: "right",
-                    }}>
-                      {i + 1}
-                    </span>
-                    <span style={{
-                      fontSize: 11,
-                      color: "var(--text-primary)",
-                      fontFamily: "'JetBrains Mono', monospace",
-                      overflow: "hidden",
-                      textOverflow: "ellipsis",
-                      whiteSpace: "nowrap",
-                    }}>
-                      {line}
-                    </span>
+                cursor: "pointer",
+                transition: "var(--transition-fast)",
+              }}
+              onClick={() => !isEditingFolder && toggleFolder(folder.id)}
+            >
+              {isCollapsed
+                ? <ChevronRight size={12} style={{ color: folder.color, flexShrink: 0 }} />
+                : <ChevronDown size={12} style={{ color: folder.color, flexShrink: 0 }} />
+              }
+              {isCollapsed
+                ? <Folder size={14} style={{ color: folder.color, flexShrink: 0 }} />
+                : <FolderOpen size={14} style={{ color: folder.color, flexShrink: 0 }} />
+              }
+              {isEditingFolder ? (
+                <input
+                  value={editFolderName}
+                  onChange={(e) => setEditFolderName(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && editFolderName.trim()) { renameFolder(folder.id, editFolderName.trim()); setEditingFolderId(null); }
+                    if (e.key === "Escape") setEditingFolderId(null);
+                  }}
+                  onBlur={() => { if (editFolderName.trim()) renameFolder(folder.id, editFolderName.trim()); setEditingFolderId(null); }}
+                  onClick={(e) => e.stopPropagation()}
+                  autoFocus
+                  style={{ ...inputBase, padding: "2px 4px", fontSize: 11, flex: 1 }}
+                />
+              ) : (
+                <span style={{ flex: 1, fontSize: 11, fontWeight: 600, color: "var(--text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{folder.name}</span>
+              )}
+              <span style={{ fontSize: 9, color: "var(--text-muted)", flexShrink: 0 }}>{folderSnippets.length}</span>
+              <button
+                onClick={(e) => { e.stopPropagation(); setEditingFolderId(folder.id); setEditFolderName(folder.name); }}
+                style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", padding: 2, display: "flex" }}
+                title="Rename folder"
+              ><Edit3 size={10} /></button>
+              <button
+                onClick={(e) => { e.stopPropagation(); removeFolder(folder.id); }}
+                style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", padding: 2, display: "flex" }}
+                title="Delete folder"
+              ><Trash2 size={10} /></button>
+            </div>
+            {/* Folder contents */}
+            {!isCollapsed && (
+              <div style={{ paddingLeft: 12, borderLeft: `2px solid ${folder.color}`, marginLeft: 10, marginTop: 4 }}>
+                {folderSnippets.length === 0 ? (
+                  <div style={{ padding: "8px 0", fontSize: 10, color: "var(--text-muted)", textAlign: "center" }}>
+                    Drag snippets here
                   </div>
-                ))}
+                ) : (
+                  folderSnippets.map(renderSnippetCard)
+                )}
               </div>
             )}
           </div>
         );
       })}
+
+      {/* Root snippets (no folder) */}
+      <div
+        onDragOver={(e) => handleDragOver(e, "root")}
+        onDragLeave={() => setDragOverFolder(null)}
+        onDrop={() => handleDrop(undefined)}
+        style={{
+          borderRadius: "var(--radius-sm)",
+          border: dragOverFolder === "root" ? "1px dashed var(--accent-primary)" : "1px solid transparent",
+          background: dragOverFolder === "root" ? "rgba(88,166,255,0.08)" : "transparent",
+          transition: "var(--transition-fast)",
+          minHeight: rootSnippets.length === 0 && folders.length > 0 ? 32 : undefined,
+        }}
+      >
+        {rootSnippets.map(renderSnippetCard)}
+        {rootSnippets.length === 0 && folders.length > 0 && (
+          <div style={{ padding: "8px 0", fontSize: 10, color: "var(--text-muted)", textAlign: "center" }}>
+            Unsorted commands
+          </div>
+        )}
+      </div>
     </div>
   );
 }

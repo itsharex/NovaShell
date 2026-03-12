@@ -18,6 +18,13 @@ interface Snippet {
   command: string;
   icon?: string;
   runMode?: SnippetRunMode;
+  folderId?: string;
+}
+
+export interface SnippetFolder {
+  id: string;
+  name: string;
+  color: string;
 }
 
 interface HistoryEntry {
@@ -94,6 +101,12 @@ interface AppState {
   snippets: Snippet[];
   addSnippet: (snippet: Omit<Snippet, "id">) => void;
   removeSnippet: (id: string) => void;
+  moveSnippetToFolder: (snippetId: string, folderId: string | undefined) => void;
+
+  snippetFolders: SnippetFolder[];
+  addSnippetFolder: (name: string, color: string) => void;
+  removeSnippetFolder: (id: string) => void;
+  renameSnippetFolder: (id: string, name: string) => void;
 
   systemStats: {
     cpu: number;
@@ -225,6 +238,26 @@ export const useAppStore = create<AppState>((set, get) => ({
     })),
   removeSnippet: (id) =>
     set((s) => ({ snippets: s.snippets.filter((sn) => sn.id !== id) })),
+  moveSnippetToFolder: (snippetId, folderId) =>
+    set((s) => ({
+      snippets: s.snippets.map((sn) => sn.id === snippetId ? { ...sn, folderId } : sn),
+    })),
+
+  snippetFolders: [],
+  addSnippetFolder: (name, color) =>
+    set((s) => ({
+      snippetFolders: [...s.snippetFolders, { id: crypto.randomUUID(), name, color }],
+    })),
+  removeSnippetFolder: (id) =>
+    set((s) => ({
+      snippetFolders: s.snippetFolders.filter((f) => f.id !== id),
+      // Move orphaned snippets to root
+      snippets: s.snippets.map((sn) => sn.folderId === id ? { ...sn, folderId: undefined } : sn),
+    })),
+  renameSnippetFolder: (id, name) =>
+    set((s) => ({
+      snippetFolders: s.snippetFolders.map((f) => f.id === id ? { ...f, name } : f),
+    })),
 
   systemStats: null,
   setSystemStats: (stats) => set({ systemStats: stats }),

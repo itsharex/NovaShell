@@ -13,6 +13,7 @@ import {
   Key,
   Shield,
   ShieldCheck,
+  Upload,
 } from "lucide-react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
@@ -627,8 +628,38 @@ export function SSHPanel() {
                 rows={4}
                 style={{ ...inputStyle, resize: "vertical", minHeight: 80 }}
               />
-              <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 4 }}>
-                Paste your private key content here. It will be stored encrypted.
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 6 }}>
+                <button
+                  onClick={() => {
+                    const input = document.createElement("input");
+                    input.type = "file";
+                    input.accept = ".pem,.key,.pub,.ppk,id_rsa,id_ed25519,id_ecdsa,*";
+                    input.onchange = () => {
+                      const file = input.files?.[0];
+                      if (file) {
+                        const reader = new FileReader();
+                        reader.onload = () => {
+                          const text = reader.result as string;
+                          if (text) setFormKey(text);
+                        };
+                        reader.readAsText(file);
+                      }
+                    };
+                    input.click();
+                  }}
+                  style={{
+                    ...btnStyle,
+                    background: "var(--bg-active)",
+                    color: "var(--text-secondary)",
+                    padding: "4px 10px",
+                    fontSize: 11,
+                  }}
+                >
+                  <Upload size={12} /> Load from file
+                </button>
+                <span style={{ fontSize: 10, color: "var(--text-muted)" }}>
+                  or paste key content above
+                </span>
               </div>
             </div>
           )}

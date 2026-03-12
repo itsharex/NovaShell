@@ -1,6 +1,6 @@
 {
   "identifier": "main-capability",
-  "description": "Main capability for NovaTerm",
+  "description": "Main capability for NovaShell",
   "windows": ["main"],
   "permissions": [
     "core:default",

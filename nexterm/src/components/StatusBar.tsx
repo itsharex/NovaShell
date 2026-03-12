@@ -46,7 +46,7 @@ export function StatusBar() {
         const branch = await invoke<string>("get_git_branch", { path: null });
         setGitBranch(branch);
       } catch {
-        setGitBranch("--");
+        setGitBranch("");
       }
     };
     fetchBranch();
@@ -115,10 +115,12 @@ export function StatusBar() {
           <Terminal size={12} />
           <span>{shellLabels[activeTab?.shellType || "powershell"] || "Shell"}</span>
         </div>
-        <div className="statusbar-item">
-          <GitBranch size={12} />
-          <span>{gitBranch}</span>
-        </div>
+        {gitBranch && (
+          <div className="statusbar-item">
+            <GitBranch size={12} />
+            <span>{gitBranch}</span>
+          </div>
+        )}
       </div>
       <div className="statusbar-right">
         <button className="statusbar-btn" onClick={cycleSplit} title={`Split: ${splitMode}`}>

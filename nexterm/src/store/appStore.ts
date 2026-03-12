@@ -254,19 +254,18 @@ export const useAppStore = create<AppState>((set, get) => ({
   setExecuteSnippet: (fn) => set({ executeSnippet: fn }),
 
   plugins: [
-    { id: "git", name: "Git Integration", desc: "Branch, status, diff viewer", enabled: true },
-    { id: "docker", name: "Docker", desc: "Container management & logs", enabled: true },
-    { id: "k8s", name: "Kubernetes", desc: "Pod management & monitoring", enabled: false },
-    { id: "python", name: "Python REPL", desc: "Inline Python execution", enabled: true },
-    { id: "node", name: "Node.js Tools", desc: "NPM scripts, package info", enabled: false },
-    { id: "ssh", name: "SSH Manager", desc: "Saved connections & tunnels", enabled: false },
+    { id: "git", name: "Git Integration", desc: "Repository status, changed files, recent commits", enabled: true },
+    { id: "docker", name: "Docker", desc: "Running containers & images", enabled: false },
+    { id: "node", name: "Node.js", desc: "Package info & npm scripts", enabled: false },
+    { id: "python", name: "Python", desc: "Python version & environment info", enabled: false },
+    { id: "system", name: "System Info", desc: "Network, disk usage & uptime", enabled: false },
   ],
   togglePlugin: (id) =>
     set((s) => ({
       plugins: s.plugins.map((p) => (p.id === id ? { ...p, enabled: !p.enabled } : p)),
     })),
 
-  gitBranch: "main",
+  gitBranch: "",
   setGitBranch: (branch) => set({ gitBranch: branch }),
 
   searchOpen: false,
@@ -283,7 +282,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   sshConnections: (() => {
     try {
-      const saved = localStorage.getItem("novaterm-ssh-connections");
+      const saved = localStorage.getItem("novashell-ssh-connections");
       if (saved) {
         const parsed = JSON.parse(saved) as SSHConnection[];
         return parsed.map((c) => ({ ...c, status: "disconnected" as const, sessionId: undefined, errorMessage: undefined }));
@@ -296,7 +295,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     const newConn: SSHConnection = { ...conn, id: crypto.randomUUID(), status: "disconnected" };
     set((s) => {
       const updated = [...s.sshConnections, newConn];
-      localStorage.setItem("novaterm-ssh-connections", JSON.stringify(updated.map(({ status, sessionId, errorMessage, sessionPassword, ...rest }) => rest)));
+      localStorage.setItem("novashell-ssh-connections", JSON.stringify(updated.map(({ status, sessionId, errorMessage, sessionPassword, ...rest }) => rest)));
       return { sshConnections: updated };
     });
   },
@@ -304,21 +303,21 @@ export const useAppStore = create<AppState>((set, get) => ({
   updateSSHConnection: (id, updates) =>
     set((s) => {
       const updated = s.sshConnections.map((c) => (c.id === id ? { ...c, ...updates } : c));
-      localStorage.setItem("novaterm-ssh-connections", JSON.stringify(updated.map(({ status, sessionId, errorMessage, sessionPassword, ...rest }) => rest)));
+      localStorage.setItem("novashell-ssh-connections", JSON.stringify(updated.map(({ status, sessionId, errorMessage, sessionPassword, ...rest }) => rest)));
       return { sshConnections: updated };
     }),
 
   removeSSHConnection: (id) =>
     set((s) => {
       const updated = s.sshConnections.filter((c) => c.id !== id);
-      localStorage.setItem("novaterm-ssh-connections", JSON.stringify(updated.map(({ status, sessionId, errorMessage, sessionPassword, ...rest }) => rest)));
+      localStorage.setItem("novashell-ssh-connections", JSON.stringify(updated.map(({ status, sessionId, errorMessage, sessionPassword, ...rest }) => rest)));
       return { sshConnections: updated };
     }),
 
   debugLogs: [],
   debugEnabled: false,
   debugPersist: (() => {
-    try { return localStorage.getItem("novaterm-debug-persist") !== "false"; } catch { return true; }
+    try { return localStorage.getItem("novashell-debug-persist") !== "false"; } catch { return true; }
   })(),
   addDebugLog: (entry) =>
     set((s) => {
@@ -341,7 +340,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   toggleDebug: () => set((s) => ({ debugEnabled: !s.debugEnabled })),
   toggleDebugPersist: () => set((s) => {
     const next = !s.debugPersist;
-    localStorage.setItem("novaterm-debug-persist", String(next));
+    localStorage.setItem("novashell-debug-persist", String(next));
     return { debugPersist: next };
   }),
 }));

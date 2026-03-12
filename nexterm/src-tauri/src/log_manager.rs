@@ -30,7 +30,7 @@ impl LogManager {
     pub fn new() -> Self {
         let log_dir = dirs::data_dir()
             .unwrap_or_else(|| PathBuf::from("."))
-            .join("novaterm")
+            .join("novashell")
             .join("logs");
 
         // Create directory if it doesn't exist

@@ -1,8 +1,8 @@
 {
   "$schema": "https://raw.githubusercontent.com/tauri-apps/tauri/dev/packages/api/schema.json",
-  "productName": "NovaTerm",
-  "version": "1.1.4",
-  "identifier": "com.novaterm.terminal",
+  "productName": "NovaShell",
+  "version": "1.1.5",
+  "identifier": "com.novashell.terminal",
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:5173",
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "NovaTerm",
+        "title": "NovaShell",
         "width": 1200,
         "height": 800,
         "minWidth": 600,
@@ -40,9 +40,9 @@
     ],
     "category": "DeveloperTool",
     "shortDescription": "Modern terminal emulator with tabs, themes, and plugins",
-    "longDescription": "NovaTerm is a modern, cross-platform terminal emulator built with Tauri. Features include multiple tabs, split panes, 4 themes (Dark, Light, Cyberpunk, Retro), command autocomplete, snippets, file preview, system stats, and an achievement system.",
-    "copyright": "Copyright © 2024 NovaTerm Team",
-    "publisher": "NovaTerm",
+    "longDescription": "NovaShell is a modern, cross-platform terminal emulator built with Tauri. Features include multiple tabs, split panes, 4 themes (Dark, Light, Cyberpunk, Retro), command autocomplete, snippets, file preview, system stats, and an achievement system.",
+    "copyright": "Copyright © 2024 NovaShell Team",
+    "publisher": "NovaShell",
     "homepage": "",
     "resources": [],
     "windows": {

@@ -541,12 +541,12 @@ function PreviewPanel() {
       setPreviewFile({ name: file.name, content, extension: file.extension });
     } catch {
       const demoContent: Record<string, string> = {
-        json: '{\n  "name": "novaterm",\n  "version": "1.0.0",\n  "description": "Professional Terminal"\n}',
-        md: "# NovaTerm\n\n> Professional Terminal Emulator\n\n## Features\n- Multi-shell support\n- 4 themes\n- Split panes\n- Autocomplete",
+        json: '{\n  "name": "novashell",\n  "version": "1.0.0",\n  "description": "Professional Terminal"\n}',
+        md: "# NovaShell\n\n> Professional Terminal Emulator\n\n## Features\n- Multi-shell support\n- 4 themes\n- Split panes\n- Autocomplete",
         ts: 'import { useState } from "react";\n\nexport function App() {\n  const [count, setCount] = useState(0);\n  return <div>{count}</div>;\n}',
         css: ":root {\n  --bg-primary: #0d1117;\n  --text-primary: #e6edf3;\n  --accent: #58a6ff;\n}",
         csv: "Name,Age,City\nAlice,30,NYC\nBob,25,London\nCarla,28,Tokyo",
-        yaml: "app:\n  name: NovaTerm\n  version: 1.0.0\n  theme: dark\n  plugins:\n    - git\n    - docker",
+        yaml: "app:\n  name: NovaShell\n  version: 1.0.0\n  theme: dark\n  plugins:\n    - git\n    - docker",
       };
       setPreviewFile({
         name: file.name,
@@ -646,19 +646,192 @@ function PreviewPanel() {
 function PluginsPanel() {
   const plugins = useAppStore((s) => s.plugins);
   const togglePlugin = useAppStore((s) => s.togglePlugin);
+  const [pluginData, setPluginData] = useState<Record<string, { loading: boolean; data: string | null; error: string | null }>>({});
+
+  const runCommand = useCallback(async (command: string, args: string[]): Promise<string> => {
+    const { invoke } = await import("@tauri-apps/api/core");
+    return invoke<string>("run_command_output", { command, args });
+  }, []);
+
+  const fetchPluginData = useCallback(async (pluginId: string) => {
+    setPluginData((prev) => ({ ...prev, [pluginId]: { loading: true, data: null, error: null } }));
+    try {
+      let result = "";
+      switch (pluginId) {
+        case "git": {
+          const [branch, status, log] = await Promise.allSettled([
+            runCommand("git", ["branch", "--show-current"]),
+            runCommand("git", ["status", "--short"]),
+            runCommand("git", ["log", "--oneline", "-5"]),
+          ]);
+          const branchStr = branch.status === "fulfilled" ? branch.value.trim() : "N/A";
+          const statusStr = status.status === "fulfilled" ? status.value.trim() : "";
+          const logStr = log.status === "fulfilled" ? log.value.trim() : "";
+          const changedFiles = statusStr ? statusStr.split("\n").length : 0;
+          result = `Branch: ${branchStr}\nChanged files: ${changedFiles}`;
+          if (statusStr) result += `\n\n--- Status ---\n${statusStr}`;
+          if (logStr) result += `\n\n--- Recent commits ---\n${logStr}`;
+          break;
+        }
+        case "docker": {
+          const [ps, images] = await Promise.allSettled([
+            runCommand("docker", ["ps", "--format", "table {{.Names}}\t{{.Status}}\t{{.Image}}"]),
+            runCommand("docker", ["images", "--format", "table {{.Repository}}\t{{.Tag}}\t{{.Size}}"]),
+          ]);
+          const psStr = ps.status === "fulfilled" ? ps.value.trim() : "Docker not running or not installed";
+          const imgStr = images.status === "fulfilled" ? images.value.trim() : "";
+          result = `--- Containers ---\n${psStr}`;
+          if (imgStr) result += `\n\n--- Images ---\n${imgStr}`;
+          break;
+        }
+        case "node": {
+          const [nodeV, npmV, pkgJson] = await Promise.allSettled([
+            runCommand("node", ["--version"]),
+            runCommand("npm", ["--version"]),
+            runCommand("node", ["-e", "try{const p=require('./package.json');console.log('Name: '+p.name+'\\nVersion: '+p.version+'\\n\\nScripts:\\n'+Object.keys(p.scripts||{}).map(k=>'  '+k+': '+p.scripts[k]).join('\\n'))}catch{console.log('No package.json found')}"]),
+          ]);
+          const nodeStr = nodeV.status === "fulfilled" ? `Node: ${nodeV.value.trim()}` : "Node.js not installed";
+          const npmStr = npmV.status === "fulfilled" ? `NPM: ${npmV.value.trim()}` : "";
+          const pkgStr = pkgJson.status === "fulfilled" ? pkgJson.value.trim() : "";
+          result = nodeStr;
+          if (npmStr) result += `\n${npmStr}`;
+          if (pkgStr) result += `\n\n${pkgStr}`;
+          break;
+        }
+        case "python": {
+          const [pyV, pipV, venv] = await Promise.allSettled([
+            runCommand("python", ["--version"]),
+            runCommand("pip", ["--version"]),
+            runCommand("python", ["-c", "import sys; print('Prefix:', sys.prefix); print('Exec:', sys.executable); print('Platform:', sys.platform)"]),
+          ]);
+          const pyStr = pyV.status === "fulfilled" ? pyV.value.trim() : "Python not installed";
+          const pipStr = pipV.status === "fulfilled" ? pipV.value.trim().split(" ").slice(0, 2).join(" ") : "";
+          const venvStr = venv.status === "fulfilled" ? venv.value.trim() : "";
+          result = pyStr;
+          if (pipStr) result += `\n${pipStr}`;
+          if (venvStr) result += `\n\n${venvStr}`;
+          break;
+        }
+        case "system": {
+          const isWin = navigator.platform.startsWith("Win");
+          if (isWin) {
+            const [hostname, uptime, netstat] = await Promise.allSettled([
+              runCommand("hostname", []),
+              runCommand("powershell", ["-Command", "[math]::Round((Get-Date) .Subtract((Get-CimInstance Win32_OperatingSystem).LastBootUpTime).TotalHours, 1).ToString() + ' hours'"]),
+              runCommand("powershell", ["-Command", "Get-NetAdapter | Where-Object {$_.Status -eq 'Up'} | Select-Object -First 3 Name, LinkSpeed | Format-Table -AutoSize | Out-String"]),
+            ]);
+            const hostStr = hostname.status === "fulfilled" ? `Hostname: ${hostname.value.trim()}` : "";
+            const uptimeStr = uptime.status === "fulfilled" ? `Uptime: ${uptime.value.trim()}` : "";
+            const netStr = netstat.status === "fulfilled" ? netstat.value.trim() : "";
+            result = [hostStr, uptimeStr].filter(Boolean).join("\n");
+            if (netStr) result += `\n\n--- Network ---\n${netStr}`;
+          } else {
+            const [hostname, uptime] = await Promise.allSettled([
+              runCommand("hostname", []),
+              runCommand("uptime", []),
+            ]);
+            result = [
+              hostname.status === "fulfilled" ? `Hostname: ${hostname.value.trim()}` : "",
+              uptime.status === "fulfilled" ? `Uptime: ${uptime.value.trim()}` : "",
+            ].filter(Boolean).join("\n");
+          }
+          break;
+        }
+      }
+      setPluginData((prev) => ({ ...prev, [pluginId]: { loading: false, data: result, error: null } }));
+    } catch (e) {
+      setPluginData((prev) => ({ ...prev, [pluginId]: { loading: false, data: null, error: String(e) } }));
+    }
+  }, [runCommand]);
+
+  // Fetch data for enabled plugins on mount and when toggled
+  useEffect(() => {
+    plugins.forEach((p) => {
+      if (p.enabled && !pluginData[p.id]) {
+        fetchPluginData(p.id);
+      }
+    });
+  }, [plugins, fetchPluginData]);
+
+  const handleToggle = (id: string) => {
+    const plugin = plugins.find((p) => p.id === id);
+    togglePlugin(id);
+    if (plugin && !plugin.enabled) {
+      // Was disabled, now enabling — fetch data
+      fetchPluginData(id);
+    } else {
+      // Disabling — clear data
+      setPluginData((prev) => {
+        const next = { ...prev };
+        delete next[id];
+        return next;
+      });
+    }
+  };
 
   return (
     <div>
       <span className="sidebar-section-title">Extensions</span>
-      {plugins.map((plugin) => (
-        <div key={plugin.id} className="plugin-card">
-          <div className="plugin-header">
-            <span className="plugin-name">{plugin.name}</span>
-            <button className={`plugin-toggle ${plugin.enabled ? "active" : ""}`} onClick={() => togglePlugin(plugin.id)} aria-label={`${plugin.enabled ? "Disable" : "Enable"} ${plugin.name}`} />
+      <p style={{ fontSize: 10, color: "var(--text-muted)", margin: "0 0 10px 0" }}>
+        Enable extensions to see live data from your system tools.
+      </p>
+      {plugins.map((plugin) => {
+        const data = pluginData[plugin.id];
+        return (
+          <div key={plugin.id} className="plugin-card" style={{ marginBottom: 8 }}>
+            <div className="plugin-header">
+              <span className="plugin-name">{plugin.name}</span>
+              <button
+                className={`plugin-toggle ${plugin.enabled ? "active" : ""}`}
+                onClick={() => handleToggle(plugin.id)}
+                aria-label={`${plugin.enabled ? "Disable" : "Enable"} ${plugin.name}`}
+              />
+            </div>
+            <div className="plugin-desc">{plugin.desc}</div>
+            {plugin.enabled && data && (
+              <div style={{ marginTop: 8 }}>
+                {data.loading && (
+                  <div style={{ fontSize: 10, color: "var(--text-muted)", padding: "4px 0" }}>Loading...</div>
+                )}
+                {data.error && (
+                  <div style={{ fontSize: 10, color: "var(--accent-error)", padding: "4px 0", wordBreak: "break-word" }}>{data.error}</div>
+                )}
+                {data.data && (
+                  <pre style={{
+                    fontSize: 10,
+                    lineHeight: 1.5,
+                    color: "var(--text-secondary)",
+                    background: "var(--bg-primary)",
+                    border: "1px solid var(--border-subtle)",
+                    borderRadius: "var(--radius-sm)",
+                    padding: "6px 8px",
+                    margin: 0,
+                    overflow: "auto",
+                    maxHeight: 200,
+                    whiteSpace: "pre-wrap",
+                    wordBreak: "break-word",
+                    fontFamily: "inherit",
+                  }}>{data.data}</pre>
+                )}
+                <button
+                  onClick={() => fetchPluginData(plugin.id)}
+                  style={{
+                    marginTop: 4,
+                    padding: "3px 8px",
+                    background: "var(--bg-tertiary)",
+                    border: "1px solid var(--border-subtle)",
+                    borderRadius: "var(--radius-sm)",
+                    color: "var(--text-muted)",
+                    fontSize: 10,
+                    cursor: "pointer",
+                    fontFamily: "inherit",
+                  }}
+                >Refresh</button>
+              </div>
+            )}
           </div>
-          <div className="plugin-desc">{plugin.desc}</div>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }

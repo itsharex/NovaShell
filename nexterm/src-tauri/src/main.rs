@@ -487,6 +487,47 @@ fn keychain_delete_password(connection_id: String) -> Result<(), String> {
     keychain_manager::delete_password(&connection_id)
 }
 
+const ALLOWED_COMMANDS: &[&str] = &[
+    "git", "docker", "node", "npm", "npx", "python", "python3", "pip", "pip3",
+    "hostname", "uptime", "powershell", "powershell.exe",
+    "kubectl", "cargo", "rustc", "go", "java", "javac",
+];
+
+#[tauri::command]
+fn run_command_output(command: String, args: Vec<String>) -> Result<String, String> {
+    // Extract base command name (strip path and extension)
+    let base = std::path::Path::new(&command)
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or(&command)
+        .to_lowercase();
+
+    if !ALLOWED_COMMANDS.iter().any(|&allowed| base == allowed) {
+        return Err(format!("Command '{}' is not in the allowed list", command));
+    }
+
+    let mut cmd = std::process::Command::new(&command);
+    cmd.args(&args)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
+
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+    }
+
+    let output = cmd.output()
+        .map_err(|e| format!("Failed to run '{}': {}", command, e))?;
+
+    if output.status.success() {
+        Ok(String::from_utf8_lossy(&output.stdout).to_string())
+    } else {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        Err(format!("{}", stderr.trim()))
+    }
+}
+
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
@@ -525,7 +566,8 @@ fn main() {
             debug_log_delete_session,
             debug_log_cleanup,
             debug_log_get_dir,
+            run_command_output,
         ])
         .run(tauri::generate_context!())
-        .expect("error while running NovaTerm");
+        .expect("error while running NovaShell");
 }

@@ -209,7 +209,7 @@ jobs:
           # Build JSON with jq to properly escape multiline signatures
           jq -n \
             --arg version "$VERSION" \
-            --arg notes "NovaTerm ${TAG} — see release notes for details." \
+            --arg notes "NovaShell ${TAG} — see release notes for details." \
             --arg pub_date "$DATE" \
             --arg win_sig "$WIN_NSIS_SIG" \
             --arg win_url "${BASE_URL}/${WIN_NSIS}" \
@@ -238,11 +238,11 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
-          name: 'NovaTerm ${{ github.ref_name }}'
+          name: 'NovaShell ${{ github.ref_name }}'
           draft: true
           prerelease: false
           body: |
-            ## NovaTerm ${{ github.ref_name }}
+            ## NovaShell ${{ github.ref_name }}
 
             Download the installer for your platform below.
             **Auto-update:** Existing installations will be notified automatically.

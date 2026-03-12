@@ -123,7 +123,7 @@ export function DebugPanel() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `novaterm-logs-${new Date().toISOString().replace(/[:.]/g, "-")}.log`;
+    a.download = `novashell-logs-${new Date().toISOString().replace(/[:.]/g, "-")}.log`;
     a.click();
     URL.revokeObjectURL(url);
   }, [filteredLogs]);

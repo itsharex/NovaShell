@@ -1,6 +1,6 @@
 use keyring::Entry;
 
-const SERVICE_NAME: &str = "novaterm-ssh";
+const SERVICE_NAME: &str = "novashell-ssh";
 
 /// Build a consistent keyring key from connection details
 fn make_key(connection_id: &str) -> String {

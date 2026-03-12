@@ -222,7 +222,7 @@ export const UpdateNotification = memo(function UpdateNotification() {
 
         {status.phase === "up-to-date" && (
           <p style={{ fontSize: 11, color: "var(--text-secondary)", margin: 0 }}>
-            You're running the latest version of NovaTerm.
+            You're running the latest version of NovaShell.
           </p>
         )}
 
@@ -310,7 +310,7 @@ export const UpdateNotification = memo(function UpdateNotification() {
         {status.phase === "ready" && (
           <>
             <p style={{ fontSize: 11, color: "var(--text-secondary)", margin: "0 0 10px 0" }}>
-              Update installed successfully. Restart NovaTerm to apply changes.
+              Update installed successfully. Restart NovaShell to apply changes.
             </p>
             <button
               onClick={relaunchApp}

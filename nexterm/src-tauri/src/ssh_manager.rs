@@ -55,7 +55,7 @@ impl SshSession {
         if let Some(key_content) = private_key {
             // Write key to a temp file for ssh2
             let temp_dir = std::env::temp_dir();
-            let key_path = temp_dir.join(format!("novaterm_ssh_key_{}", session_id));
+            let key_path = temp_dir.join(format!("novashell_ssh_key_{}", session_id));
             std::fs::write(&key_path, key_content)
                 .map_err(|e| format!("Failed to write temp key: {}", e))?;
 
@@ -237,7 +237,7 @@ pub fn test_ssh_connection(
 
     if let Some(key_content) = private_key {
         let temp_dir = std::env::temp_dir();
-        let key_path = temp_dir.join(format!("novaterm_ssh_test_{}", uuid::Uuid::new_v4()));
+        let key_path = temp_dir.join(format!("novashell_ssh_test_{}", uuid::Uuid::new_v4()));
         std::fs::write(&key_path, key_content)
             .map_err(|e| format!("Failed to write temp key: {}", e))?;
 

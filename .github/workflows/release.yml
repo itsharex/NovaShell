@@ -103,17 +103,46 @@ jobs:
           ls public/fonts/*.woff2
           ls src-tauri/icons/icon.ico src-tauri/icons/icon.icns src-tauri/icons/icon.png
 
-      - name: Build Tauri app (signed for updater)
+      - name: Build Tauri app
         working-directory: nexterm
         shell: bash
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          TAURI_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: npx tauri build --target ${{ matrix.target }}
 
-      - name: Debug - List all bundle files
+      - name: Sign updater artifacts
+        working-directory: nexterm
         shell: bash
-        run: find nexterm/src-tauri/target/${{ matrix.target }}/release/bundle -type f 2>/dev/null | sort || echo "No bundle dir"
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          TAURI_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          BUNDLE_DIR="src-tauri/target/${{ matrix.target }}/release/bundle"
+          echo "=== Bundle directory contents ==="
+          find "$BUNDLE_DIR" -type f 2>/dev/null | sort
+
+          # Sign NSIS exe (Windows updater format)
+          for f in "$BUNDLE_DIR"/nsis/*.exe; do
+            [ -f "$f" ] && echo "Signing $f" && npx tauri signer sign "$f" && echo "Created ${f}.sig"
+          done
+
+          # Sign .app.tar.gz (macOS updater format)
+          for f in "$BUNDLE_DIR"/macos/*.app.tar.gz; do
+            [ -f "$f" ] && echo "Signing $f" && npx tauri signer sign "$f" && echo "Created ${f}.sig"
+          done
+
+          # Sign AppImage (Linux updater format)
+          for f in "$BUNDLE_DIR"/appimage/*.AppImage; do
+            [ -f "$f" ] && echo "Signing $f" && npx tauri signer sign "$f" && echo "Created ${f}.sig"
+          done
+
+          echo "=== After signing ==="
+          find "$BUNDLE_DIR" -name "*.sig" -type f 2>/dev/null | sort
 
       - name: Upload Windows artifacts
         if: matrix.target == 'x86_64-pc-windows-msvc'

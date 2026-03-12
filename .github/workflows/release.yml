@@ -111,6 +111,10 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: npx tauri build --target ${{ matrix.target }}
 
+      - name: Debug - List all bundle files
+        shell: bash
+        run: find nexterm/src-tauri/target/${{ matrix.target }}/release/bundle -type f 2>/dev/null | sort || echo "No bundle dir"
+
       - name: Upload Windows artifacts
         if: matrix.target == 'x86_64-pc-windows-msvc'
         uses: actions/upload-artifact@v4
@@ -185,28 +189,74 @@ jobs:
           BASE_URL="https://github.com/${REPO}/releases/download/${TAG}"
           DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 
-          # Read signature files (contain multiline minisign data)
+          echo "=== Looking for signature files ==="
+          find artifacts -name "*.sig" -type f 2>/dev/null
+          echo "=== Looking for updater files ==="
+          find artifacts -name "*.exe" -o -name "*.app.tar.gz" -o -name "*.AppImage" | grep -v ".sig" | sort
+
+          # Read signature from file, return empty if not found
           read_sig() {
-            local sig_file="$1"
-            if [ -f "$sig_file" ]; then
+            local pattern="$1"
+            local sig_file
+            sig_file=$(find artifacts -name "$pattern" -type f 2>/dev/null | head -1)
+            if [ -n "$sig_file" ] && [ -f "$sig_file" ]; then
               cat "$sig_file"
             else
               echo ""
             fi
           }
 
-          WIN_NSIS_SIG=$(read_sig "$(find artifacts/windows-installers -name '*.exe.sig' 2>/dev/null | head -1)")
-          MACOS_ARM_SIG=$(read_sig "$(find artifacts/macos-arm-installers -name '*.app.tar.gz.sig' 2>/dev/null | head -1)")
-          MACOS_INTEL_SIG=$(read_sig "$(find artifacts/macos-intel-installers -name '*.app.tar.gz.sig' 2>/dev/null | head -1)")
-          LINUX_SIG=$(read_sig "$(find artifacts/linux-installers -name '*.AppImage.sig' 2>/dev/null | head -1)")
+          # Find file by pattern, return basename
+          find_file() {
+            local pattern="$1"
+            local found
+            found=$(find artifacts -name "$pattern" -type f 2>/dev/null | grep -v ".sig" | head -1)
+            if [ -n "$found" ]; then
+              basename "$found"
+            else
+              echo ""
+            fi
+          }
 
-          # Find actual filenames
-          WIN_NSIS=$(find artifacts/windows-installers -name "*.exe" ! -name "*.sig" 2>/dev/null | head -1 | xargs -r basename)
-          MACOS_ARM_TAR=$(find artifacts/macos-arm-installers -name "*.app.tar.gz" ! -name "*.sig" 2>/dev/null | head -1 | xargs -r basename)
-          MACOS_INTEL_TAR=$(find artifacts/macos-intel-installers -name "*.app.tar.gz" ! -name "*.sig" 2>/dev/null | head -1 | xargs -r basename)
-          LINUX_APPIMAGE=$(find artifacts/linux-installers -name "*.AppImage" ! -name "*.sig" 2>/dev/null | head -1 | xargs -r basename)
+          # Windows: NSIS .exe + .exe.sig
+          WIN_NSIS=$(find_file "*.exe")
+          WIN_NSIS_SIG=$(read_sig "*.exe.sig")
 
-          # Build JSON with jq to properly escape multiline signatures
+          # macOS ARM: .app.tar.gz + .app.tar.gz.sig
+          MACOS_ARM_TAR=""
+          MACOS_ARM_SIG=""
+          ARM_TAR=$(find artifacts/macos-arm-installers -name "*.app.tar.gz" ! -name "*.sig" -type f 2>/dev/null | head -1)
+          if [ -n "$ARM_TAR" ]; then
+            MACOS_ARM_TAR=$(basename "$ARM_TAR")
+            ARM_SIG="${ARM_TAR}.sig"
+            if [ -f "$ARM_SIG" ]; then
+              MACOS_ARM_SIG=$(cat "$ARM_SIG")
+            fi
+          fi
+
+          # macOS Intel: .app.tar.gz + .app.tar.gz.sig
+          MACOS_INTEL_TAR=""
+          MACOS_INTEL_SIG=""
+          INTEL_TAR=$(find artifacts/macos-intel-installers -name "*.app.tar.gz" ! -name "*.sig" -type f 2>/dev/null | head -1)
+          if [ -n "$INTEL_TAR" ]; then
+            MACOS_INTEL_TAR=$(basename "$INTEL_TAR")
+            INTEL_SIG="${INTEL_TAR}.sig"
+            if [ -f "$INTEL_SIG" ]; then
+              MACOS_INTEL_SIG=$(cat "$INTEL_SIG")
+            fi
+          fi
+
+          # Linux: .AppImage + .AppImage.sig
+          LINUX_APPIMAGE=$(find_file "*.AppImage")
+          LINUX_SIG=$(read_sig "*.AppImage.sig")
+
+          echo "=== Resolved files ==="
+          echo "WIN: $WIN_NSIS (sig: ${#WIN_NSIS_SIG} chars)"
+          echo "MAC ARM: $MACOS_ARM_TAR (sig: ${#MACOS_ARM_SIG} chars)"
+          echo "MAC INTEL: $MACOS_INTEL_TAR (sig: ${#MACOS_INTEL_SIG} chars)"
+          echo "LINUX: $LINUX_APPIMAGE (sig: ${#LINUX_SIG} chars)"
+
+          # Build JSON with jq
           jq -n \
             --arg version "$VERSION" \
             --arg notes "NovaShell ${TAG} — see release notes for details." \
@@ -231,8 +281,14 @@ jobs:
               }
             }' > latest.json
 
-          echo "Generated latest.json:"
+          echo "=== Generated latest.json ==="
           cat latest.json
+
+          # Validate that signatures are not empty
+          WIN_SIG_LEN=$(jq -r '.platforms."windows-x86_64".signature | length' latest.json)
+          if [ "$WIN_SIG_LEN" -eq 0 ]; then
+            echo "::warning::Windows signature is empty! Updater will fail for Windows."
+          fi
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2

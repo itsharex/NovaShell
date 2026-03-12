@@ -2,6 +2,7 @@ use portable_pty::{native_pty_system, CommandBuilder, MasterPty, PtySize};
 use std::io::{Read, Write};
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
+use std::time::{Duration, Instant};
 use tauri::Emitter;
 
 pub struct PtySession {
@@ -61,7 +62,14 @@ impl PtySession {
         let sid = session_id.to_string();
 
         let reader_thread = std::thread::spawn(move || {
-            let mut buf = [0u8; 4096];
+            let mut buf = [0u8; 8192];
+            let mut batch = String::new();
+            let mut last_flush = Instant::now();
+            let flush_interval = Duration::from_millis(8); // ~120fps max, prevents WebView flooding
+            let event_name = format!("pty-data-{}", sid);
+            let exit_event = format!("pty-exit-{}", sid);
+            let error_event = format!("pty-error-{}", sid);
+
             loop {
                 if let Ok(r) = running_clone.lock() {
                     if !*r {
@@ -71,16 +79,27 @@ impl PtySession {
 
                 match reader.read(&mut buf) {
                     Ok(0) => {
-                        let _ = app_handle.emit(&format!("pty-exit-{}", sid), ());
+                        // Flush remaining data before exit
+                        if !batch.is_empty() {
+                            let _ = app_handle.emit(&event_name, std::mem::take(&mut batch));
+                        }
+                        let _ = app_handle.emit(&exit_event, ());
                         break;
                     }
                     Ok(n) => {
-                        let data = String::from_utf8_lossy(&buf[..n]).to_string();
-                        let _ = app_handle.emit(&format!("pty-data-{}", sid), data);
+                        batch.push_str(&String::from_utf8_lossy(&buf[..n]));
+                        // Flush batch if enough time has passed or batch is large
+                        if last_flush.elapsed() >= flush_interval || batch.len() > 32768 {
+                            let _ = app_handle.emit(&event_name, std::mem::take(&mut batch));
+                            last_flush = Instant::now();
+                        }
                     }
                     Err(e) => {
+                        if !batch.is_empty() {
+                            let _ = app_handle.emit(&event_name, std::mem::take(&mut batch));
+                        }
                         let msg = format!("PTY read error: {}", e);
-                        let _ = app_handle.emit(&format!("pty-error-{}", sid), msg);
+                        let _ = app_handle.emit(&error_event, msg);
                         break;
                     }
                 }

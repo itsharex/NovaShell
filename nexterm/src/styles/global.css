@@ -420,6 +420,14 @@ body {
   position: relative;
   background: var(--terminal-bg);
   overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.terminal-instances-container {
+  flex: 1;
+  position: relative;
+  overflow: hidden;
 }
 
 .terminal-instance {
@@ -1024,7 +1032,7 @@ body {
   margin-top: 1px;
 }
 
-.terminal-panel.split-vertical {
+.terminal-panel.split-vertical .terminal-instances-container {
   display: flex;
   flex-direction: row;
 }
@@ -1039,7 +1047,7 @@ body {
   border-left: 2px solid var(--border-color);
 }
 
-.terminal-panel.split-horizontal {
+.terminal-panel.split-horizontal .terminal-instances-container {
   display: flex;
   flex-direction: column;
 }

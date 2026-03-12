@@ -21,6 +21,7 @@ export function StatusBar() {
   const setGitBranch = useAppStore((s) => s.setGitBranch);
   const splitMode = useAppStore((s) => s.splitMode);
   const setSplitMode = useAppStore((s) => s.setSplitMode);
+  const addTab = useAppStore((s) => s.addTab);
 
   const [time, setTime] = useState(new Date());
 
@@ -95,7 +96,11 @@ export function StatusBar() {
   const cycleSplit = () => {
     const modes: Array<"none" | "horizontal" | "vertical"> = ["none", "vertical", "horizontal"];
     const current = modes.indexOf(splitMode);
-    setSplitMode(modes[(current + 1) % modes.length]);
+    const next = modes[(current + 1) % modes.length];
+    if (next !== "none" && tabs.length < 2) {
+      addTab(activeTab?.shellType || "powershell");
+    }
+    setSplitMode(next);
   };
 
   const SplitIcon = splitMode === "vertical" ? Columns : splitMode === "horizontal" ? Rows3 : Square;

@@ -134,12 +134,19 @@ export function TerminalPanel() {
   selectedSuggestionRef.current = selectedSuggestion;
 
   useEffect(() => {
-    const ref = terminalsRef.current.get(activeTabId);
-    if (ref) {
-      const timer = setTimeout(() => ref.fitAddon.fit(), 50);
+    if (splitMode !== "none") {
+      const timer = setTimeout(() => {
+        terminalsRef.current.forEach((ref) => ref.fitAddon.fit());
+      }, 50);
       return () => clearTimeout(timer);
+    } else {
+      const ref = terminalsRef.current.get(activeTabId);
+      if (ref) {
+        const timer = setTimeout(() => ref.fitAddon.fit(), 50);
+        return () => clearTimeout(timer);
+      }
     }
-  }, [activeTabId, splitMode]);
+  }, [activeTabId, splitMode, tabs.length]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -508,18 +515,20 @@ export function TerminalPanel() {
         visible={showAutocomplete}
         selectedIndex={selectedSuggestion}
       />
-      {tabs.map((tab) => (
-        <div
-          key={tab.id}
-          className={`terminal-instance ${tab.id !== activeTabId && splitMode === "none" ? "hidden" : ""}`}
-          ref={(el) => {
-            if (el && !containersRef.current.has(tab.id)) {
-              containersRef.current.set(tab.id, el);
-              initTerminal(tab.id, el);
-            }
-          }}
-        />
-      ))}
+      <div className="terminal-instances-container">
+        {tabs.map((tab) => (
+          <div
+            key={tab.id}
+            className={`terminal-instance ${tab.id !== activeTabId && splitMode === "none" ? "hidden" : ""}`}
+            ref={(el) => {
+              if (el && !containersRef.current.has(tab.id)) {
+                containersRef.current.set(tab.id, el);
+                initTerminal(tab.id, el);
+              }
+            }}
+          />
+        ))}
+      </div>
     </div>
   );
 }

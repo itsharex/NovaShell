@@ -215,10 +215,17 @@ pub fn test_ssh_connection(
 ) -> Result<String, String> {
     let addr = format!("{}:{}", host, port);
 
+    use std::net::ToSocketAddrs;
+    let socket_addr = addr
+        .to_socket_addrs()
+        .map_err(|e| format!("Cannot resolve {}: {}", addr, e))?
+        .next()
+        .ok_or_else(|| format!("Could not resolve host: {}", host))?;
+
     let tcp = TcpStream::connect_timeout(
-        &addr.parse().map_err(|e| format!("Invalid address: {}", e))?,
+        &socket_addr,
         std::time::Duration::from_secs(10),
-    ).map_err(|e| format!("Connection failed: {}", e))?;
+    ).map_err(|e| format!("Connection failed to {}: {}", addr, e))?;
 
     let mut session = Session::new()
         .map_err(|e| format!("Session creation failed: {}", e))?;

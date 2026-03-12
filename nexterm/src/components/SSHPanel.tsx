@@ -511,7 +511,22 @@ export function SSHPanel() {
               <input
                 type="number"
                 value={formPort}
-                onChange={(e) => setFormPort(Number(e.target.value) || 22)}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  if (val === "") {
+                    setFormPort(0);
+                  } else {
+                    const num = parseInt(val, 10);
+                    if (!isNaN(num) && num >= 0 && num <= 65535) {
+                      setFormPort(num);
+                    }
+                  }
+                }}
+                onBlur={() => {
+                  if (!formPort || formPort <= 0) setFormPort(22);
+                }}
+                min={1}
+                max={65535}
                 style={inputStyle}
               />
             </div>

@@ -140,15 +140,19 @@ export function SessionDocPanel() {
     } catch {}
   };
 
-  const exportDoc = () => {
+  const exportDoc = async () => {
     if (!viewingDoc) return;
-    const blob = new Blob([viewingDoc.content], { type: "text/markdown" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = viewingDoc.filename;
-    a.click();
-    URL.revokeObjectURL(url);
+    try {
+      const invoke = await getInvoke();
+      const path = await invoke<string>("export_file_to_downloads", {
+        filename: viewingDoc.filename,
+        content: viewingDoc.content,
+      });
+      setError("");
+      alert(`Exported to: ${path}`);
+    } catch (e: unknown) {
+      setError(`Export failed: ${e}`);
+    }
   };
 
   const formatDate = (ts: number) => {

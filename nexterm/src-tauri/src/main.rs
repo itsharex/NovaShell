@@ -774,6 +774,16 @@ fn session_doc_delete(
     mgr.delete_doc(&filename)
 }
 
+#[tauri::command]
+fn export_file_to_downloads(filename: String, content: String) -> Result<String, String> {
+    let downloads = dirs::download_dir()
+        .or_else(|| dirs::home_dir().map(|h| h.join("Downloads")))
+        .unwrap_or_else(|| std::path::PathBuf::from("."));
+    let dest = downloads.join(&filename);
+    std::fs::write(&dest, &content).map_err(|e| format!("Export error: {}", e))?;
+    Ok(dest.to_string_lossy().to_string())
+}
+
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
@@ -826,6 +836,7 @@ fn main() {
             session_doc_list,
             session_doc_load,
             session_doc_delete,
+            export_file_to_downloads,
         ])
         .run(tauri::generate_context!())
         .expect("error while running NovaShell");

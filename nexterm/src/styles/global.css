@@ -186,6 +186,12 @@ body {
   overflow: hidden;
   border-left: 1px solid var(--border-color);
   flex-shrink: 0;
+  transition: width 0.25s ease-in-out, opacity 0.25s ease-in-out;
+  opacity: 1;
+}
+.sidebar-wrapper.sidebar-closed {
+  opacity: 0;
+  border-left: none;
 }
 
 .focus-mode .titlebar { opacity: 0.3; height: 8px; transition: var(--transition-normal); }

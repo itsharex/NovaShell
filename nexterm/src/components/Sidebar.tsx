@@ -20,6 +20,9 @@ import {
   ArrowLeft,
   Monitor,
   Bug,
+  Sparkles,
+  FileText,
+  FolderTree,
   GripVertical,
   ChevronRight,
   ChevronDown,
@@ -30,15 +33,20 @@ import { useAppStore } from "../store/appStore";
 import type { SidebarTab } from "../store/appStore";
 import { SSHPanel } from "./SSHPanel";
 import { DebugPanel } from "./DebugPanel";
+import { AIPanel } from "./AIPanel";
+import { FileExplorer } from "./FileExplorer";
+import { SessionDocPanel } from "./SessionDocPanel";
 
 const sidebarTabs: { id: SidebarTab; icon: typeof History; label: string }[] = [
   { id: "history", icon: History, label: "History" },
   { id: "snippets", icon: Code2, label: "Snippets" },
-  { id: "preview", icon: Eye, label: "Preview" },
+  { id: "preview", icon: FolderTree, label: "Explorer" },
   { id: "plugins", icon: Puzzle, label: "Plugins" },
   { id: "stats", icon: BarChart3, label: "Stats" },
   { id: "ssh", icon: Monitor, label: "SSH" },
   { id: "debug", icon: Bug, label: "Debug" },
+  { id: "ai", icon: Sparkles, label: "AI Assistant" },
+  { id: "docs", icon: FileText, label: "Session Docs" },
 ];
 
 export function Sidebar() {
@@ -63,11 +71,13 @@ export function Sidebar() {
       <div className="sidebar-content">
         {sidebarTab === "history" && <HistoryPanel />}
         {sidebarTab === "snippets" && <SnippetsPanel />}
-        {sidebarTab === "preview" && <PreviewPanel />}
+        {sidebarTab === "preview" && <FileExplorer />}
         {sidebarTab === "plugins" && <PluginsPanel />}
         {sidebarTab === "stats" && <StatsPanel />}
         {sidebarTab === "ssh" && <SSHPanel />}
         {sidebarTab === "debug" && <DebugPanel />}
+        {sidebarTab === "ai" && <AIPanel />}
+        {sidebarTab === "docs" && <SessionDocPanel />}
       </div>
       <div style={{ padding: "4px 12px", textAlign: "center", borderTop: "1px solid var(--border-color)", flexShrink: 0 }}>
         <span style={{ fontSize: 9, color: "var(--text-muted)", opacity: 0.5 }}>NovaShell v{APP_VERSION}</span>

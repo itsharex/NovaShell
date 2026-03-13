@@ -1,7 +1,7 @@
 import { create } from "zustand";
 
 export type ThemeName = "dark" | "light" | "cyberpunk" | "retro";
-export type SidebarTab = "history" | "snippets" | "preview" | "plugins" | "stats" | "ssh" | "debug";
+export type SidebarTab = "history" | "snippets" | "preview" | "plugins" | "stats" | "ssh" | "debug" | "ai" | "docs";
 
 interface Tab {
   id: string;
@@ -63,6 +63,16 @@ export interface DebugLogEntry {
   level: LogLevel;
   message: string;
   source: string; // tab name or SSH connection
+}
+
+export type AiMode = "chat" | "explain" | "generate" | "fix";
+
+export interface AiMessage {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+  mode: AiMode;
+  timestamp: number;
 }
 
 // === File-based persistence (survives app updates) ===
@@ -210,6 +220,13 @@ interface AppState {
   clearDebugLogs: () => void;
   toggleDebug: () => void;
   toggleDebugPersist: () => void;
+
+  // AI Assistant
+  aiMessages: AiMessage[];
+  aiLoading: boolean;
+  addAiMessage: (msg: Omit<AiMessage, "id" | "timestamp">) => void;
+  clearAiMessages: () => void;
+  setAiLoading: (loading: boolean) => void;
 
   // Hydration from config file
   _hydrateFromConfig: (config: PersistedConfig) => void;
@@ -424,6 +441,14 @@ export const useAppStore = create<AppState>((set, get) => ({
     set((s) => ({ debugPersist: !s.debugPersist }));
     scheduleSave();
   },
+
+  aiMessages: [],
+  aiLoading: false,
+  addAiMessage: (msg) => set((s) => ({
+    aiMessages: [...s.aiMessages, { ...msg, id: crypto.randomUUID(), timestamp: Date.now() }],
+  })),
+  clearAiMessages: () => set({ aiMessages: [] }),
+  setAiLoading: (loading) => set({ aiLoading: loading }),
 
   _hydrateFromConfig: (config) => {
     const updates: Partial<AppState> = {};

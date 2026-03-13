@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState, useCallback, memo } from "react";
-import { motion, AnimatePresence } from "framer-motion";
 import { TitleBar } from "./components/TitleBar";
 import { TabBar } from "./components/TabBar";
 import { TerminalPanel } from "./components/TerminalPanel";
@@ -63,25 +62,20 @@ function App() {
           <MemoizedTabBar />
           <MemoizedTerminalPanel />
         </div>
-        <AnimatePresence>
+        <div
+          className={`sidebar-wrapper ${sidebarOpen ? "sidebar-open" : "sidebar-closed"}`}
+          style={{ width: sidebarOpen ? sidebarWidth : 0, position: "relative" }}
+        >
           {sidebarOpen && (
-            <motion.div
-              className="sidebar-wrapper"
-              initial={{ width: 0, opacity: 0 }}
-              animate={{ width: sidebarWidth, opacity: 1 }}
-              exit={{ width: 0, opacity: 0 }}
-              transition={{ duration: 0.3, ease: "easeInOut" }}
-              style={{ position: "relative" }}
-            >
-              {/* Resize handle */}
+            <>
               <div
                 className="sidebar-resize-handle"
                 onMouseDown={startResize}
               />
               <Sidebar />
-            </motion.div>
+            </>
           )}
-        </AnimatePresence>
+        </div>
       </div>
       <MemoizedStatusBar />
       <UpdateNotification />

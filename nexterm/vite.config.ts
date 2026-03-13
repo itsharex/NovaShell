@@ -25,12 +25,16 @@ export default defineConfig({
     target: "esnext",
     minify: !process.env.TAURI_DEBUG ? "esbuild" : false,
     sourcemap: !!process.env.TAURI_DEBUG,
+    chunkSizeWarningLimit: 150,
     rollupOptions: {
       output: {
         manualChunks: {
-          'vendor-xterm': ['@xterm/xterm', '@xterm/addon-fit', '@xterm/addon-canvas', '@xterm/addon-search', '@xterm/addon-web-links', '@xterm/addon-unicode11'],
-          'vendor-motion': ['framer-motion'],
+          'vendor-xterm': ['@xterm/xterm', '@xterm/addon-fit', '@xterm/addon-canvas', '@xterm/addon-search', '@xterm/addon-web-links'],
         },
+      },
+      treeshake: {
+        moduleSideEffects: false,
+        propertyReadSideEffects: false,
       },
     },
   },

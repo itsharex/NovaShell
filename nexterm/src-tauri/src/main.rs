@@ -1,8 +1,10 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod ai_manager;
 mod keychain_manager;
 mod log_manager;
 mod pty_manager;
+mod session_doc_manager;
 mod ssh_manager;
 mod system_info;
 
@@ -17,6 +19,7 @@ pub struct AppState {
     pub system: Mutex<sysinfo::System>,
     pub cached_path_commands: Mutex<Option<Vec<String>>>,
     pub log_manager: Mutex<log_manager::LogManager>,
+    pub session_doc_manager: Mutex<session_doc_manager::SessionDocManager>,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -91,20 +94,16 @@ async fn create_pty_session(
     state: State<'_, AppState>,
     app_handle: tauri::AppHandle,
 ) -> Result<String, String> {
-    {
-        let sessions = state.sessions.lock()
-            .map_err(|e| format!("Session lock error: {}", e))?;
-        if sessions.len() >= 20 {
-            return Err("Maximum number of terminal sessions reached (20)".to_string());
-        }
-    }
     let session_id = uuid::Uuid::new_v4().to_string();
     let session = pty_manager::PtySession::new(&shell_path, &session_id, app_handle)
         .map_err(|e| e.to_string())?;
 
-    state.sessions.lock()
-        .map_err(|e| format!("Session lock error: {}", e))?
-        .insert(session_id.clone(), session);
+    let mut sessions = state.sessions.lock()
+        .map_err(|e| format!("Session lock error: {}", e))?;
+    if sessions.len() >= 20 {
+        return Err("Maximum number of terminal sessions reached (20)".to_string());
+    }
+    sessions.insert(session_id.clone(), session);
     Ok(session_id)
 }
 
@@ -699,6 +698,82 @@ fn run_command_output(command: String, args: Vec<String>, cwd: Option<String>) -
     }
 }
 
+// ─── Ollama AI Commands ───
+
+#[tauri::command]
+async fn ai_health() -> Result<bool, String> {
+    ai_manager::check_health().await
+}
+
+#[tauri::command]
+async fn ai_list_models() -> Result<Vec<ai_manager::OllamaModel>, String> {
+    ai_manager::list_models().await
+}
+
+#[tauri::command]
+async fn ai_pull_model(model: String) -> Result<(), String> {
+    ai_manager::pull_model(&model).await
+}
+
+#[tauri::command]
+async fn ai_chat(
+    model: String,
+    system_prompt: String,
+    messages: Vec<ai_manager::ChatMessage>,
+) -> Result<String, String> {
+    ai_manager::chat(&model, &system_prompt, &messages).await
+}
+
+#[tauri::command]
+async fn ai_generate_session_doc(
+    commands: Vec<String>,
+    errors: Vec<String>,
+    duration_minutes: u64,
+) -> Result<String, String> {
+    ai_manager::generate_session_doc(&commands, &errors, duration_minutes).await
+}
+
+// ─── Session Doc Commands ───
+
+#[tauri::command]
+fn session_doc_save(
+    content: String,
+    state: State<'_, AppState>,
+) -> Result<String, String> {
+    let mgr = state.session_doc_manager.lock()
+        .map_err(|e| format!("Lock error: {}", e))?;
+    mgr.save_doc(&content)
+}
+
+#[tauri::command]
+fn session_doc_list(
+    state: State<'_, AppState>,
+) -> Result<Vec<session_doc_manager::SessionDocInfo>, String> {
+    let mgr = state.session_doc_manager.lock()
+        .map_err(|e| format!("Lock error: {}", e))?;
+    mgr.list_docs()
+}
+
+#[tauri::command]
+fn session_doc_load(
+    filename: String,
+    state: State<'_, AppState>,
+) -> Result<String, String> {
+    let mgr = state.session_doc_manager.lock()
+        .map_err(|e| format!("Lock error: {}", e))?;
+    mgr.load_doc(&filename)
+}
+
+#[tauri::command]
+fn session_doc_delete(
+    filename: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let mgr = state.session_doc_manager.lock()
+        .map_err(|e| format!("Lock error: {}", e))?;
+    mgr.delete_doc(&filename)
+}
+
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
@@ -711,6 +786,7 @@ fn main() {
             system: Mutex::new(sysinfo::System::new_all()),
             cached_path_commands: Mutex::new(None),
             log_manager: Mutex::new(log_manager::LogManager::new()),
+            session_doc_manager: Mutex::new(session_doc_manager::SessionDocManager::new()),
         })
         .invoke_handler(tauri::generate_handler![
             get_available_shells,
@@ -741,6 +817,15 @@ fn main() {
             write_shell_init_script,
             load_app_config,
             save_app_config,
+            ai_health,
+            ai_list_models,
+            ai_pull_model,
+            ai_chat,
+            ai_generate_session_doc,
+            session_doc_save,
+            session_doc_list,
+            session_doc_load,
+            session_doc_delete,
         ])
         .run(tauri::generate_context!())
         .expect("error while running NovaShell");

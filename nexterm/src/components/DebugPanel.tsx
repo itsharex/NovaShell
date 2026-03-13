@@ -55,7 +55,7 @@ export function DebugPanel() {
   const [levelFilters, setLevelFilters] = useState<Set<LogLevel>>(
     new Set(["error", "warn", "info", "debug", "trace", "output"])
   );
-  const [paused, setPaused] = useState(false);
+  const [paused, setPaused] = useState(true);
   const [showFilters, setShowFilters] = useState(false);
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   const [sourceFilter, setSourceFilter] = useState<string | null>(null);

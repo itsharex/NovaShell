@@ -396,7 +396,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   debugLogs: [],
-  debugEnabled: false,
+  debugEnabled: true,
   debugPersist: true,
   addDebugLog: (entry) =>
     set((s) => {
@@ -432,7 +432,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (config.snippetFolders) updates.snippetFolders = config.snippetFolders;
     if (config.plugins && config.plugins.length > 0) updates.plugins = config.plugins;
     if (config.history) updates.history = config.history;
-    // debugEnabled is intentionally NOT restored — always starts OFF
+    // debugEnabled is intentionally NOT restored — always starts ON
     if (config.debugPersist !== undefined) updates.debugPersist = config.debugPersist;
     if (config.sshConnections && config.sshConnections.length > 0) {
       updates.sshConnections = config.sshConnections.map((c) => ({

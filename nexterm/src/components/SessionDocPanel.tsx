@@ -94,10 +94,13 @@ export function SessionDocPanel() {
     setError("");
     try {
       const invoke = await getInvoke();
-      // Collect session data
-      const commands = history.slice(0, 50).map((h) => h.command);
+      // Collect only current session data (filter by sessionStartTime)
+      const commands = history
+        .filter((h) => h.timestamp >= sessionStartTime)
+        .slice(0, 50)
+        .map((h) => h.command);
       const errors = debugLogs
-        .filter((l) => l.level === "error" || l.level === "warn")
+        .filter((l) => l.timestamp >= sessionStartTime && (l.level === "error" || l.level === "warn"))
         .slice(0, 20)
         .map((l) => `[${l.level.toUpperCase()}] ${l.message}`);
       const durationMinutes = Math.round((Date.now() - sessionStartTime) / 60000);
@@ -261,13 +264,13 @@ export function SessionDocPanel() {
         <div style={{ padding: "12px", flexShrink: 0 }}>
           <button
             onClick={generateDoc}
-            disabled={generating || history.length === 0}
+            disabled={generating || history.filter((h) => h.timestamp >= sessionStartTime).length === 0}
             style={{
               width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
               padding: "10px 16px", fontSize: 12, fontWeight: 600, border: "none", cursor: "pointer",
               borderRadius: "var(--radius-md)", transition: "all var(--transition-fast)",
-              background: generating || history.length === 0 ? "var(--bg-active)" : "var(--accent-gradient)",
-              color: "white", opacity: generating || history.length === 0 ? 0.5 : 1,
+              background: generating || history.filter((h) => h.timestamp >= sessionStartTime).length === 0 ? "var(--bg-active)" : "var(--accent-gradient)",
+              color: "white", opacity: generating || history.filter((h) => h.timestamp >= sessionStartTime).length === 0 ? 0.5 : 1,
             }}
           >
             {generating ? (
@@ -300,8 +303,8 @@ export function SessionDocPanel() {
         padding: "8px 12px", borderBottom: "1px solid var(--border-subtle)",
         display: "flex", gap: 12, fontSize: 10, color: "var(--text-muted)", flexShrink: 0,
       }}>
-        <span>{history.length} commands</span>
-        <span>{debugLogs.filter((l) => l.level === "error").length} errors</span>
+        <span>{history.filter((h) => h.timestamp >= sessionStartTime).length} commands</span>
+        <span>{debugLogs.filter((l) => l.timestamp >= sessionStartTime && l.level === "error").length} errors</span>
         <span>
           <Clock size={10} style={{ verticalAlign: "middle", marginRight: 2 }} />
           {Math.round((Date.now() - sessionStartTime) / 60000)}m

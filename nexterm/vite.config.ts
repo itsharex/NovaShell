@@ -32,10 +32,6 @@ export default defineConfig({
           'vendor-xterm': ['@xterm/xterm', '@xterm/addon-fit', '@xterm/addon-canvas', '@xterm/addon-search', '@xterm/addon-web-links'],
         },
       },
-      treeshake: {
-        moduleSideEffects: false,
-        propertyReadSideEffects: false,
-      },
     },
   },
 });

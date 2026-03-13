@@ -494,6 +494,32 @@ fn keychain_delete_password(connection_id: String) -> Result<(), String> {
 }
 
 #[tauri::command]
+fn load_app_config() -> Result<String, String> {
+    let config_path = get_config_path()?;
+    if config_path.exists() {
+        std::fs::read_to_string(&config_path).map_err(|e| e.to_string())
+    } else {
+        Ok("{}".to_string())
+    }
+}
+
+#[tauri::command]
+fn save_app_config(data: String) -> Result<(), String> {
+    let config_path = get_config_path()?;
+    if let Some(parent) = config_path.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+    std::fs::write(&config_path, data).map_err(|e| e.to_string())
+}
+
+fn get_config_path() -> Result<std::path::PathBuf, String> {
+    let data_dir = dirs::data_dir()
+        .or_else(|| dirs::home_dir())
+        .ok_or("Cannot determine data directory")?;
+    Ok(data_dir.join("novashell").join("config.json"))
+}
+
+#[tauri::command]
 fn write_shell_init_script(shell_type: String) -> Result<String, String> {
     let tmp = std::env::temp_dir();
     let (filename, content) = match shell_type.as_str() {
@@ -703,6 +729,8 @@ fn main() {
             debug_log_get_dir,
             run_command_output,
             write_shell_init_script,
+            load_app_config,
+            save_app_config,
         ])
         .run(tauri::generate_context!())
         .expect("error while running NovaShell");

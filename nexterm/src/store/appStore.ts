@@ -65,6 +65,68 @@ export interface DebugLogEntry {
   source: string; // tab name or SSH connection
 }
 
+// === File-based persistence (survives app updates) ===
+interface PersistedConfig {
+  theme?: ThemeName;
+  snippets?: Snippet[];
+  snippetFolders?: SnippetFolder[];
+  sshConnections?: Array<Omit<SSHConnection, "status" | "sessionId" | "errorMessage" | "sessionPassword">>;
+  plugins?: PluginEntry[];
+  history?: HistoryEntry[];
+  debugPersist?: boolean;
+}
+
+let configLoaded = false;
+let saveTimer: ReturnType<typeof setTimeout> | null = null;
+
+async function loadConfig(): Promise<PersistedConfig> {
+  try {
+    const { invoke } = await import("@tauri-apps/api/core");
+    const raw = await invoke<string>("load_app_config");
+    return JSON.parse(raw) as PersistedConfig;
+  } catch {
+    return {};
+  }
+}
+
+function scheduleSave() {
+  if (saveTimer) clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => {
+    saveTimer = null;
+    const s = useAppStore.getState();
+    const config: PersistedConfig = {
+      theme: s.theme,
+      snippets: s.snippets,
+      snippetFolders: s.snippetFolders,
+      sshConnections: s.sshConnections.map(({ status, sessionId, errorMessage, sessionPassword, ...rest }) => rest),
+      plugins: s.plugins,
+      history: s.history.slice(0, 200), // persist last 200 commands
+      debugPersist: s.debugPersist,
+    };
+    import("@tauri-apps/api/core").then(({ invoke }) => {
+      invoke("save_app_config", { data: JSON.stringify(config, null, 2) }).catch(() => {});
+    }).catch(() => {});
+  }, 500);
+}
+
+// Also migrate old localStorage data on first load
+function migrateLocalStorage(): Partial<PersistedConfig> {
+  const migrated: Partial<PersistedConfig> = {};
+  try {
+    const savedSSH = localStorage.getItem("novashell-ssh-connections");
+    if (savedSSH) {
+      migrated.sshConnections = JSON.parse(savedSSH);
+      localStorage.removeItem("novashell-ssh-connections");
+    }
+    const savedDebug = localStorage.getItem("novashell-debug-persist");
+    if (savedDebug !== null) {
+      migrated.debugPersist = savedDebug !== "false";
+      localStorage.removeItem("novashell-debug-persist");
+    }
+  } catch {}
+  return migrated;
+}
+
 interface AppState {
   theme: ThemeName;
   themesVisited: string[];
@@ -92,6 +154,7 @@ interface AppState {
   snippets: Snippet[];
   addSnippet: (snippet: Omit<Snippet, "id">) => void;
   removeSnippet: (id: string) => void;
+  updateSnippet: (id: string, updates: Partial<Snippet>) => void;
   moveSnippetToFolder: (snippetId: string, folderId: string | undefined) => void;
 
   snippetFolders: SnippetFolder[];
@@ -147,7 +210,26 @@ interface AppState {
   clearDebugLogs: () => void;
   toggleDebug: () => void;
   toggleDebugPersist: () => void;
+
+  // Hydration from config file
+  _hydrateFromConfig: (config: PersistedConfig) => void;
 }
+
+const DEFAULT_SNIPPETS: Snippet[] = [
+  { id: "s1", name: "Git Status", command: "git status", icon: "git-branch" },
+  { id: "s2", name: "List Files", command: "ls -la", icon: "folder" },
+  { id: "s3", name: "Docker PS", command: "docker ps", icon: "container" },
+  { id: "s4", name: "NPM Install", command: "npm install", icon: "package" },
+  { id: "s5", name: "Git Quick Push", command: "git add .\ngit status\ngit commit -m \"update\"\ngit push", icon: "git-branch", runMode: "stop-on-error" },
+];
+
+const DEFAULT_PLUGINS: PluginEntry[] = [
+  { id: "git", name: "Git Integration", desc: "Repository status, changed files, recent commits", enabled: true },
+  { id: "docker", name: "Docker", desc: "Running containers & images", enabled: false },
+  { id: "node", name: "Node.js", desc: "Package info & npm scripts", enabled: false },
+  { id: "python", name: "Python", desc: "Python version & environment info", enabled: false },
+  { id: "system", name: "System Info", desc: "Network, disk usage & uptime", enabled: false },
+];
 
 let tabCounter = 0;
 
@@ -156,6 +238,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   themesVisited: ["dark"] as string[],
   setTheme: (theme) => set((s) => {
     const visited = s.themesVisited.includes(theme) ? s.themesVisited : [...s.themesVisited, theme];
+    scheduleSave();
     return { theme, themesVisited: visited };
   }),
 
@@ -198,48 +281,61 @@ export const useAppStore = create<AppState>((set, get) => ({
   toggleFocusMode: () => set((s) => ({ focusMode: !s.focusMode })),
 
   history: [],
-  addHistory: (entry) =>
+  addHistory: (entry) => {
     set((s) => ({
       history: [
         { ...entry, id: crypto.randomUUID(), timestamp: Date.now() },
         ...s.history,
       ].slice(0, 500),
-    })),
-  clearHistory: () => set({ history: [] }),
+    }));
+    scheduleSave();
+  },
+  clearHistory: () => { set({ history: [] }); scheduleSave(); },
 
-  snippets: [
-    { id: "s1", name: "Git Status", command: "git status", icon: "git-branch" },
-    { id: "s2", name: "List Files", command: "ls -la", icon: "folder" },
-    { id: "s3", name: "Docker PS", command: "docker ps", icon: "container" },
-    { id: "s4", name: "NPM Install", command: "npm install", icon: "package" },
-    { id: "s5", name: "Git Quick Push", command: "git add .\ngit status\ngit commit -m \"update\"\ngit push", icon: "git-branch", runMode: "stop-on-error" },
-  ],
-  addSnippet: (snippet) =>
+  snippets: [...DEFAULT_SNIPPETS],
+  addSnippet: (snippet) => {
     set((s) => ({
       snippets: [...s.snippets, { ...snippet, id: crypto.randomUUID() }],
-    })),
-  removeSnippet: (id) =>
-    set((s) => ({ snippets: s.snippets.filter((sn) => sn.id !== id) })),
-  moveSnippetToFolder: (snippetId, folderId) =>
+    }));
+    scheduleSave();
+  },
+  removeSnippet: (id) => {
+    set((s) => ({ snippets: s.snippets.filter((sn) => sn.id !== id) }));
+    scheduleSave();
+  },
+  updateSnippet: (id, updates) => {
+    set((s) => ({
+      snippets: s.snippets.map((sn) => sn.id === id ? { ...sn, ...updates } : sn),
+    }));
+    scheduleSave();
+  },
+  moveSnippetToFolder: (snippetId, folderId) => {
     set((s) => ({
       snippets: s.snippets.map((sn) => sn.id === snippetId ? { ...sn, folderId } : sn),
-    })),
+    }));
+    scheduleSave();
+  },
 
   snippetFolders: [],
-  addSnippetFolder: (name, color) =>
+  addSnippetFolder: (name, color) => {
     set((s) => ({
       snippetFolders: [...s.snippetFolders, { id: crypto.randomUUID(), name, color }],
-    })),
-  removeSnippetFolder: (id) =>
+    }));
+    scheduleSave();
+  },
+  removeSnippetFolder: (id) => {
     set((s) => ({
       snippetFolders: s.snippetFolders.filter((f) => f.id !== id),
-      // Move orphaned snippets to root
       snippets: s.snippets.map((sn) => sn.folderId === id ? { ...sn, folderId: undefined } : sn),
-    })),
-  renameSnippetFolder: (id, name) =>
+    }));
+    scheduleSave();
+  },
+  renameSnippetFolder: (id, name) => {
     set((s) => ({
       snippetFolders: s.snippetFolders.map((f) => f.id === id ? { ...f, name } : f),
-    })),
+    }));
+    scheduleSave();
+  },
 
   systemStats: null,
   setSystemStats: (stats) => set({ systemStats: stats }),
@@ -253,17 +349,13 @@ export const useAppStore = create<AppState>((set, get) => ({
   executeSnippet: null,
   setExecuteSnippet: (fn) => set({ executeSnippet: fn }),
 
-  plugins: [
-    { id: "git", name: "Git Integration", desc: "Repository status, changed files, recent commits", enabled: true },
-    { id: "docker", name: "Docker", desc: "Running containers & images", enabled: false },
-    { id: "node", name: "Node.js", desc: "Package info & npm scripts", enabled: false },
-    { id: "python", name: "Python", desc: "Python version & environment info", enabled: false },
-    { id: "system", name: "System Info", desc: "Network, disk usage & uptime", enabled: false },
-  ],
-  togglePlugin: (id) =>
+  plugins: [...DEFAULT_PLUGINS],
+  togglePlugin: (id) => {
     set((s) => ({
       plugins: s.plugins.map((p) => (p.id === id ? { ...p, enabled: !p.enabled } : p)),
-    })),
+    }));
+    scheduleSave();
+  },
 
   gitBranch: "",
   setGitBranch: (branch) => set({ gitBranch: branch }),
@@ -280,45 +372,32 @@ export const useAppStore = create<AppState>((set, get) => ({
   splitMode: "none",
   setSplitMode: (splitMode) => set({ splitMode }),
 
-  sshConnections: (() => {
-    try {
-      const saved = localStorage.getItem("novashell-ssh-connections");
-      if (saved) {
-        const parsed = JSON.parse(saved) as SSHConnection[];
-        return parsed.map((c) => ({ ...c, status: "disconnected" as const, sessionId: undefined, errorMessage: undefined }));
-      }
-    } catch {}
-    return [];
-  })(),
+  sshConnections: [],
 
   addSSHConnection: (conn) => {
     const newConn: SSHConnection = { ...conn, id: crypto.randomUUID(), status: "disconnected" };
-    set((s) => {
-      const updated = [...s.sshConnections, newConn];
-      localStorage.setItem("novashell-ssh-connections", JSON.stringify(updated.map(({ status, sessionId, errorMessage, sessionPassword, ...rest }) => rest)));
-      return { sshConnections: updated };
-    });
+    set((s) => ({ sshConnections: [...s.sshConnections, newConn] }));
+    scheduleSave();
   },
 
-  updateSSHConnection: (id, updates) =>
-    set((s) => {
-      const updated = s.sshConnections.map((c) => (c.id === id ? { ...c, ...updates } : c));
-      localStorage.setItem("novashell-ssh-connections", JSON.stringify(updated.map(({ status, sessionId, errorMessage, sessionPassword, ...rest }) => rest)));
-      return { sshConnections: updated };
-    }),
+  updateSSHConnection: (id, updates) => {
+    set((s) => ({
+      sshConnections: s.sshConnections.map((c) => (c.id === id ? { ...c, ...updates } : c)),
+    }));
+    // Only save if non-runtime fields changed
+    if (updates.name || updates.host || updates.port || updates.username || updates.privateKey) {
+      scheduleSave();
+    }
+  },
 
-  removeSSHConnection: (id) =>
-    set((s) => {
-      const updated = s.sshConnections.filter((c) => c.id !== id);
-      localStorage.setItem("novashell-ssh-connections", JSON.stringify(updated.map(({ status, sessionId, errorMessage, sessionPassword, ...rest }) => rest)));
-      return { sshConnections: updated };
-    }),
+  removeSSHConnection: (id) => {
+    set((s) => ({ sshConnections: s.sshConnections.filter((c) => c.id !== id) }));
+    scheduleSave();
+  },
 
   debugLogs: [],
   debugEnabled: false,
-  debugPersist: (() => {
-    try { return localStorage.getItem("novashell-debug-persist") !== "false"; } catch { return true; }
-  })(),
+  debugPersist: true,
   addDebugLog: (entry) =>
     set((s) => {
       if (!s.debugEnabled) return s;
@@ -338,12 +417,56 @@ export const useAppStore = create<AppState>((set, get) => ({
     }),
   clearDebugLogs: () => set({ debugLogs: [] }),
   toggleDebug: () => set((s) => ({ debugEnabled: !s.debugEnabled })),
-  toggleDebugPersist: () => set((s) => {
-    const next = !s.debugPersist;
-    localStorage.setItem("novashell-debug-persist", String(next));
-    return { debugPersist: next };
-  }),
+  toggleDebugPersist: () => {
+    set((s) => ({ debugPersist: !s.debugPersist }));
+    scheduleSave();
+  },
+
+  _hydrateFromConfig: (config) => {
+    const updates: Partial<AppState> = {};
+    if (config.theme) updates.theme = config.theme;
+    if (config.snippets && config.snippets.length > 0) updates.snippets = config.snippets;
+    if (config.snippetFolders) updates.snippetFolders = config.snippetFolders;
+    if (config.plugins && config.plugins.length > 0) updates.plugins = config.plugins;
+    if (config.history) updates.history = config.history;
+    if (config.debugPersist !== undefined) updates.debugPersist = config.debugPersist;
+    if (config.sshConnections && config.sshConnections.length > 0) {
+      updates.sshConnections = config.sshConnections.map((c) => ({
+        ...c,
+        status: "disconnected" as const,
+        sessionId: undefined,
+        errorMessage: undefined,
+      }));
+    }
+    set(updates);
+  },
 }));
+
+// === Load config on startup ===
+(async () => {
+  // First migrate any old localStorage data
+  const migrated = migrateLocalStorage();
+
+  // Load config from file
+  const config = await loadConfig();
+
+  // Merge: file config takes priority, localStorage migration fills gaps
+  const merged: PersistedConfig = { ...config };
+  if (!merged.sshConnections && migrated.sshConnections) {
+    merged.sshConnections = migrated.sshConnections;
+  }
+  if (merged.debugPersist === undefined && migrated.debugPersist !== undefined) {
+    merged.debugPersist = migrated.debugPersist;
+  }
+
+  useAppStore.getState()._hydrateFromConfig(merged);
+  configLoaded = true;
+
+  // If we migrated localStorage data, save it to the file immediately
+  if (Object.keys(migrated).length > 0) {
+    scheduleSave();
+  }
+})();
 
 // === Batched disk persistence for debug logs ===
 const debugPersistQueue: DebugLogEntry[] = [];

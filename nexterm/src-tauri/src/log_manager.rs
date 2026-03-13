@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::fs;
-use std::io::Write;
+use std::io::{BufRead, BufReader, BufWriter, Write};
 use std::path::PathBuf;
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -73,22 +73,23 @@ impl LogManager {
         let file_path = self.current_file.as_ref()
             .ok_or_else(|| "No active log file".to_string())?;
 
-        let mut data = String::new();
-        for entry in entries {
-            let line = serde_json::to_string(entry)
-                .map_err(|e| format!("Serialize error: {}", e))?;
-            data.push_str(&line);
-            data.push('\n');
-        }
-
-        let mut file = fs::OpenOptions::new()
+        let file = fs::OpenOptions::new()
             .create(true)
             .append(true)
             .open(file_path)
             .map_err(|e| format!("File open error: {}", e))?;
 
-        file.write_all(data.as_bytes())
-            .map_err(|e| format!("Write error: {}", e))
+        let mut writer = BufWriter::new(file);
+        for entry in entries {
+            let line = serde_json::to_string(entry)
+                .map_err(|e| format!("Serialize error: {}", e))?;
+            writer.write_all(line.as_bytes())
+                .map_err(|e| format!("Write error: {}", e))?;
+            writer.write_all(b"\n")
+                .map_err(|e| format!("Write error: {}", e))?;
+        }
+        writer.flush()
+            .map_err(|e| format!("Flush error: {}", e))
     }
 
     pub fn list_sessions(&self) -> Result<Vec<LogSessionInfo>, String> {
@@ -110,9 +111,16 @@ impl LogManager {
                 .map(|n| n.to_string_lossy().to_string())
                 .unwrap_or_default();
 
-            // Count lines
-            let content = fs::read_to_string(&path).unwrap_or_default();
-            let entry_count = content.lines().filter(|l| !l.trim().is_empty()).count();
+            // Count lines without loading the whole file into memory
+            let entry_count = fs::File::open(&path)
+                .map(|f| {
+                    BufReader::new(f)
+                        .lines()
+                        .flatten()
+                        .filter(|l| !l.trim().is_empty())
+                        .count()
+                })
+                .unwrap_or(0);
 
             let created = metadata.created()
                 .map(|t| t.duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis() as u64)

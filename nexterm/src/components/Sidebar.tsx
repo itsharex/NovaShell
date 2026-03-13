@@ -720,6 +720,9 @@ function PluginsPanel() {
     return invoke<string>("run_command_output", { command, args, cwd: cwd || null });
   }, []);
 
+  const withTimeout = <T,>(p: Promise<T>, ms: number): Promise<T> =>
+    Promise.race([p, new Promise<T>((_, rej) => setTimeout(() => rej(new Error("timeout")), ms))]);
+
   // Auto-detect git project path on mount
   useEffect(() => {
     if (!gitProjectPath) {
@@ -746,9 +749,9 @@ function PluginsPanel() {
         case "git": {
           const cwd = gitProjectPath || undefined;
           const [branch, status, log] = await Promise.allSettled([
-            runCommand("git", ["branch", "--show-current"], cwd),
-            runCommand("git", ["status", "--short"], cwd),
-            runCommand("git", ["log", "--oneline", "-5"], cwd),
+            withTimeout(runCommand("git", ["branch", "--show-current"], cwd), 5000),
+            withTimeout(runCommand("git", ["status", "--short"], cwd), 5000),
+            withTimeout(runCommand("git", ["log", "--oneline", "-5"], cwd), 5000),
           ]);
           const branchStr = branch.status === "fulfilled" ? branch.value.trim() : "N/A";
           const statusStr = status.status === "fulfilled" ? status.value.trim() : "";
@@ -767,8 +770,8 @@ function PluginsPanel() {
         }
         case "docker": {
           const [ps, images] = await Promise.allSettled([
-            runCommand("docker", ["ps", "--format", "table {{.Names}}\t{{.Status}}\t{{.Image}}"]),
-            runCommand("docker", ["images", "--format", "table {{.Repository}}\t{{.Tag}}\t{{.Size}}"]),
+            withTimeout(runCommand("docker", ["ps", "--format", "table {{.Names}}\t{{.Status}}\t{{.Image}}"]), 5000),
+            withTimeout(runCommand("docker", ["images", "--format", "table {{.Repository}}\t{{.Tag}}\t{{.Size}}"]), 5000),
           ]);
           const psStr = ps.status === "fulfilled" ? ps.value.trim() : "Docker not running or not installed";
           const imgStr = images.status === "fulfilled" ? images.value.trim() : "";
@@ -778,9 +781,9 @@ function PluginsPanel() {
         }
         case "node": {
           const [nodeV, npmV, pkgJson] = await Promise.allSettled([
-            runCommand("node", ["--version"]),
-            runCommand("npm", ["--version"]),
-            runCommand("node", ["-e", "try{const p=require('./package.json');console.log('Name: '+p.name+'\\nVersion: '+p.version+'\\n\\nScripts:\\n'+Object.keys(p.scripts||{}).map(k=>'  '+k+': '+p.scripts[k]).join('\\n'))}catch{console.log('No package.json found')}"]),
+            withTimeout(runCommand("node", ["--version"]), 5000),
+            withTimeout(runCommand("npm", ["--version"]), 5000),
+            withTimeout(runCommand("node", ["-e", "try{const p=require('./package.json');console.log('Name: '+p.name+'\\nVersion: '+p.version+'\\n\\nScripts:\\n'+Object.keys(p.scripts||{}).map(k=>'  '+k+': '+p.scripts[k]).join('\\n'))}catch{console.log('No package.json found')}"]), 5000),
           ]);
           const nodeStr = nodeV.status === "fulfilled" ? `Node: ${nodeV.value.trim()}` : "Node.js not installed";
           const npmStr = npmV.status === "fulfilled" ? `NPM: ${npmV.value.trim()}` : "";
@@ -792,9 +795,9 @@ function PluginsPanel() {
         }
         case "python": {
           const [pyV, pipV, venv] = await Promise.allSettled([
-            runCommand("python", ["--version"]),
-            runCommand("pip", ["--version"]),
-            runCommand("python", ["-c", "import sys; print('Prefix:', sys.prefix); print('Exec:', sys.executable); print('Platform:', sys.platform)"]),
+            withTimeout(runCommand("python", ["--version"]), 5000),
+            withTimeout(runCommand("pip", ["--version"]), 5000),
+            withTimeout(runCommand("python", ["-c", "import sys; print('Prefix:', sys.prefix); print('Exec:', sys.executable); print('Platform:', sys.platform)"]), 5000),
           ]);
           const pyStr = pyV.status === "fulfilled" ? pyV.value.trim() : "Python not installed";
           const pipStr = pipV.status === "fulfilled" ? pipV.value.trim().split(" ").slice(0, 2).join(" ") : "";
@@ -808,9 +811,9 @@ function PluginsPanel() {
           const isWin = navigator.platform.startsWith("Win");
           if (isWin) {
             const [hostname, uptime, netstat] = await Promise.allSettled([
-              runCommand("hostname", []),
-              runCommand("powershell", ["-Command", "[math]::Round((Get-Date).Subtract((Get-CimInstance Win32_OperatingSystem).LastBootUpTime).TotalHours, 1).ToString() + ' hours'"]),
-              runCommand("powershell", ["-Command", "Get-NetAdapter | Where-Object {$_.Status -eq 'Up'} | Select-Object -First 3 Name, LinkSpeed | Format-Table -AutoSize | Out-String"]),
+              withTimeout(runCommand("hostname", []), 5000),
+              withTimeout(runCommand("powershell", ["-Command", "[math]::Round((Get-Date).Subtract((Get-CimInstance Win32_OperatingSystem).LastBootUpTime).TotalHours, 1).ToString() + ' hours'"]), 5000),
+              withTimeout(runCommand("powershell", ["-Command", "Get-NetAdapter | Where-Object {$_.Status -eq 'Up'} | Select-Object -First 3 Name, LinkSpeed | Format-Table -AutoSize | Out-String"]), 5000),
             ]);
             const hostStr = hostname.status === "fulfilled" ? `Hostname: ${hostname.value.trim()}` : "";
             const uptimeStr = uptime.status === "fulfilled" ? `Uptime: ${uptime.value.trim()}` : "";
@@ -819,8 +822,8 @@ function PluginsPanel() {
             if (netStr) result += `\n\n--- Network ---\n${netStr}`;
           } else {
             const [hostname, uptime] = await Promise.allSettled([
-              runCommand("hostname", []),
-              runCommand("uptime", []),
+              withTimeout(runCommand("hostname", []), 5000),
+              withTimeout(runCommand("uptime", []), 5000),
             ]);
             result = [
               hostname.status === "fulfilled" ? `Hostname: ${hostname.value.trim()}` : "",

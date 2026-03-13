@@ -67,12 +67,14 @@ export function DebugPanel() {
   const pausedLogsRef = useRef<DebugLogEntry[]>([]);
   const autoScrollRef = useRef(true);
 
-  // When paused, freeze the displayed logs
+  // Only capture snapshot when first pausing (not on every log update while paused)
   useEffect(() => {
     if (paused) {
       pausedLogsRef.current = debugLogs;
+    } else {
+      pausedLogsRef.current = [];
     }
-  }, [paused, debugLogs]);
+  }, [paused]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const displayLogs = paused ? pausedLogsRef.current : debugLogs;
 

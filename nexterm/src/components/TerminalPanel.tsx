@@ -28,9 +28,12 @@ async function getTauriEvent() {
 // Uses a per-source buffer to properly handle lines split across PTY chunks
 const debugBuffers = new Map<string, string>();
 let debugParseScheduled = false;
+const MAX_DEBUG_SOURCES = 32;
 
 function queueDebugParse(data: string, source: string) {
   if (!useAppStore.getState().debugEnabled) return;
+  // Cap number of tracked sources to prevent unbounded Map growth
+  if (!debugBuffers.has(source) && debugBuffers.size >= MAX_DEBUG_SOURCES) return;
   // Append to per-source buffer (handles line splits across chunks)
   const existing = debugBuffers.get(source) || "";
   // Limit buffer size per source to prevent memory issues (256KB)
@@ -417,7 +420,10 @@ export function TerminalPanel() {
           } else if (data.charCodeAt(0) < 32) {
             // Control characters - ignore for buffer
           } else if (data >= " ") {
-            ptyInputBuffer += data;
+            // Cap buffer to prevent unbounded growth (e.g. pasted large text)
+            if (ptyInputBuffer.length < 4096) {
+              ptyInputBuffer += data;
+            }
             // Only suggest for first word of command (not arguments)
             const parts = ptyInputBuffer.split(/[|;&]/);
             const lastPart = parts[parts.length - 1].trim();
@@ -558,6 +564,10 @@ export function TerminalPanel() {
       // Remove from maps FIRST to prevent double-cleanup
       terminalsRef.current.delete(tabId);
       containersRef.current.delete(tabId);
+      // Clean up debug buffer for this tab's source
+      const tab = useAppStore.getState().tabs.find((t) => t.id === tabId);
+      const tabName = tab?.title || tabId;
+      debugBuffers.delete(tabName);
       // Unsubscribe event listeners before closing PTY
       ref.unlisteners.forEach((fn) => fn());
       ref.disposables.forEach((d) => d.dispose());

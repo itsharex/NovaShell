@@ -7,7 +7,7 @@ mod ssh_manager;
 mod system_info;
 
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Mutex;
 use tauri::State;
 
@@ -232,9 +232,12 @@ fn list_directory(path: Option<String>) -> Result<Vec<FileEntry>, String> {
         });
     }
 
-    entries.sort_by(|a, b| {
-        b.is_dir.cmp(&a.is_dir).then(a.name.to_lowercase().cmp(&b.name.to_lowercase()))
-    });
+    // Pre-compute lowercase keys once to avoid repeated allocations during sort
+    let mut keyed: Vec<_> = entries.into_iter()
+        .map(|e| { let k = e.name.to_lowercase(); (k, e) })
+        .collect();
+    keyed.sort_by(|a, b| b.1.is_dir.cmp(&a.1.is_dir).then(a.0.cmp(&b.0)));
+    let entries: Vec<FileEntry> = keyed.into_iter().map(|(_, e)| e).collect();
 
     Ok(entries)
 }
@@ -282,7 +285,7 @@ fn get_command_suggestions(prefix: String, state: State<'_, AppState>) -> Vec<St
         Err(e) => e.into_inner(),
     };
     if cache.is_none() {
-        let mut path_cmds = Vec::new();
+        let mut path_cmds_set: HashSet<String> = HashSet::new();
         if let Ok(path_var) = std::env::var("PATH") {
             let separator = if cfg!(windows) { ';' } else { ':' };
             for dir in path_var.split(separator) {
@@ -298,21 +301,22 @@ fn get_command_suggestions(prefix: String, state: State<'_, AppState>) -> Vec<St
                         } else {
                             name.clone()
                         };
-                        if !path_cmds.contains(&clean_name) {
-                            path_cmds.push(clean_name);
-                        }
+                        path_cmds_set.insert(clean_name);
                     }
                 }
             }
         }
+        let mut path_cmds: Vec<String> = path_cmds_set.into_iter().collect();
         path_cmds.sort();
         *cache = Some(path_cmds);
     }
 
+    // Build an owned HashSet from the already-collected suggestions for O(1) dedup
+    let mut suggestions_set: HashSet<String> = suggestions.iter().cloned().collect();
     if let Some(ref path_cmds) = *cache {
         for cmd in path_cmds {
             if cmd.to_lowercase().starts_with(&prefix_lower) && suggestions.len() < 20 {
-                if !suggestions.contains(cmd) {
+                if suggestions_set.insert(cmd.clone()) {
                     suggestions.push(cmd.clone());
                 }
             }

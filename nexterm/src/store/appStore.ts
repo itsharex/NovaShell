@@ -497,9 +497,29 @@ async function flushToDisk() {
   }
 }
 
-// Flush on page unload
+// Flush ALL pending data on page unload (config + debug logs)
 if (typeof window !== "undefined") {
   window.addEventListener("beforeunload", () => {
+    // Flush config save immediately (synchronous)
+    if (saveTimer) {
+      clearTimeout(saveTimer);
+      saveTimer = null;
+      const s = useAppStore.getState();
+      const config: PersistedConfig = {
+        theme: s.theme,
+        snippets: s.snippets,
+        snippetFolders: s.snippetFolders,
+        sshConnections: s.sshConnections.map(({ status, sessionId, errorMessage, sessionPassword, ...rest }) => rest),
+        plugins: s.plugins,
+        history: s.history.slice(0, 200),
+        debugPersist: s.debugPersist,
+      };
+      // Use synchronous XHR-style approach via navigator.sendBeacon isn't available for Tauri
+      // Fire and forget — the invoke will execute before the page unloads
+      import("@tauri-apps/api/core").then(({ invoke }) => {
+        invoke("save_app_config", { data: JSON.stringify(config, null, 2) });
+      }).catch(() => {});
+    }
     if (debugPersistQueue.length > 0) {
       flushToDisk();
     }

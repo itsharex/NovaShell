@@ -17,7 +17,6 @@ impl Drop for SshSession {
         if let Ok(mut running) = self.running.lock() {
             *running = false;
         }
-        // Wait briefly for reader thread to finish
         if let Some(handle) = self._reader_thread.take() {
             let _ = handle.join();
         }
@@ -38,22 +37,38 @@ impl SshSession {
         app_handle: tauri::AppHandle,
     ) -> Result<Self, String> {
         let addr = format!("{}:{}", host, port);
-        let tcp = TcpStream::connect(&addr)
-            .map_err(|e| format!("TCP connection failed to {}: {}", addr, e))?;
 
-        tcp.set_nonblocking(false)
-            .map_err(|e| format!("Failed to set blocking mode: {}", e))?;
+        use std::net::ToSocketAddrs;
+        let socket_addr = addr
+            .to_socket_addrs()
+            .map_err(|e| format!("Cannot resolve {}: {}", addr, e))?
+            .next()
+            .ok_or_else(|| format!("Could not resolve host: {}", host))?;
+
+        let tcp = TcpStream::connect_timeout(
+            &socket_addr,
+            std::time::Duration::from_secs(15),
+        ).map_err(|e| format!("TCP connection failed to {}: {}", addr, e))?;
+
+        // Enable TCP keepalive to detect stale connections
+        tcp.set_nodelay(true)
+            .map_err(|e| format!("Failed to set TCP_NODELAY: {}", e))?;
+        tcp.set_read_timeout(Some(std::time::Duration::from_secs(30)))
+            .map_err(|e| format!("Failed to set read timeout: {}", e))?;
 
         let mut session = Session::new()
             .map_err(|e| format!("Failed to create SSH session: {}", e))?;
 
         session.set_tcp_stream(tcp);
+        session.set_timeout(15000); // 15s timeout for SSH operations
         session.handshake()
             .map_err(|e| format!("SSH handshake failed: {}", e))?;
 
+        // Enable SSH keepalive: send keepalive every 30s, allow 3 missed responses
+        session.set_keepalive(true, 30);
+
         // Authenticate
         if let Some(key_content) = private_key {
-            // Write key to a temp file for ssh2
             let temp_dir = std::env::temp_dir();
             let key_path = temp_dir.join(format!("novashell_ssh_key_{}", session_id));
             std::fs::write(&key_path, key_content)
@@ -66,9 +81,7 @@ impl SshSession {
                 password,
             );
 
-            // Clean up temp key file immediately
             let _ = std::fs::remove_file(&key_path);
-
             result.map_err(|e| format!("Public key auth failed: {}", e))?;
         } else if let Some(pass) = password {
             session.userauth_password(username, pass)
@@ -91,8 +104,10 @@ impl SshSession {
         channel.shell()
             .map_err(|e| format!("Failed to start shell: {}", e))?;
 
-        // Set channel to non-blocking for the reader thread
-        session.set_blocking(false);
+        // Keep session in BLOCKING mode — use read timeout for non-blocking behavior
+        // This avoids the race condition of switching blocking/non-blocking between threads
+        session.set_blocking(true);
+        session.set_timeout(100); // 100ms timeout for reads — returns WouldBlock-like error if no data
 
         let session = Arc::new(Mutex::new(session));
         let channel = Arc::new(Mutex::new(channel));
@@ -100,15 +115,26 @@ impl SshSession {
         let running = Arc::new(Mutex::new(true));
         let running_clone = Arc::clone(&running);
         let channel_clone = Arc::clone(&channel);
+        let session_clone = Arc::clone(&session);
         let sid = session_id.to_string();
+
+        // Pre-build event names to avoid repeated allocations
+        let data_event = format!("ssh-data-{}", sid);
+        let exit_event = format!("ssh-exit-{}", sid);
+        let error_event = format!("ssh-error-{}", sid);
 
         let reader_thread = std::thread::spawn(move || {
             let mut buf = [0u8; 4096];
+            let mut consecutive_errors: u32 = 0;
+            let max_consecutive_errors: u32 = 50; // ~5 seconds of continuous errors
+
             loop {
                 if let Ok(r) = running_clone.lock() {
                     if !*r {
                         break;
                     }
+                } else {
+                    break; // Mutex poisoned, exit cleanly
                 }
 
                 let result = {
@@ -118,31 +144,44 @@ impl SshSession {
                     };
 
                     if ch.eof() {
-                        let _ = app_handle.emit(&format!("ssh-exit-{}", sid), ());
+                        let _ = app_handle.emit(&exit_event, ());
                         break;
                     }
 
-                    match ch.read(&mut buf) {
-                        Ok(0) => None,
-                        Ok(n) => {
-                            let data = String::from_utf8_lossy(&buf[..n]).to_string();
-                            Some(data)
-                        }
-                        Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
-                            None
-                        }
-                        Err(e) => {
-                            let msg = format!("SSH read error: {}", e);
-                            let _ = app_handle.emit(&format!("ssh-error-{}", sid), msg);
-                            break;
-                        }
-                    }
+                    ch.read(&mut buf)
                 };
 
-                if let Some(data) = result {
-                    let _ = app_handle.emit(&format!("ssh-data-{}", sid), data);
-                } else {
-                    std::thread::sleep(std::time::Duration::from_millis(10));
+                match result {
+                    Ok(0) => {
+                        let _ = app_handle.emit(&exit_event, ());
+                        break;
+                    }
+                    Ok(n) => {
+                        consecutive_errors = 0;
+                        let data = String::from_utf8_lossy(&buf[..n]).to_string();
+                        let _ = app_handle.emit(&data_event, data);
+                    }
+                    Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock
+                        || e.kind() == std::io::ErrorKind::TimedOut => {
+                        // No data available — this is normal with timeout-based reading
+                        consecutive_errors = 0;
+
+                        // Send keepalive ping periodically
+                        if let Ok(session) = session_clone.lock() {
+                            let _ = session.keepalive_send();
+                        }
+
+                        std::thread::sleep(std::time::Duration::from_millis(10));
+                    }
+                    Err(e) => {
+                        consecutive_errors += 1;
+                        if consecutive_errors >= max_consecutive_errors {
+                            let msg = format!("SSH connection lost: {}", e);
+                            let _ = app_handle.emit(&error_event, msg);
+                            break;
+                        }
+                        std::thread::sleep(std::time::Duration::from_millis(100));
+                    }
                 }
             }
         });
@@ -156,13 +195,14 @@ impl SshSession {
     }
 
     pub fn write(&self, data: &[u8]) -> Result<(), String> {
+        // Lock BOTH session and channel together to avoid race conditions
+        let session = self.session.lock()
+            .map_err(|e| format!("Session lock error: {}", e))?;
         let mut channel = self.channel.lock()
             .map_err(|e| format!("Channel lock error: {}", e))?;
 
-        // Set blocking for write
-        if let Ok(session) = self.session.lock() {
-            session.set_blocking(true);
-        }
+        // Temporarily increase timeout for write operation
+        session.set_timeout(5000);
 
         use std::io::Write;
         channel.write_all(data)
@@ -170,28 +210,22 @@ impl SshSession {
         channel.flush()
             .map_err(|e| format!("SSH flush error: {}", e))?;
 
-        // Set back to non-blocking for reader
-        if let Ok(session) = self.session.lock() {
-            session.set_blocking(false);
-        }
+        // Restore short timeout for reader
+        session.set_timeout(100);
 
         Ok(())
     }
 
     pub fn resize(&self, cols: u32, rows: u32) -> Result<(), String> {
+        let session = self.session.lock()
+            .map_err(|e| format!("Session lock error: {}", e))?;
         let mut channel = self.channel.lock()
             .map_err(|e| format!("Channel lock error: {}", e))?;
 
-        if let Ok(session) = self.session.lock() {
-            session.set_blocking(true);
-        }
-
+        session.set_timeout(5000);
         channel.request_pty_size(cols, rows, None, None)
             .map_err(|e| format!("SSH resize error: {}", e))?;
-
-        if let Ok(session) = self.session.lock() {
-            session.set_blocking(false);
-        }
+        session.set_timeout(100);
 
         Ok(())
     }

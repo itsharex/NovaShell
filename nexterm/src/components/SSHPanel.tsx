@@ -17,6 +17,8 @@ import {
 } from "lucide-react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
+import { CanvasAddon } from "@xterm/addon-canvas";
+import { WebLinksAddon } from "@xterm/addon-web-links";
 import "@xterm/xterm/css/xterm.css";
 import { useAppStore } from "../store/appStore";
 import type { SSHConnection } from "../store/appStore";
@@ -37,7 +39,7 @@ async function getTauriEvent() {
 const themeColors: Record<string, Record<string, string>> = {
   dark: {
     background: "#0d1117", foreground: "#e6edf3", cursor: "#58a6ff", cursorAccent: "#0d1117",
-    selectionBackground: "rgba(88,166,255,0.3)",
+    selectionBackground: "rgba(88,166,255,0.4)", selectionForeground: "#ffffff",
     black: "#484f58", red: "#ff7b72", green: "#3fb950", yellow: "#d29922",
     blue: "#58a6ff", magenta: "#bc8cff", cyan: "#39d2c0", white: "#b1bac4",
     brightBlack: "#6e7681", brightRed: "#ffa198", brightGreen: "#56d364", brightYellow: "#e3b341",
@@ -45,7 +47,7 @@ const themeColors: Record<string, Record<string, string>> = {
   },
   light: {
     background: "#ffffff", foreground: "#1f2328", cursor: "#0969da", cursorAccent: "#ffffff",
-    selectionBackground: "rgba(9,105,218,0.2)",
+    selectionBackground: "rgba(9,105,218,0.35)", selectionForeground: "#000000",
     black: "#24292f", red: "#cf222e", green: "#1a7f37", yellow: "#9a6700",
     blue: "#0969da", magenta: "#8250df", cyan: "#1b7c83", white: "#6e7781",
     brightBlack: "#57606a", brightRed: "#a40e26", brightGreen: "#2da44e", brightYellow: "#bf8700",
@@ -53,7 +55,7 @@ const themeColors: Record<string, Record<string, string>> = {
   },
   cyberpunk: {
     background: "#0a0a1a", foreground: "#00ffcc", cursor: "#00ffcc", cursorAccent: "#0a0a1a",
-    selectionBackground: "rgba(0,255,204,0.2)",
+    selectionBackground: "rgba(0,255,204,0.35)", selectionForeground: "#ffffff",
     black: "#333366", red: "#ff3366", green: "#00ffcc", yellow: "#ffcc00",
     blue: "#3399ff", magenta: "#cc66ff", cyan: "#00ccff", white: "#ccccff",
     brightBlack: "#666699", brightRed: "#ff6699", brightGreen: "#33ffdd", brightYellow: "#ffdd33",
@@ -61,7 +63,7 @@ const themeColors: Record<string, Record<string, string>> = {
   },
   retro: {
     background: "#1b2b1b", foreground: "#33ff33", cursor: "#33ff33", cursorAccent: "#1b2b1b",
-    selectionBackground: "rgba(51,255,51,0.2)",
+    selectionBackground: "rgba(51,255,51,0.35)", selectionForeground: "#ffffff",
     black: "#0a150a", red: "#ff3333", green: "#33ff33", yellow: "#ccff33",
     blue: "#33ccff", magenta: "#33ffcc", cyan: "#66ff66", white: "#99cc99",
     brightBlack: "#448844", brightRed: "#ff6666", brightGreen: "#66ff66", brightYellow: "#ddff66",
@@ -277,19 +279,31 @@ export function SSHPanel() {
     const colors = themeColors[theme] || themeColors.dark;
     const terminal = new Terminal({
       fontFamily: "'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace",
-      fontSize: 13,
+      fontSize: 14,
       lineHeight: 1.4,
       cursorBlink: true,
-      cursorStyle: "bar",
+      cursorStyle: "block",
+      cursorWidth: 2,
       theme: colors,
+      allowTransparency: true,
       allowProposedApi: true,
       scrollback: 3000,
+      tabStopWidth: 4,
       rightClickSelectsWord: true,
     });
 
     const fitAddon = new FitAddon();
     terminal.loadAddon(fitAddon);
+    terminal.loadAddon(new WebLinksAddon());
     terminal.open(termContainerRef.current);
+
+    // Load canvas renderer AFTER open() for proper cursor, selection, and color rendering
+    try {
+      terminal.loadAddon(new CanvasAddon());
+    } catch {
+      // Canvas addon failed, DOM renderer will be used as fallback
+    }
+
     fitAddon.fit();
 
     // Copy/paste for SSH terminal

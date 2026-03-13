@@ -57,7 +57,10 @@
 - [x] Fix cmd.exe argument handling (direct exec first, cmd /c fallback for .cmd scripts)
 - [x] CI/CD pipeline for automated cross-platform builds (GitHub Actions)
 
+- [x] Fix tab close crash: Drop was joining reader thread blocked on ConPTY read() — detach instead
+- [x] Fix ls colors in PowerShell: $e variable was script-scoped, made it $global:e
+- [x] Fix Show-ColorDir: improved param handling, added dir/ll function overrides
+
 ## Pending
 - [ ] Code signing for Windows (requires certificate)
 - [ ] Code signing for macOS (requires Apple Developer account)
-- [ ] Publish v1.2.0 release

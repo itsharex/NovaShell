@@ -38,3 +38,8 @@
 - macOS Homebrew installs shells to `/opt/homebrew/bin/` (ARM) or `/usr/local/bin/` (Intel) — must check both
 - Always store event listener references for cleanup — anonymous functions in `addEventListener` leak memory
 - When renaming a project, keep Cargo.toml `name` unchanged if Cargo.lock references it (avoids rebuild issues)
+
+## Session 5 - Tab crash & PowerShell colors (2026-03-13)
+- ConPTY `reader.read()` blocks forever on Windows — joining the reader thread in Drop causes infinite hang (app freezes). Solution: detach the reader thread and let it exit naturally when the master PTY struct field is dropped after Drop returns.
+- PowerShell variables defined in a dot-sourced script are script-scoped by default. Functions defined as `function global:X` run in global scope, so they can't see script-scoped variables. Use `$global:varname` for variables that functions need.
+- PowerShell AllScope aliases (ls, dir) can't be removed with `Remove-Item alias:\ls -Force`. Functions take precedence over aliases, but only if the function is in scope. Use `function global:ls` to override.

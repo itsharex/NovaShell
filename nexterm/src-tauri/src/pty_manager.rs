@@ -18,12 +18,18 @@ impl Drop for PtySession {
         if let Ok(mut running) = self.running.lock() {
             *running = false;
         }
-        // Wait briefly for threads to finish
+        // Only join flusher thread (exits quickly after running=false)
         if let Some(handle) = self._flusher_thread.take() {
             let _ = handle.join();
         }
+        // Do NOT join reader thread — reader.read() blocks on ConPTY until
+        // the master PTY is dropped. Since master is a struct field, it gets
+        // dropped AFTER drop() returns, so joining here would deadlock.
+        // The reader thread will exit naturally when master PTY is dropped
+        // and read() returns 0 or an error.
         if let Some(handle) = self._reader_thread.take() {
-            let _ = handle.join();
+            // Detach the thread instead of joining
+            drop(handle);
         }
     }
 }

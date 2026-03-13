@@ -524,7 +524,7 @@ fn write_shell_init_script(shell_type: String) -> Result<String, String> {
     let tmp = std::env::temp_dir();
     let (filename, content) = match shell_type.as_str() {
         "powershell" => ("novashell_init.ps1", r#"
-$e = [char]27
+$global:e = [char]27
 
 # Colored prompt: user@host path >
 function prompt {
@@ -533,35 +533,41 @@ function prompt {
 
 # Colored directory listing
 function global:Show-ColorDir {
-    param([string]$Path = '.')
-    $items = Get-ChildItem -Path $Path -Force:$false -ErrorAction SilentlyContinue
-    foreach ($item in $items) {
-        $n = $item.Name
-        $sz = if ($item.PSIsContainer) { '<DIR>   ' } else { '{0,8}' -f $item.Length }
-        $dt = $item.LastWriteTime.ToString('MM/dd HH:mm')
-        $colored = if ($item.PSIsContainer) {
-            "${e}[1;34m${n}/${e}[0m"
-        } elseif ($item.Extension -match '\.(exe|cmd|bat|ps1|msi|com)$') {
-            "${e}[1;32m${n}${e}[0m"
-        } elseif ($item.Extension -match '\.(zip|tar|gz|7z|rar|bz2|xz)$') {
-            "${e}[1;31m${n}${e}[0m"
-        } elseif ($item.Extension -match '\.(jpg|jpeg|png|gif|bmp|svg|ico|webp)$') {
-            "${e}[1;35m${n}${e}[0m"
-        } elseif ($item.Extension -match '\.(mp3|mp4|avi|mkv|wav|flac|mov)$') {
-            "${e}[1;36m${n}${e}[0m"
-        } elseif ($item.Extension -match '\.(doc|docx|pdf|xls|xlsx|ppt|pptx|txt|md)$') {
-            "${e}[33m${n}${e}[0m"
-        } elseif ($n.StartsWith('.')) {
-            "${e}[90m${n}${e}[0m"
-        } else {
-            $n
+    param([Parameter(ValueFromRemainingArguments=$true)][string[]]$Paths)
+    if (-not $Paths) { $Paths = @('.') }
+    foreach ($Path in $Paths) {
+        $items = Get-ChildItem -Path $Path -Force:$false -ErrorAction SilentlyContinue
+        foreach ($item in $items) {
+            $n = $item.Name
+            $sz = if ($item.PSIsContainer) { '<DIR>   ' } else { '{0,8}' -f $item.Length }
+            $dt = $item.LastWriteTime.ToString('MM/dd HH:mm')
+            $colored = if ($item.PSIsContainer) {
+                "${e}[1;34m${n}/${e}[0m"
+            } elseif ($item.Extension -match '\.(exe|cmd|bat|ps1|msi|com)$') {
+                "${e}[1;32m${n}${e}[0m"
+            } elseif ($item.Extension -match '\.(zip|tar|gz|7z|rar|bz2|xz)$') {
+                "${e}[1;31m${n}${e}[0m"
+            } elseif ($item.Extension -match '\.(jpg|jpeg|png|gif|bmp|svg|ico|webp)$') {
+                "${e}[1;35m${n}${e}[0m"
+            } elseif ($item.Extension -match '\.(mp3|mp4|avi|mkv|wav|flac|mov)$') {
+                "${e}[1;36m${n}${e}[0m"
+            } elseif ($item.Extension -match '\.(doc|docx|pdf|xls|xlsx|ppt|pptx|txt|md)$') {
+                "${e}[33m${n}${e}[0m"
+            } elseif ($n.StartsWith('.')) {
+                "${e}[90m${n}${e}[0m"
+            } else {
+                $n
+            }
+            "  ${e}[90m${dt}${e}[0m  ${e}[33m${sz}${e}[0m  ${colored}"
         }
-        "  ${e}[90m${dt}${e}[0m  ${e}[33m${sz}${e}[0m  ${colored}"
     }
 }
-# Override ls with function (functions take precedence over AllScope aliases)
+# Remove built-in ls alias first, then define function
+# On PS 5.1 ls is AllScope so Remove-Item may fail — that's OK, function still wins
+try { Remove-Item alias:\ls -Force -ErrorAction Stop } catch {}
 function global:ls { Show-ColorDir @args }
-Set-Alias -Name ll -Value Show-ColorDir -Scope Global -Force
+function global:ll { Show-ColorDir @args }
+function global:dir { Show-ColorDir @args }
 
 # PSReadLine syntax colors
 try {

@@ -12,52 +12,93 @@
 ## Features
 
 ### Terminal
-- **Multi-Shell Support** - PowerShell, CMD, Git Bash, WSL (Windows) / Bash, Zsh, Fish (macOS/Linux) — auto-detected
-- **Multi-Tab Terminal** - Independent PTY sessions per tab with shell selector
-- **Split Panes** - Horizontal and vertical splits
-- **Command Autocomplete** - Suggestions from PATH and common commands
-- **Focus Mode** - Auto-hide UI chrome for distraction-free work
-- **Offline-Ready** - Bundled JetBrains Mono font, no internet required
+- **Multi-Shell Support** — PowerShell, CMD, Git Bash, WSL (Windows) / Bash, Zsh, Fish (macOS/Linux), auto-detected
+- **Multi-Tab Terminal** — Independent PTY sessions per tab with shell selector
+- **Split Panes** — Horizontal and vertical splits
+- **Command Autocomplete** — Suggestions from PATH and common commands
+- **Focus Mode** — Auto-hide UI chrome for distraction-free work
+- **Colored Prompts** — Init scripts inject styled prompts, syntax highlighting, and `ls` coloring per shell
+- **Offline-Ready** — Bundled JetBrains Mono font, no internet required
 
 ### SSH Client
-- **Full SSH Terminal** - Built-in SSH connections with xterm.js emulation
-- **Dual Authentication** - Password or private key-based auth
-- **Secure Keychain Storage** - Save passwords in system keychain (Windows Credential Manager, macOS Keychain, Linux Secret Service)
-- **Connection Management** - Add, edit, delete, test connections
-- **Connection Status** - Live status indicators per connection
+- **Full SSH Terminal** — Built-in SSH connections with xterm.js emulation
+- **Dual Authentication** — Password or private key (PEM, OpenSSH, ECDSA, Ed25519)
+- **Secure Keychain Storage** — Save passwords in system keychain (Windows Credential Manager, macOS Keychain, Linux Secret Service)
+- **Session Memory** — "Remember for this session" option for passwords without persisting to disk
+- **Connection Management** — Add, edit, delete, and test connections before saving
+- **Live Status Indicators** — Per-connection status (disconnected, connecting, connected, error)
+
+### SFTP File Transfer
+- **WinSCP-Style Dual Panel** — Browse local and remote filesystems side by side
+- **Upload & Download** — Multi-file transfer with status tracking (pending, transferring, done, error)
+- **Remote File Management** — Create folders, rename, delete files/directories on the remote server
+- **Text File Preview** — View remote text files up to 1 MB directly in the panel
+- **Reuses SSH Connections** — Connects via saved SSH configs with keychain/session password support
+- **Transfer Log** — Real-time transfer history with status indicators
 
 ### Themes
-- **4 Built-in Themes** - Dark, Light, Cyberpunk (neon glow), Retro (CRT scanlines)
-- Each theme fully styles terminal, UI panels, and SSH sessions
+- **5 Built-in Themes** — Dark, Light, Cyberpunk (neon glow), Retro (green CRT), Hacking (matrix green)
+- Each theme fully styles terminal, UI panels, SSH sessions, and status bar
 
 ### Sidebar Panels
-- **History** - Command history with timestamps and exit codes
-- **Snippets** - Saved command templates with folder organization and batch execution
-- **File Preview** - Browse filesystem and preview file contents
-- **Plugins** - Live integrations with real system data:
-  - **Git** - Branch, changed files, status, recent commits
-  - **Docker** - Running containers and images
-  - **Node.js** - Version, npm version, package.json scripts
-  - **Python** - Version, pip, virtual environment info
-  - **System Info** - Hostname, uptime, network info (platform-aware)
-- **System Stats** - Real-time CPU, memory, disk usage, process count
+- **History** — Command history with timestamps, search/filter, one-click re-run
+- **Snippets** — Saved command templates with folder organization, icons, and batch execution modes (stop-on-error / run-all)
+- **File Explorer** — Browse local filesystem and preview file contents
+- **Plugins** — Live integrations with real system data:
+  - **Git** — Branch, changed files, status, recent commits
+  - **Docker** — Running containers and images
+  - **Node.js** — Version, npm version, package.json scripts
+  - **Python** — Version, pip, virtual environment info
+  - **System Info** — Hostname, uptime, network info (platform-aware)
+- **System Stats** — Real-time CPU, memory, disk usage, process list with performance sparklines
+- **SSH** — Connection manager (see SSH Client section)
+- **SFTP Transfer** — Dual-panel file transfer (see SFTP section)
+- **Debug Console** — Live log monitoring (see below)
+- **AI Assistant** — Local AI chat via Ollama (see below)
+- **Session Docs** — Auto-generated session documentation (see below)
+- **Hacking Mode** — Security toolkit (see below)
 
 ### Debug Console
-- **Live Log Monitoring** - Real-time log capture with level filters (error, warn, info, debug, trace)
-- **Search & Filter** - Filter by level, source, and text search
-- **Persistent Logs** - JSONL log files with 7-day retention, session history
-- **Export** - Export logs to file
+- **Live Log Monitoring** — Real-time log capture with level filters (error, warn, info, debug, trace, output)
+- **Source Filtering** — Filter logs by terminal tab or SSH connection
+- **Search & Filter** — Full-text search across all log entries
+- **Persistent Logs** — JSONL log files with 7-day retention and session history
+- **Export** — Export logs to file for external analysis
+
+### AI Assistant (Ollama)
+- **Local AI Chat** — Chat with locally-running LLMs via Ollama (no cloud required)
+- **Multiple Modes** — Chat, explain code, generate commands, fix errors
+- **Model Management** — List, pull, and select Ollama models from the sidebar
+- **Context-Aware** — Full conversation history for multi-turn interactions
+- **Health Check** — Auto-detect Ollama availability
+
+### Session Documentation
+- **Auto-Generated Docs** — AI-powered session summaries with commands executed, errors encountered, and duration
+- **Save & Browse** — Save session docs with timestamps, browse history
+- **PDF Export** — Export session documentation to Downloads folder
+- **Delete Management** — Clean up old session documents
+
+### Hacking Mode
+- **Security Theme** — Activates matrix-green "hacking" theme with animated alert toasts
+- **Reconnaissance** — Environment detection, port scanning (common + custom ports), banner grabbing, network map visualization
+- **Exploit Database** — Curated pentest scripts and exploit templates
+- **AI Security Copilot** — AI-powered security analysis with full conversation context
+- **Security Tools** — Hash calculator (MD5, SHA-1, SHA-256), encoder/decoder (Base64, URL, Hex), reverse shell generator (Bash, Python, Netcat, PHP, Perl, PowerShell)
+- **Session History** — Encrypted session save/load with password protection (AES-style encryption)
+- **Security Reports** — Auto-generated vulnerability assessment reports
+- **Real-Time Alerts** — Security monitoring with dismissable alert toasts
 
 ### Auto-Update
-- **Background Update Checks** - Automatic detection of new versions
-- **Download Progress** - Visual progress tracking
-- **One-Click Install** - Install and relaunch with a single click
-- **Signed Releases** - Minisign-verified updates
+- **Background Update Checks** — Automatic detection of new versions
+- **Download Progress** — Visual progress tracking with percentage
+- **One-Click Install** — Install and relaunch with a single click
+- **Signed Releases** — Minisign-verified updates for all platforms
 
 ### Other
-- **Achievement System** - 10 unlockable achievements
-- **Single Instance** - Prevents duplicate app windows
-- **Custom NSIS Installer** - Desktop shortcut, Start menu, "Open NovaShell here" context menu (Windows)
+- **Single Instance** — Prevents duplicate app windows
+- **Custom NSIS Installer** — Desktop shortcut, Start menu, "Open NovaShell here" context menu (Windows)
+- **Resizable Sidebar** — Drag to resize sidebar width (260px–700px)
+- **File-Based Config** — Settings, connections, snippets, and history persist across app updates (stored in OS data directory)
 
 ---
 
@@ -79,9 +120,9 @@ If macOS blocks the app: `xattr -cr /Applications/NovaShell.app`
 
 ### Linux
 Download from [Releases](../../releases):
-- `.AppImage` - Run directly: `chmod +x NovaShell_*.AppImage && ./NovaShell_*.AppImage`
-- `.deb` - `sudo dpkg -i NovaShell_*_amd64.deb`
-- `.rpm` - `sudo rpm -i NovaShell-*-1.x86_64.rpm`
+- `.AppImage` — Run directly: `chmod +x NovaShell_*.AppImage && ./NovaShell_*.AppImage`
+- `.deb` — `sudo dpkg -i NovaShell_*_amd64.deb`
+- `.rpm` — `sudo rpm -i NovaShell-*-1.x86_64.rpm`
 
 ---
 
@@ -91,15 +132,16 @@ Download from [Releases](../../releases):
 |-------------|------------------------------|------------------------------------|
 | Framework   | **Tauri v2**                 | Lightweight native wrapper         |
 | Frontend    | **React 18 + TypeScript**    | UI components                      |
-| Terminal    | **xterm.js v5**              | Terminal emulation                 |
+| Terminal    | **xterm.js v5 + CanvasAddon**| GPU-accelerated terminal emulation |
 | PTY         | **portable-pty (Rust)**      | Native process execution           |
-| SSH         | **ssh2 (Rust)**              | SSH connections                    |
+| SSH/SFTP    | **ssh2 (Rust)**              | SSH connections + SFTP transfers   |
 | Keychain    | **keyring (Rust)**           | Secure credential storage          |
 | State       | **Zustand**                  | Global state management            |
-| Animation   | **Framer Motion**            | Smooth UI transitions              |
 | Icons       | **Lucide React**             | Modern icon library                |
 | Bundler     | **Vite 5**                   | Fast dev server & build            |
 | System      | **sysinfo (Rust)**           | CPU, memory, process stats         |
+| AI          | **Ollama (local)**           | Local LLM inference via HTTP API   |
+| HTTP        | **reqwest (Rust)**           | Async HTTP client for AI/updates   |
 
 ---
 
@@ -141,31 +183,49 @@ Installers output to `src-tauri/target/release/bundle/`
 nexterm/
 ├── src-tauri/                     # Rust backend (Tauri v2)
 │   ├── src/
-│   │   ├── main.rs                # Commands, shell detection, security whitelist
+│   │   ├── main.rs                # Commands, shell detection, AppState, security whitelist
 │   │   ├── pty_manager.rs         # PTY session lifecycle
 │   │   ├── ssh_manager.rs         # SSH connections & terminal I/O
+│   │   ├── sftp_manager.rs        # SFTP file transfer operations
 │   │   ├── keychain_manager.rs    # System keychain integration
 │   │   ├── log_manager.rs         # JSONL log persistence & rotation
+│   │   ├── session_doc_manager.rs # Session documentation storage
+│   │   ├── ai_manager.rs          # Ollama AI integration (chat, models)
+│   │   ├── hacking_manager.rs     # Port scanning, recon, encryption
 │   │   └── system_info.rs         # CPU, memory, disk, process stats
 │   ├── capabilities/main.json     # Tauri permission declarations
 │   ├── nsis/installer.nsi         # Custom Windows installer script
+│   ├── icons/                     # App icons (ICO, ICNS, PNG at multiple sizes)
 │   ├── Cargo.toml
 │   └── tauri.conf.json
 │
 ├── src/                           # React frontend
 │   ├── components/
-│   │   ├── TitleBar.tsx           # Window controls, theme selector
+│   │   ├── TitleBar.tsx           # Window controls, theme selector, hacking mode toggle
 │   │   ├── TabBar.tsx             # Multi-tab management, dynamic shell selector
 │   │   ├── TerminalPanel.tsx      # xterm.js terminal with PTY bridge
-│   │   ├── Sidebar.tsx            # History, snippets, preview, plugins, stats
+│   │   ├── Sidebar.tsx            # Tab navigation + all sidebar panels
 │   │   ├── SSHPanel.tsx           # SSH connection manager & terminal
+│   │   ├── SFTPPanel.tsx          # SFTP dual-panel file transfer explorer
+│   │   ├── FileExplorer.tsx       # Local filesystem browser
 │   │   ├── StatusBar.tsx          # Shell, git branch, stats, clock
 │   │   ├── DebugPanel.tsx         # Debug console with log persistence
-│   │   └── UpdateNotification.tsx # Auto-update UI
+│   │   ├── AIPanel.tsx            # Ollama AI assistant chat interface
+│   │   ├── SessionDocPanel.tsx    # Session documentation viewer
+│   │   ├── HackingPanel.tsx       # Hacking mode sub-tab container
+│   │   ├── UpdateNotification.tsx # Auto-update UI
+│   │   └── hacking/              # Hacking mode sub-components
+│   │       ├── ReconView.tsx      # Reconnaissance & port scanning
+│   │       ├── ExploitView.tsx    # Exploit database & scripts
+│   │       ├── AiSecView.tsx      # AI security copilot
+│   │       ├── HistoryView.tsx    # Encrypted session history
+│   │       └── ToolsView.tsx      # Hash, encode/decode, reverse shells
 │   ├── store/
-│   │   └── appStore.ts            # Zustand state (tabs, themes, SSH, debug)
+│   │   └── appStore.ts            # Zustand state (tabs, themes, SSH, SFTP, debug, AI, hacking)
+│   ├── utils/
+│   │   └── hackingAlerts.ts       # Security monitor & alert generation
 │   ├── styles/
-│   │   └── global.css             # 4 theme systems & all styles
+│   │   └── global.css             # 5 theme systems & all component styles
 │   ├── main.tsx
 │   └── App.tsx
 │
@@ -190,7 +250,7 @@ nexterm/
 ```
 2. Add theme to `ThemeName` type in `appStore.ts`
 3. Add theme dot in `TitleBar.tsx`
-4. Add terminal colors in `TerminalPanel.tsx`
+4. Add terminal colors in `TerminalPanel.tsx` and `SSHPanel.tsx`
 
 ### Add a New Tauri Command
 
@@ -198,11 +258,18 @@ nexterm/
 2. Register in `invoke_handler!` in `main.rs`
 3. Call from frontend: `await invoke("command_name", { args })`
 
+### Add a New Sidebar Panel
+
+1. Add tab ID to `SidebarTab` type in `appStore.ts`
+2. Create the panel component in `src/components/`
+3. Add tab entry (icon + label) in `sidebarTabs` array in `Sidebar.tsx`
+4. Add conditional render in the sidebar content section
+
 ### Add a New Plugin Integration
 
-1. Add plugin entry in `appStore.ts` plugins array
+1. Add plugin entry in `DEFAULT_PLUGINS` array in `appStore.ts`
 2. Add the plugin panel UI in `Sidebar.tsx` `PluginsPanel` component
-3. Use `run_command_output` to fetch real system data (commands must be in the security whitelist)
+3. Use `run_command_output` to fetch real system data (commands must be in the security whitelist in `main.rs`)
 
 ---
 
@@ -216,4 +283,4 @@ nexterm/
 
 ## License
 
-MIT - See [LICENSE](LICENSE) for details.
+MIT — See [LICENSE](LICENSE) for details.

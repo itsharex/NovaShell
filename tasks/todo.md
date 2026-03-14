@@ -53,7 +53,16 @@
 
 - [x] v1.3.1: Fix PTY batching (two-thread reader+flusher), remove AllScope alias error, restore cursor/selection, fix tab close crash
 
+- [x] SSH Terminal quality: match normal terminal (CanvasAddon, WebLinksAddon, theme, cursor)
+- [x] v1.4.4 release: push, tag, CI/CD, publish
+- [x] Debug Copilot: 3-tab system (Logs | Analysis | Performance)
+- [x] Debug Copilot: errorPatterns.ts — 67 patterns across 7 categories
+- [x] Debug Copilot: AnalysisView.tsx — pattern matching + expandable issue cards
+- [x] Debug Copilot: PerformanceView.tsx — sparklines, session stats, process monitor
+- [x] Debug Copilot: AI Layer 2 — Ollama integration for unmatched errors
+- [x] Debug Copilot: TypeScript compilation verified
+
 ## Pending
-- [ ] Push v1.3.1, tag, CI, and publish release
+- [ ] Test Debug Copilot AI analysis with live Ollama
 - [ ] Test full SSH flow end-to-end
 - [ ] Test debug panel with real terminal output

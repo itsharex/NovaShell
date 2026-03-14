@@ -73,6 +73,15 @@
 - Read `.git/HEAD` file directly instead of spawning `git rev-parse` — zero process creation
 - Walk parent directories to find `.git/HEAD` for repos where CWD is a subdirectory
 
+## Debug Copilot / AI Analysis
+- Two-layer error analysis: hardcoded regex patterns (fast) + AI via Ollama (deep) for unmatched errors
+- collectUnmatchedErrors() groups similar errors by first 150 chars, returns top 20 with stable hash for AI caching
+- Ollama AI responses may be wrapped in markdown code fences — always extract JSON from inside ```json...``` blocks
+- Cache AI results by error hash to avoid re-analyzing the same error
+- Check Ollama health (localhost:11434/api/tags) before offering AI features — graceful degradation if offline
+- ai_chat Tauri command already existed — no Rust changes needed for AI integration
+- sysinfo 0.30: Process::name() returns &str, so .to_string() works directly
+
 ## Windows / Antivirus
 - Unsigned compiled `.exe` files in project root trigger Windows Defender false positives
 - Add `*.exe`, `*.msi`, `*.dmg`, etc. to `.gitignore` to prevent accidental commits

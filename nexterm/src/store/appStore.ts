@@ -181,6 +181,10 @@ interface AppState {
   } | null;
   setSystemStats: (stats: AppState["systemStats"]) => void;
 
+  // Metrics history for performance sparklines (last 60 snapshots)
+  metricsHistory: { cpu: number[]; memory: number[] };
+  addMetricsSnapshot: (cpu: number, memory: number) => void;
+
   sessionStartTime: number;
   commandCount: number;
   errorCount: number;
@@ -355,7 +359,23 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   systemStats: null,
-  setSystemStats: (stats) => set({ systemStats: stats }),
+  setSystemStats: (stats) => {
+    set({ systemStats: stats });
+    // Also record metrics history for sparklines
+    if (stats) {
+      get().addMetricsSnapshot(stats.cpu, stats.memoryPercent);
+    }
+  },
+
+  metricsHistory: { cpu: [], memory: [] },
+  addMetricsSnapshot: (cpu, memory) => set((s) => {
+    const maxPoints = 60;
+    const cpuArr = [...s.metricsHistory.cpu, cpu];
+    const memArr = [...s.metricsHistory.memory, memory];
+    if (cpuArr.length > maxPoints) cpuArr.splice(0, cpuArr.length - maxPoints);
+    if (memArr.length > maxPoints) memArr.splice(0, memArr.length - maxPoints);
+    return { metricsHistory: { cpu: cpuArr, memory: memArr } };
+  }),
 
   sessionStartTime: Date.now(),
   commandCount: 0,

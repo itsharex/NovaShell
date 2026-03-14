@@ -784,6 +784,13 @@ fn export_file_to_downloads(filename: String, content: String) -> Result<String,
     Ok(dest.to_string_lossy().to_string())
 }
 
+#[tauri::command]
+fn get_process_list(state: State<'_, AppState>) -> Result<Vec<system_info::ProcessInfo>, String> {
+    let mut sys = state.system.lock()
+        .map_err(|e| format!("System lock error: {}", e))?;
+    Ok(system_info::get_top_processes(&mut sys, 15))
+}
+
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
@@ -805,6 +812,7 @@ fn main() {
             resize_pty,
             close_pty_session,
             get_system_info,
+            get_process_list,
             get_git_branch,
             list_directory,
             read_file_preview,

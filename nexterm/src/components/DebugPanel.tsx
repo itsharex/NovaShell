@@ -18,9 +18,14 @@ import {
   FolderOpen,
   ArrowLeft,
   Clock,
+  Zap,
+  Activity,
+  Shield,
 } from "lucide-react";
 import { useAppStore } from "../store/appStore";
 import type { LogLevel, DebugLogEntry } from "../store/appStore";
+import { AnalysisView } from "./debug/AnalysisView";
+import { PerformanceView } from "./debug/PerformanceView";
 
 let tauriCoreCache: typeof import("@tauri-apps/api/core") | null = null;
 async function getTauriCore() {
@@ -45,6 +50,7 @@ const levelConfig: Record<LogLevel, { color: string; bg: string; icon: typeof Al
 };
 
 export function DebugPanel() {
+  const [subTab, setSubTab] = useState<"logs" | "analysis" | "performance">("logs");
   const debugLogs = useAppStore((s) => s.debugLogs);
   const clearDebugLogs = useAppStore((s) => s.clearDebugLogs);
   const debugEnabled = useAppStore((s) => s.debugEnabled);
@@ -66,6 +72,11 @@ export function DebugPanel() {
   const scrollRef = useRef<HTMLDivElement>(null);
   const pausedLogsRef = useRef<DebugLogEntry[]>([]);
   const autoScrollRef = useRef(true);
+
+  // Count errors/warnings for Analysis badge
+  const issueCount = useMemo(() => {
+    return debugLogs.filter((l) => l.level === "error" || l.level === "warn").length;
+  }, [debugLogs]);
 
   // Only capture snapshot when first pausing (not on every log update while paused)
   useEffect(() => {
@@ -211,6 +222,71 @@ export function DebugPanel() {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
+      {/* === Debug Copilot Sub-tabs === */}
+      <div style={{ display: "flex", gap: 2, marginBottom: 8 }}>
+        {([
+          { id: "logs" as const, icon: Bug, label: "Logs" },
+          { id: "analysis" as const, icon: Shield, label: "Analysis" },
+          { id: "performance" as const, icon: Activity, label: "Perf" },
+        ]).map((tab) => {
+          const Icon = tab.icon;
+          const active = subTab === tab.id;
+          return (
+            <button
+              key={tab.id}
+              onClick={() => setSubTab(tab.id)}
+              style={{
+                flex: 1,
+                padding: "5px 0",
+                border: "none",
+                borderRadius: "var(--radius-sm)",
+                background: active ? "var(--accent-primary)" : "var(--bg-tertiary)",
+                color: active ? "white" : "var(--text-secondary)",
+                fontSize: 10,
+                cursor: "pointer",
+                fontFamily: "inherit",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 4,
+                position: "relative",
+                fontWeight: active ? 600 : 400,
+                transition: "var(--transition-fast)",
+              }}
+            >
+              <Icon size={11} />
+              {tab.label}
+              {tab.id === "analysis" && issueCount > 0 && (
+                <span style={{
+                  position: "absolute",
+                  top: -3,
+                  right: -1,
+                  background: "var(--accent-error)",
+                  color: "white",
+                  borderRadius: 8,
+                  padding: "0 4px",
+                  fontSize: 8,
+                  fontWeight: 700,
+                  minWidth: 14,
+                  textAlign: "center",
+                  lineHeight: "14px",
+                }}>
+                  {issueCount > 99 ? "99+" : issueCount}
+                </span>
+              )}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* === Analysis View === */}
+      {subTab === "analysis" && <AnalysisView />}
+
+      {/* === Performance View === */}
+      {subTab === "performance" && <PerformanceView />}
+
+      {/* === Logs View (existing functionality) === */}
+      {subTab === "logs" && <>
       {/* Header */}
       <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
         <span className="sidebar-section-title" style={{ margin: 0, flex: 1 }}>Debug Console</span>
@@ -677,6 +753,7 @@ export function DebugPanel() {
           })
         )}
       </div>
+      </>}
       </>}
     </div>
   );

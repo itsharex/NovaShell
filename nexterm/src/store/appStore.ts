@@ -1,7 +1,70 @@
 import { create } from "zustand";
 
-export type ThemeName = "dark" | "light" | "cyberpunk" | "retro";
-export type SidebarTab = "history" | "snippets" | "preview" | "plugins" | "stats" | "ssh" | "debug" | "ai" | "docs";
+export type ThemeName = "dark" | "light" | "cyberpunk" | "retro" | "hacking";
+export type SidebarTab = "history" | "snippets" | "preview" | "plugins" | "stats" | "ssh" | "debug" | "ai" | "docs" | "hacking";
+
+// === Hacking Mode Types ===
+export type HackingLogLevel = "recon" | "exploit" | "alert" | "info" | "success" | "danger";
+export type HackingCategory = "network" | "system" | "exploit" | "ai" | "general";
+
+export interface HackingLogEntry {
+  id: string;
+  timestamp: number;
+  level: HackingLogLevel;
+  message: string;
+  source: string;
+  category: HackingCategory;
+}
+
+export interface EnvironmentInfo {
+  type: "local" | "ssh" | "docker" | "wsl" | "vm";
+  os: string;
+  hostname: string;
+  ip: string;
+  vulnerabilityHints: string[];
+}
+
+export interface PortInfo {
+  port: number;
+  protocol: string;
+  service: string;
+  version: string;
+  state: "open" | "filtered" | "closed";
+  risk: "low" | "medium" | "high" | "critical";
+}
+
+export interface ServiceInfo {
+  name: string;
+  version: string;
+  port: number;
+  vulnerabilities: string[];
+}
+
+export interface ReconResult {
+  environment: EnvironmentInfo;
+  openPorts: PortInfo[];
+  services: ServiceInfo[];
+  networkMap: string;
+  timestamp: number;
+}
+
+export interface CommandSnapshot {
+  id: string;
+  timestamp: number;
+  command: string;
+  output: string;
+  canRollback: boolean;
+  rollbackCommand?: string;
+}
+
+export interface HackingAlert {
+  id: string;
+  timestamp: number;
+  severity: "info" | "warning" | "critical";
+  title: string;
+  details: string;
+  category: string;
+}
 
 interface Tab {
   id: string;
@@ -232,6 +295,22 @@ interface AppState {
   clearAiMessages: () => void;
   setAiLoading: (loading: boolean) => void;
 
+  // Hacking Mode
+  hackingMode: boolean;
+  hackingPreviousTheme: ThemeName;
+  toggleHackingMode: () => void;
+  hackingLogs: HackingLogEntry[];
+  addHackingLog: (entry: Omit<HackingLogEntry, "id" | "timestamp">) => void;
+  clearHackingLogs: () => void;
+  hackingReconResults: ReconResult | null;
+  setHackingReconResults: (results: ReconResult | null) => void;
+  hackingSnapshots: CommandSnapshot[];
+  addHackingSnapshot: (snapshot: Omit<CommandSnapshot, "id" | "timestamp">) => void;
+  hackingAlerts: HackingAlert[];
+  addHackingAlert: (alert: Omit<HackingAlert, "id" | "timestamp">) => void;
+  clearHackingAlerts: () => void;
+  dismissHackingAlert: (id: string) => void;
+
   // Hydration from config file
   _hydrateFromConfig: (config: PersistedConfig) => void;
 }
@@ -461,6 +540,68 @@ export const useAppStore = create<AppState>((set, get) => ({
     set((s) => ({ debugPersist: !s.debugPersist }));
     scheduleSave();
   },
+
+  // Hacking Mode
+  hackingMode: false,
+  hackingPreviousTheme: "dark" as ThemeName,
+  toggleHackingMode: () => {
+    const s = get();
+    if (!s.hackingMode) {
+      // Activate: save current theme, switch to hacking theme
+      set({
+        hackingMode: true,
+        hackingPreviousTheme: s.theme,
+        theme: "hacking" as ThemeName,
+        sidebarTab: "hacking",
+        sidebarOpen: true,
+      });
+      import("../utils/hackingAlerts").then((m) => m.startSecurityMonitor());
+    } else {
+      // Deactivate: restore previous theme
+      set({
+        hackingMode: false,
+        theme: s.hackingPreviousTheme,
+      });
+      import("../utils/hackingAlerts").then((m) => m.stopSecurityMonitor());
+    }
+    scheduleSave();
+  },
+  hackingLogs: [],
+  addHackingLog: (entry) => set((s) => {
+    const newEntry: HackingLogEntry = {
+      ...entry,
+      id: crypto.randomUUID(),
+      timestamp: Date.now(),
+    };
+    const logs = [newEntry, ...s.hackingLogs];
+    if (logs.length > 500) logs.length = 500;
+    return { hackingLogs: logs };
+  }),
+  clearHackingLogs: () => set({ hackingLogs: [] }),
+  hackingReconResults: null,
+  setHackingReconResults: (results) => set({ hackingReconResults: results }),
+  hackingSnapshots: [],
+  addHackingSnapshot: (snapshot) => set((s) => ({
+    hackingSnapshots: [
+      { ...snapshot, id: crypto.randomUUID(), timestamp: Date.now() },
+      ...s.hackingSnapshots,
+    ].slice(0, 100),
+  })),
+  hackingAlerts: [],
+  addHackingAlert: (alert) => set((s) => {
+    const newAlert: HackingAlert = {
+      ...alert,
+      id: crypto.randomUUID(),
+      timestamp: Date.now(),
+    };
+    const alerts = [newAlert, ...s.hackingAlerts];
+    if (alerts.length > 200) alerts.length = 200;
+    return { hackingAlerts: alerts };
+  }),
+  clearHackingAlerts: () => set({ hackingAlerts: [] }),
+  dismissHackingAlert: (id) => set((s) => ({
+    hackingAlerts: s.hackingAlerts.filter((a) => a.id !== id),
+  })),
 
   aiMessages: [],
   aiLoading: false,

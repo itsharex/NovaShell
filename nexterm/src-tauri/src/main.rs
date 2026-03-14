@@ -1,6 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod ai_manager;
+mod hacking_manager;
 mod keychain_manager;
 mod log_manager;
 mod pty_manager;
@@ -791,6 +792,118 @@ fn get_process_list(state: State<'_, AppState>) -> Result<Vec<system_info::Proce
     Ok(system_info::get_top_processes(&mut sys, 15))
 }
 
+// ──────────── Hacking Mode Commands ────────────
+
+#[tauri::command]
+fn hacking_detect_environment() -> hacking_manager::EnvironmentInfo {
+    hacking_manager::detect_environment()
+}
+
+#[tauri::command]
+fn hacking_scan_ports(target: String) -> Vec<hacking_manager::PortScanResult> {
+    hacking_manager::scan_common_ports(&target)
+}
+
+#[tauri::command]
+fn hacking_scan_custom_ports(target: String, ports: Vec<u16>) -> Vec<hacking_manager::PortScanResult> {
+    hacking_manager::scan_ports(&target, &ports)
+}
+
+#[tauri::command]
+fn hacking_grab_banner(host: String, port: u16) -> Option<String> {
+    hacking_manager::grab_banner(&host, port)
+}
+
+#[tauri::command]
+fn hacking_network_map(
+    env: hacking_manager::EnvironmentInfo,
+    ports: Vec<hacking_manager::PortScanResult>,
+) -> String {
+    hacking_manager::generate_network_map(&env, &ports)
+}
+
+#[tauri::command]
+fn hacking_get_scripts() -> Vec<hacking_manager::PentestScript> {
+    hacking_manager::get_pentest_scripts()
+}
+
+#[tauri::command]
+fn hacking_generate_report(
+    env: hacking_manager::EnvironmentInfo,
+    ports: Vec<hacking_manager::PortScanResult>,
+) -> String {
+    hacking_manager::generate_security_report(&env, &ports)
+}
+
+#[tauri::command]
+fn hacking_save_session(data: String, password: String) -> Result<String, String> {
+    let encrypted = hacking_manager::encrypt_data(&data, &password);
+    let data_dir = dirs::data_dir()
+        .unwrap_or_else(|| std::path::PathBuf::from("."))
+        .join("novashell")
+        .join("hacking_sessions");
+    std::fs::create_dir_all(&data_dir)
+        .map_err(|e| format!("Cannot create directory: {}", e))?;
+    let filename = format!("session_{}.enc", chrono_timestamp());
+    let filepath = data_dir.join(&filename);
+    std::fs::write(&filepath, &encrypted)
+        .map_err(|e| format!("Cannot write session: {}", e))?;
+    Ok(filename)
+}
+
+#[tauri::command]
+fn hacking_load_session(filename: String, password: String) -> Result<String, String> {
+    let data_dir = dirs::data_dir()
+        .unwrap_or_else(|| std::path::PathBuf::from("."))
+        .join("novashell")
+        .join("hacking_sessions");
+    let filepath = data_dir.join(&filename);
+    let data = std::fs::read(&filepath)
+        .map_err(|e| format!("Cannot read session: {}", e))?;
+    Ok(hacking_manager::decrypt_data(&data, &password))
+}
+
+#[tauri::command]
+fn hacking_list_sessions() -> Result<Vec<String>, String> {
+    let data_dir = dirs::data_dir()
+        .unwrap_or_else(|| std::path::PathBuf::from("."))
+        .join("novashell")
+        .join("hacking_sessions");
+    if !data_dir.exists() {
+        return Ok(Vec::new());
+    }
+    let mut sessions = Vec::new();
+    for entry in std::fs::read_dir(&data_dir).map_err(|e| format!("Read error: {}", e))? {
+        if let Ok(entry) = entry {
+            if let Some(name) = entry.file_name().to_str() {
+                if name.ends_with(".enc") {
+                    sessions.push(name.to_string());
+                }
+            }
+        }
+    }
+    sessions.sort_by(|a, b| b.cmp(a)); // newest first
+    Ok(sessions)
+}
+
+#[tauri::command]
+fn hacking_delete_session(filename: String) -> Result<(), String> {
+    let data_dir = dirs::data_dir()
+        .unwrap_or_else(|| std::path::PathBuf::from("."))
+        .join("novashell")
+        .join("hacking_sessions");
+    let filepath = data_dir.join(&filename);
+    std::fs::remove_file(&filepath).map_err(|e| format!("Delete error: {}", e))
+}
+
+fn chrono_timestamp() -> String {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+    format!("{}", now)
+}
+
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
@@ -845,6 +958,17 @@ fn main() {
             session_doc_load,
             session_doc_delete,
             export_file_to_downloads,
+            hacking_detect_environment,
+            hacking_scan_ports,
+            hacking_scan_custom_ports,
+            hacking_grab_banner,
+            hacking_network_map,
+            hacking_get_scripts,
+            hacking_generate_report,
+            hacking_save_session,
+            hacking_load_session,
+            hacking_list_sessions,
+            hacking_delete_session,
         ])
         .run(tauri::generate_context!())
         .expect("error while running NovaShell");

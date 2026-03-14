@@ -6,6 +6,7 @@ import { Sidebar } from "./components/Sidebar";
 import { StatusBar } from "./components/StatusBar";
 import { UpdateNotification } from "./components/UpdateNotification";
 import { useAppStore } from "./store/appStore";
+import { AlertToast } from "./components/hacking/AlertToast";
 
 const MemoizedTerminalPanel = memo(TerminalPanel);
 const MemoizedTabBar = memo(TabBar);
@@ -19,6 +20,7 @@ function App() {
   const theme = useAppStore((s) => s.theme);
   const sidebarOpen = useAppStore((s) => s.sidebarOpen);
   const focusMode = useAppStore((s) => s.focusMode);
+  const hackingMode = useAppStore((s) => s.hackingMode);
   const [sidebarWidth, setSidebarWidth] = useState(DEFAULT_SIDEBAR_WIDTH);
   const isResizing = useRef(false);
 
@@ -79,6 +81,7 @@ function App() {
       </div>
       <MemoizedStatusBar />
       <UpdateNotification />
+      {hackingMode && <AlertToast />}
     </div>
   );
 }

@@ -28,6 +28,7 @@ import {
   ChevronDown,
   Edit3,
   X,
+  Shield,
 } from "lucide-react";
 import { useAppStore } from "../store/appStore";
 import type { SidebarTab } from "../store/appStore";
@@ -36,6 +37,7 @@ import { DebugPanel } from "./DebugPanel";
 import { AIPanel } from "./AIPanel";
 import { FileExplorer } from "./FileExplorer";
 import { SessionDocPanel } from "./SessionDocPanel";
+import { HackingPanel } from "./HackingPanel";
 
 const sidebarTabs: { id: SidebarTab; icon: typeof History; label: string }[] = [
   { id: "history", icon: History, label: "History" },
@@ -47,11 +49,13 @@ const sidebarTabs: { id: SidebarTab; icon: typeof History; label: string }[] = [
   { id: "debug", icon: Bug, label: "Debug" },
   { id: "ai", icon: Sparkles, label: "AI Assistant" },
   { id: "docs", icon: FileText, label: "Session Docs" },
+  { id: "hacking", icon: Shield, label: "Hacking Mode" },
 ];
 
 export function Sidebar() {
   const sidebarTab = useAppStore((s) => s.sidebarTab);
   const setSidebarTab = useAppStore((s) => s.setSidebarTab);
+  const hackingMode = useAppStore((s) => s.hackingMode);
 
   return (
     <div className="sidebar">
@@ -63,6 +67,10 @@ export function Sidebar() {
             onClick={() => setSidebarTab(tab.id)}
             title={tab.label}
             aria-label={tab.label}
+            style={tab.id === "hacking" && hackingMode ? {
+              color: "#00ff41",
+              filter: "drop-shadow(0 0 4px rgba(0,255,65,0.6))",
+            } : undefined}
           >
             <tab.icon size={16} />
           </button>
@@ -78,6 +86,7 @@ export function Sidebar() {
         {sidebarTab === "debug" && <DebugPanel />}
         {sidebarTab === "ai" && <AIPanel />}
         {sidebarTab === "docs" && <SessionDocPanel />}
+        {sidebarTab === "hacking" && <HackingPanel />}
       </div>
       <div style={{ padding: "4px 12px", textAlign: "center", borderTop: "1px solid var(--border-color)", flexShrink: 0 }}>
         <span style={{ fontSize: 9, color: "var(--text-muted)", opacity: 0.5 }}>NovaShell v{APP_VERSION}</span>

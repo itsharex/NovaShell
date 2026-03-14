@@ -137,6 +137,39 @@
   --terminal-selection: rgba(51, 255, 51, 0.2);
 }
 
+[data-theme="hacking"] {
+  --bg-primary: #050510;
+  --bg-secondary: #0a0a1f;
+  --bg-tertiary: #0f0f2a;
+  --bg-hover: #151535;
+  --bg-active: #1a1a40;
+  --border-color: #1a3a1a;
+  --border-subtle: #0f2a0f;
+  --text-primary: #00ff41;
+  --text-secondary: #00d4ff;
+  --text-muted: #336633;
+  --accent-primary: #00ff41;
+  --accent-secondary: #00d4ff;
+  --accent-warning: #ffaf00;
+  --accent-error: #ff0040;
+  --accent-purple: #ff00ff;
+  --accent-gradient: linear-gradient(135deg, #00ff41, #00d4ff, #ff00ff);
+  --shadow-sm: 0 1px 3px rgba(0, 255, 65, 0.1);
+  --shadow-md: 0 4px 12px rgba(0, 255, 65, 0.15);
+  --shadow-lg: 0 8px 24px rgba(0, 255, 65, 0.2);
+  --glass-bg: rgba(5, 5, 16, 0.92);
+  --glass-border: rgba(0, 255, 65, 0.2);
+  --titlebar-bg: #020208;
+  --tab-bg: transparent;
+  --tab-active-bg: #0a0a1f;
+  --tab-hover-bg: #0f0f2a;
+  --sidebar-bg: #050510;
+  --statusbar-bg: #020208;
+  --terminal-bg: #050510;
+  --terminal-cursor: #00ff41;
+  --terminal-selection: rgba(0, 255, 65, 0.2);
+}
+
 *, *::before, *::after {
   box-sizing: border-box;
   margin: 0;
@@ -1162,4 +1195,100 @@ body {
 .debug-log-entry:hover {
   filter: brightness(1.15);
   will-change: filter;
+}
+
+/* === Hacking Mode Visual Effects === */
+[data-theme="hacking"] .titlebar {
+  box-shadow: 0 1px 12px rgba(0, 255, 65, 0.08);
+}
+
+[data-theme="hacking"] .titlebar-logo span {
+  background: linear-gradient(135deg, #00ff41, #00d4ff);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  text-shadow: none;
+}
+
+[data-theme="hacking"] .terminal-panel {
+  text-shadow: 0 0 1px rgba(0, 255, 65, 0.2);
+}
+
+[data-theme="hacking"] .terminal-panel::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 3px,
+    rgba(0, 255, 65, 0.008) 3px,
+    rgba(0, 255, 65, 0.008) 6px
+  );
+  pointer-events: none;
+  z-index: 1;
+}
+
+[data-theme="hacking"] .statusbar {
+  box-shadow: 0 -1px 12px rgba(0, 255, 65, 0.06);
+}
+
+[data-theme="hacking"] .tab.active {
+  border-bottom-color: #00ff41;
+  box-shadow: 0 1px 6px rgba(0, 255, 65, 0.15);
+}
+
+[data-theme="hacking"] .sidebar-tab-btn.active {
+  color: #00ff41;
+  box-shadow: inset 2px 0 0 #00ff41;
+}
+
+[data-theme="hacking"] .achievement-toast {
+  border-color: #00ff41;
+  box-shadow: 0 8px 32px rgba(0, 255, 65, 0.3), 0 0 20px rgba(0, 255, 65, 0.1);
+}
+
+.theme-dot.hacking { background: linear-gradient(135deg, #00ff41, #00d4ff); }
+
+/* Hacking mode indicator pulse */
+@keyframes hackingPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+.hacking-indicator {
+  animation: hackingPulse 2s ease-in-out infinite;
+}
+
+/* Hacking alert toast */
+@keyframes hackingAlertSlide {
+  from { transform: translateX(100%); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+
+.hacking-alert-toast {
+  animation: hackingAlertSlide 0.3s ease-out;
+}
+
+/* Hacking mode neon glow on sidebar */
+[data-theme="hacking"] .sidebar {
+  border-left-color: rgba(0, 255, 65, 0.15);
+}
+
+/* Hacking log scrollbar */
+.hacking-log-container {
+  scrollbar-width: thin;
+  scrollbar-color: #1a3a1a transparent;
+}
+
+.hacking-log-container::-webkit-scrollbar {
+  width: 4px;
+}
+
+.hacking-log-container::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.hacking-log-container::-webkit-scrollbar-thumb {
+  background: #1a3a1a;
+  border-radius: 2px;
 }

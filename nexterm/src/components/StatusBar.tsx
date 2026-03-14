@@ -21,6 +21,8 @@ export function StatusBar() {
   const splitMode = useAppStore((s) => s.splitMode);
   const setSplitMode = useAppStore((s) => s.setSplitMode);
   const addTab = useAppStore((s) => s.addTab);
+  const hackingMode = useAppStore((s) => s.hackingMode);
+  const hackingAlertCount = useAppStore((s) => s.hackingAlerts.length);
 
   const [time, setTime] = useState(new Date());
 
@@ -124,6 +126,24 @@ export function StatusBar() {
           <div className="statusbar-item">
             <GitBranch size={12} />
             <span>{gitBranch}</span>
+          </div>
+        )}
+        {hackingMode && (
+          <div className="statusbar-item hacking-indicator" style={{ color: "#00ff41", fontWeight: 700, fontSize: 10 }}>
+            <span style={{
+              width: 6, height: 6, borderRadius: "50%",
+              background: "#00ff41", display: "inline-block",
+              boxShadow: "0 0 6px #00ff41",
+            }} />
+            <span>HACKING MODE</span>
+            {hackingAlertCount > 0 && (
+              <span style={{
+                background: "#ff0040", color: "#fff", borderRadius: 8,
+                padding: "0 5px", fontSize: 9, fontWeight: 700, marginLeft: 4,
+              }}>
+                {hackingAlertCount}
+              </span>
+            )}
           </div>
         )}
       </div>

@@ -7,7 +7,7 @@ export interface ErrorPattern {
   id: string;
   name: string;
   regex: RegExp;
-  category: "node" | "git" | "python" | "docker" | "rust" | "system" | "network";
+  category: "node" | "git" | "python" | "docker" | "rust" | "system" | "network" | "security";
   severity: "critical" | "error" | "warning";
   description: string;
   suggestion: string;
@@ -34,6 +34,7 @@ export const CATEGORY_CONFIG: Record<string, { color: string; label: string }> =
   rust: { color: "#dea584", label: "Rust" },
   system: { color: "#d29922", label: "System" },
   network: { color: "#58a6ff", label: "Network" },
+  security: { color: "#ff0040", label: "Security" },
 };
 
 export const SEVERITY_CONFIG: Record<string, { color: string; icon: string; label: string }> = {
@@ -843,6 +844,127 @@ export const ERROR_PATTERNS: ErrorPattern[] = [
     description: "The connection was unexpectedly closed by the remote end.",
     suggestion:
       "Retry the request. If it keeps happening, check for request timeouts or server crashes.",
+  },
+
+  // =======================================================================
+  // Security  (12 patterns)
+  // =======================================================================
+  {
+    id: "sec-ssh-auth-fail",
+    name: "SSH Authentication Failed",
+    regex: /Permission denied.*publickey|Authentication failed|Too many authentication failures/i,
+    category: "security",
+    severity: "critical",
+    description: "SSH authentication was rejected by the remote server.",
+    suggestion:
+      "Check your SSH key or password. Verify the user exists on the remote host and has SSH access.",
+    fixCommand: "ssh-copy-id user@host",
+  },
+  {
+    id: "sec-permission-denied",
+    name: "Permission Denied",
+    regex: /Permission denied|EACCES|Access is denied|Operation not permitted/i,
+    category: "security",
+    severity: "error",
+    description: "The operation was denied due to insufficient permissions.",
+    suggestion:
+      "Check file/directory permissions. On Unix use chmod/chown. Consider if sudo is required.",
+    fixCommand: "ls -la <path>",
+  },
+  {
+    id: "sec-sudo-required",
+    name: "Sudo Required",
+    regex: /must be run as root|requires root|sudo:|not in the sudoers file/i,
+    category: "security",
+    severity: "warning",
+    description: "This command requires elevated privileges (root/admin).",
+    suggestion: "Re-run the command with sudo or switch to a privileged user.",
+  },
+  {
+    id: "sec-port-in-use",
+    name: "Port Already In Use",
+    regex: /EADDRINUSE|address already in use|port.*already.*bound/i,
+    category: "security",
+    severity: "warning",
+    description: "The network port is already occupied by another process.",
+    suggestion: "Find and stop the process using the port, or use a different port.",
+    fixCommand: "lsof -i :<port> || netstat -tlnp | grep <port>",
+  },
+  {
+    id: "sec-credential-exposed",
+    name: "Credential Exposure Warning",
+    regex: /password.*visible|credential.*plain.*text|secret.*exposed|API.?key.*leaked/i,
+    category: "security",
+    severity: "critical",
+    description: "Possible credentials or secrets exposed in output.",
+    suggestion:
+      "Rotate the exposed credential immediately. Use environment variables or a secret manager.",
+  },
+  {
+    id: "sec-cert-expired",
+    name: "Certificate Expired",
+    regex: /certificate.*expired|CERT_HAS_EXPIRED|SSL certificate.*not valid/i,
+    category: "security",
+    severity: "critical",
+    description: "A TLS/SSL certificate has expired.",
+    suggestion: "Renew the certificate. For Let's Encrypt: certbot renew.",
+    fixCommand: "openssl x509 -enddate -noout -in cert.pem",
+  },
+  {
+    id: "sec-firewall-blocked",
+    name: "Firewall Blocked",
+    regex: /connection.*refused.*firewall|iptables.*DROP|blocked by.*firewall|Windows Defender Firewall/i,
+    category: "security",
+    severity: "warning",
+    description: "A firewall rule is blocking the connection.",
+    suggestion: "Check firewall rules. On Linux: iptables -L or ufw status. On Windows: netsh advfirewall.",
+  },
+  {
+    id: "sec-brute-force-detected",
+    name: "Brute Force Detected",
+    regex: /too many failed|maximum.*login.*attempts|account.*locked|temporarily blocked/i,
+    category: "security",
+    severity: "critical",
+    description: "Multiple failed authentication attempts detected — possible brute force.",
+    suggestion:
+      "Wait and retry. If it's your server, check fail2ban logs and whitelist your IP.",
+  },
+  {
+    id: "sec-insecure-protocol",
+    name: "Insecure Protocol",
+    regex: /using.*HTTP\b(?!S)|telnet.*connection|FTP.*login|unencrypted.*connection/i,
+    category: "security",
+    severity: "warning",
+    description: "An insecure (unencrypted) protocol is being used.",
+    suggestion: "Switch to the encrypted version: HTTPS, SFTP/SCP, SSH instead of Telnet.",
+  },
+  {
+    id: "sec-nmap-vuln",
+    name: "Nmap Vulnerability Found",
+    regex: /VULNERABLE|CVE-\d{4}-\d+|exploit.*available/i,
+    category: "security",
+    severity: "critical",
+    description: "A security scanning tool detected a vulnerability.",
+    suggestion: "Investigate the CVE, patch the affected software, and re-scan to confirm.",
+  },
+  {
+    id: "sec-privesc-suid",
+    name: "SUID Binary Found",
+    regex: /\-[r-][w-]s.*\/usr\/|setuid|setgid.*executable/i,
+    category: "security",
+    severity: "warning",
+    description: "A SUID/SGID binary was detected, which runs with elevated privileges.",
+    suggestion: "Verify if the SUID bit is necessary. Check GTFOBins for exploitation potential.",
+  },
+  {
+    id: "sec-container-escape",
+    name: "Container Escape Risk",
+    regex: /docker\.sock.*mount|--privileged|SYS_ADMIN.*capability|host.*namespace/i,
+    category: "security",
+    severity: "critical",
+    description: "Container configuration allows potential escape to the host.",
+    suggestion:
+      "Remove --privileged flag, drop unnecessary capabilities, avoid mounting docker.sock.",
   },
 ];
 

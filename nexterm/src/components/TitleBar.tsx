@@ -1,10 +1,12 @@
 import { useState } from "react";
-import { Minus, Square, X, Terminal, Maximize2, PanelRight, Focus } from "lucide-react";
+import { Minus, Square, X, Terminal, Maximize2, PanelRight, Focus, Shield } from "lucide-react";
 import { useAppStore } from "../store/appStore";
 import type { ThemeName } from "../store/appStore";
 
 export function TitleBar() {
   const { theme, setTheme, toggleSidebar, toggleFocusMode } = useAppStore();
+  const hackingMode = useAppStore((s) => s.hackingMode);
+  const toggleHackingMode = useAppStore((s) => s.toggleHackingMode);
 
   const themes: { name: ThemeName; label: string }[] = [
     { name: "dark", label: "Dark" },
@@ -53,6 +55,17 @@ export function TitleBar() {
       </div>
       <div className="titlebar-center">Professional Terminal</div>
       <div className="titlebar-right">
+        <button
+          className="titlebar-btn"
+          onClick={toggleHackingMode}
+          title={hackingMode ? "Disable Hacking Mode" : "Enable Hacking Mode"}
+          style={hackingMode ? {
+            color: "#00ff41",
+            filter: "drop-shadow(0 0 4px rgba(0,255,65,0.6))",
+          } : undefined}
+        >
+          <Shield size={14} />
+        </button>
         <button className="titlebar-btn" onClick={toggleFocusMode} title="Focus Mode">
           <Focus size={14} />
         </button>

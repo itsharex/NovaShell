@@ -18,7 +18,7 @@ use tauri::State;
 pub struct AppState {
     pub sessions: Mutex<HashMap<String, pty_manager::PtySession>>,
     pub ssh_sessions: Mutex<HashMap<String, ssh_manager::SshSession>>,
-    pub sftp_sessions: Mutex<HashMap<String, sftp_manager::SftpSession>>,
+    pub sftp_sessions: Mutex<HashMap<String, std::sync::Arc<sftp_manager::SftpSession>>>,
     pub system: Mutex<sysinfo::System>,
     pub cached_path_commands: Mutex<Option<Vec<String>>>,
     pub log_manager: Mutex<log_manager::LogManager>,
@@ -928,7 +928,7 @@ async fn sftp_connect(
 
     state.sftp_sessions.lock()
         .map_err(|e| format!("SFTP session lock error: {}", e))?
-        .insert(session_id.clone(), session);
+        .insert(session_id.clone(), std::sync::Arc::new(session));
 
     Ok(session_id)
 }
@@ -953,38 +953,44 @@ fn sftp_list_dir(
     path: String,
     state: State<'_, AppState>,
 ) -> Result<Vec<sftp_manager::RemoteFileEntry>, String> {
-    let sessions = state.sftp_sessions.lock()
-        .map_err(|e| format!("SFTP session lock error: {}", e))?;
-    let session = sessions.get(&session_id)
-        .ok_or_else(|| format!("SFTP session '{}' not found", session_id))?;
+    let session = {
+        let sessions = state.sftp_sessions.lock()
+            .map_err(|e| format!("SFTP session lock error: {}", e))?;
+        std::sync::Arc::clone(sessions.get(&session_id)
+            .ok_or_else(|| format!("SFTP session '{}' not found", session_id))?)
+    };
     session.list_dir(&path)
 }
 
 #[tauri::command]
-fn sftp_download(
+async fn sftp_download(
     session_id: String,
     remote_path: String,
     local_path: String,
     state: State<'_, AppState>,
 ) -> Result<u64, String> {
-    let sessions = state.sftp_sessions.lock()
-        .map_err(|e| format!("SFTP session lock error: {}", e))?;
-    let session = sessions.get(&session_id)
-        .ok_or_else(|| format!("SFTP session '{}' not found", session_id))?;
+    let session = {
+        let sessions = state.sftp_sessions.lock()
+            .map_err(|e| format!("SFTP session lock error: {}", e))?;
+        std::sync::Arc::clone(sessions.get(&session_id)
+            .ok_or_else(|| format!("SFTP session '{}' not found", session_id))?)
+    }; // HashMap lock released here — won't block other SFTP commands during transfer
     session.download_file(&remote_path, &local_path)
 }
 
 #[tauri::command]
-fn sftp_upload(
+async fn sftp_upload(
     session_id: String,
     local_path: String,
     remote_path: String,
     state: State<'_, AppState>,
 ) -> Result<u64, String> {
-    let sessions = state.sftp_sessions.lock()
-        .map_err(|e| format!("SFTP session lock error: {}", e))?;
-    let session = sessions.get(&session_id)
-        .ok_or_else(|| format!("SFTP session '{}' not found", session_id))?;
+    let session = {
+        let sessions = state.sftp_sessions.lock()
+            .map_err(|e| format!("SFTP session lock error: {}", e))?;
+        std::sync::Arc::clone(sessions.get(&session_id)
+            .ok_or_else(|| format!("SFTP session '{}' not found", session_id))?)
+    }; // HashMap lock released here
     session.upload_file(&local_path, &remote_path)
 }
 
@@ -994,10 +1000,12 @@ fn sftp_mkdir(
     path: String,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
-    let sessions = state.sftp_sessions.lock()
-        .map_err(|e| format!("SFTP session lock error: {}", e))?;
-    let session = sessions.get(&session_id)
-        .ok_or_else(|| format!("SFTP session '{}' not found", session_id))?;
+    let session = {
+        let sessions = state.sftp_sessions.lock()
+            .map_err(|e| format!("SFTP session lock error: {}", e))?;
+        std::sync::Arc::clone(sessions.get(&session_id)
+            .ok_or_else(|| format!("SFTP session '{}' not found", session_id))?)
+    };
     session.mkdir(&path)
 }
 
@@ -1008,10 +1016,12 @@ fn sftp_delete(
     is_dir: bool,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
-    let sessions = state.sftp_sessions.lock()
-        .map_err(|e| format!("SFTP session lock error: {}", e))?;
-    let session = sessions.get(&session_id)
-        .ok_or_else(|| format!("SFTP session '{}' not found", session_id))?;
+    let session = {
+        let sessions = state.sftp_sessions.lock()
+            .map_err(|e| format!("SFTP session lock error: {}", e))?;
+        std::sync::Arc::clone(sessions.get(&session_id)
+            .ok_or_else(|| format!("SFTP session '{}' not found", session_id))?)
+    };
     if is_dir {
         session.delete_dir(&path)
     } else {
@@ -1026,10 +1036,12 @@ fn sftp_rename(
     new_path: String,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
-    let sessions = state.sftp_sessions.lock()
-        .map_err(|e| format!("SFTP session lock error: {}", e))?;
-    let session = sessions.get(&session_id)
-        .ok_or_else(|| format!("SFTP session '{}' not found", session_id))?;
+    let session = {
+        let sessions = state.sftp_sessions.lock()
+            .map_err(|e| format!("SFTP session lock error: {}", e))?;
+        std::sync::Arc::clone(sessions.get(&session_id)
+            .ok_or_else(|| format!("SFTP session '{}' not found", session_id))?)
+    };
     session.rename(&old_path, &new_path)
 }
 
@@ -1038,10 +1050,12 @@ fn sftp_home_dir(
     session_id: String,
     state: State<'_, AppState>,
 ) -> Result<String, String> {
-    let sessions = state.sftp_sessions.lock()
-        .map_err(|e| format!("SFTP session lock error: {}", e))?;
-    let session = sessions.get(&session_id)
-        .ok_or_else(|| format!("SFTP session '{}' not found", session_id))?;
+    let session = {
+        let sessions = state.sftp_sessions.lock()
+            .map_err(|e| format!("SFTP session lock error: {}", e))?;
+        std::sync::Arc::clone(sessions.get(&session_id)
+            .ok_or_else(|| format!("SFTP session '{}' not found", session_id))?)
+    };
     session.home_dir()
 }
 
@@ -1051,10 +1065,12 @@ fn sftp_read_text(
     path: String,
     state: State<'_, AppState>,
 ) -> Result<String, String> {
-    let sessions = state.sftp_sessions.lock()
-        .map_err(|e| format!("SFTP session lock error: {}", e))?;
-    let session = sessions.get(&session_id)
-        .ok_or_else(|| format!("SFTP session '{}' not found", session_id))?;
+    let session = {
+        let sessions = state.sftp_sessions.lock()
+            .map_err(|e| format!("SFTP session lock error: {}", e))?;
+        std::sync::Arc::clone(sessions.get(&session_id)
+            .ok_or_else(|| format!("SFTP session '{}' not found", session_id))?)
+    };
     session.read_text_file(&path, 1_048_576) // 1MB max
 }
 

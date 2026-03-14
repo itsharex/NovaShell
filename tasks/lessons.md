@@ -82,6 +82,14 @@
 - ai_chat Tauri command already existed — no Rust changes needed for AI integration
 - sysinfo 0.30: Process::name() returns &str, so .to_string() works directly
 
+## SFTP Transfer — Critical
+- `transferring` state flag used as both UI indicator AND guard in useCallback creates a fatal bug
+- If ANY error occurs before `setTransferring(false)` (e.g., `getInvoke()` throws), the flag stays `true` forever
+- Once stuck, Download button is `disabled`, Upload button is `disabled`, drag & drop is rejected — NOTHING works
+- Fix: use `useRef` for the guard (avoids stale closures) + `try-finally` to ALWAYS reset the flag
+- Remove `transferring` from `useCallback` dependency arrays — the ref doesn't cause re-creation
+- Also: Tauri sync commands block the main thread — make file transfer commands `async`
+
 ## Windows / Antivirus
 - Unsigned compiled `.exe` files in project root trigger Windows Defender false positives
 - Add `*.exe`, `*.msi`, `*.dmg`, etc. to `.gitignore` to prevent accidental commits

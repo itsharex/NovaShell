@@ -338,6 +338,7 @@ function SFTPExplorer({
   const [transfers, setTransfers] = useState<TransferItem[]>([]);
   const [activePanel, setActivePanel] = useState<"local" | "remote">("remote");
   const [transferring, setTransferring] = useState(false);
+  const transferringRef = useRef(false);
 
   // New folder / rename
   const [newFolderName, setNewFolderName] = useState("");
@@ -464,10 +465,11 @@ function SFTPExplorer({
 
   // Download: remote -> local
   const handleDownload = useCallback(async () => {
-    if (selectedRemote.size === 0 || !localPath || transferring) return;
+    if (selectedRemote.size === 0 || !localPath || transferringRef.current) return;
     const files = remoteFiles.filter((f) => selectedRemote.has(f.path) && !f.is_dir);
     if (files.length === 0) return;
 
+    transferringRef.current = true;
     setTransferring(true);
     const newTransfers: TransferItem[] = files.map((f) => ({
       id: crypto.randomUUID(),
@@ -478,31 +480,36 @@ function SFTPExplorer({
     }));
     setTransfers((prev) => [...newTransfers, ...prev]);
 
-    const invoke = await getInvoke();
-    for (let i = 0; i < files.length; i++) {
-      const f = files[i];
-      const t = newTransfers[i];
-      const localDest = `${localPath}${localSep}${f.name}`;
+    try {
+      const invoke = await getInvoke();
+      for (let i = 0; i < files.length; i++) {
+        const f = files[i];
+        const t = newTransfers[i];
+        const localDest = `${localPath}${localSep}${f.name}`;
 
-      setTransfers((prev) => prev.map((x) => x.id === t.id ? { ...x, status: "transferring" } : x));
-      try {
-        await invoke("sftp_download", { sessionId, remotePath: f.path, localPath: localDest });
-        setTransfers((prev) => prev.map((x) => x.id === t.id ? { ...x, status: "done" } : x));
-      } catch (e) {
-        setTransfers((prev) => prev.map((x) => x.id === t.id ? { ...x, status: "error", error: String(e) } : x));
+        setTransfers((prev) => prev.map((x) => x.id === t.id ? { ...x, status: "transferring" } : x));
+        try {
+          await invoke("sftp_download", { sessionId, remotePath: f.path, localPath: localDest });
+          setTransfers((prev) => prev.map((x) => x.id === t.id ? { ...x, status: "done" } : x));
+        } catch (e) {
+          setTransfers((prev) => prev.map((x) => x.id === t.id ? { ...x, status: "error", error: String(e) } : x));
+        }
       }
+      setSelectedRemote(new Set());
+    } finally {
+      transferringRef.current = false;
+      setTransferring(false);
+      loadLocal(localPath);
     }
-    setTransferring(false);
-    loadLocal(localPath);
-    setSelectedRemote(new Set());
-  }, [selectedRemote, remoteFiles, localPath, localSep, sessionId, getInvoke, loadLocal, transferring]);
+  }, [selectedRemote, remoteFiles, localPath, localSep, sessionId, getInvoke, loadLocal]);
 
   // Upload: local -> remote
   const handleUpload = useCallback(async () => {
-    if (selectedLocal.size === 0 || !remotePath || transferring) return;
+    if (selectedLocal.size === 0 || !remotePath || transferringRef.current) return;
     const files = localFiles.filter((f) => selectedLocal.has(f.path) && !f.is_dir);
     if (files.length === 0) return;
 
+    transferringRef.current = true;
     setTransferring(true);
     const newTransfers: TransferItem[] = files.map((f) => ({
       id: crypto.randomUUID(),
@@ -513,24 +520,28 @@ function SFTPExplorer({
     }));
     setTransfers((prev) => [...newTransfers, ...prev]);
 
-    const invoke = await getInvoke();
-    for (let i = 0; i < files.length; i++) {
-      const f = files[i];
-      const t = newTransfers[i];
-      const remoteDest = `${remotePath}/${f.name}`;
+    try {
+      const invoke = await getInvoke();
+      for (let i = 0; i < files.length; i++) {
+        const f = files[i];
+        const t = newTransfers[i];
+        const remoteDest = `${remotePath}/${f.name}`;
 
-      setTransfers((prev) => prev.map((x) => x.id === t.id ? { ...x, status: "transferring" } : x));
-      try {
-        await invoke("sftp_upload", { sessionId, localPath: f.path, remotePath: remoteDest });
-        setTransfers((prev) => prev.map((x) => x.id === t.id ? { ...x, status: "done" } : x));
-      } catch (e) {
-        setTransfers((prev) => prev.map((x) => x.id === t.id ? { ...x, status: "error", error: String(e) } : x));
+        setTransfers((prev) => prev.map((x) => x.id === t.id ? { ...x, status: "transferring" } : x));
+        try {
+          await invoke("sftp_upload", { sessionId, localPath: f.path, remotePath: remoteDest });
+          setTransfers((prev) => prev.map((x) => x.id === t.id ? { ...x, status: "done" } : x));
+        } catch (e) {
+          setTransfers((prev) => prev.map((x) => x.id === t.id ? { ...x, status: "error", error: String(e) } : x));
+        }
       }
+      setSelectedLocal(new Set());
+    } finally {
+      transferringRef.current = false;
+      setTransferring(false);
+      loadRemote(remotePath);
     }
-    setTransferring(false);
-    loadRemote(remotePath);
-    setSelectedLocal(new Set());
-  }, [selectedLocal, localFiles, remotePath, sessionId, getInvoke, loadRemote, transferring]);
+  }, [selectedLocal, localFiles, remotePath, sessionId, getInvoke, loadRemote]);
 
   // Drag & drop transfer
   const handleDrop = useCallback(async (targetSide: "local" | "remote") => {
@@ -538,12 +549,13 @@ function SFTPExplorer({
     dragCounterRemote.current = 0;
     setDragOver(null);
     const data = dragDataRef.current;
-    if (!data || data.side === targetSide || transferring) return;
+    if (!data || data.side === targetSide || transferringRef.current) return;
     dragDataRef.current = null;
 
     const files = data.files.filter((f) => !f.is_dir);
     if (files.length === 0) return;
 
+    transferringRef.current = true;
     setTransferring(true);
     const direction = targetSide === "local" ? "download" : "upload";
     const newTransfers: TransferItem[] = files.map((f) => ({
@@ -555,31 +567,34 @@ function SFTPExplorer({
     }));
     setTransfers((prev) => [...newTransfers, ...prev]);
 
-    const invoke = await getInvoke();
-    for (let i = 0; i < files.length; i++) {
-      const f = files[i];
-      const t = newTransfers[i];
-      setTransfers((prev) => prev.map((x) => x.id === t.id ? { ...x, status: "transferring" } : x));
+    try {
+      const invoke = await getInvoke();
+      for (let i = 0; i < files.length; i++) {
+        const f = files[i];
+        const t = newTransfers[i];
+        setTransfers((prev) => prev.map((x) => x.id === t.id ? { ...x, status: "transferring" } : x));
 
-      try {
-        if (direction === "download") {
-          const localDest = `${localPath}${localSep}${f.name}`;
-          await invoke("sftp_download", { sessionId, remotePath: f.path, localPath: localDest });
-        } else {
-          const remoteDest = `${remotePath}/${f.name}`;
-          await invoke("sftp_upload", { sessionId, localPath: f.path, remotePath: remoteDest });
+        try {
+          if (direction === "download") {
+            const localDest = `${localPath}${localSep}${f.name}`;
+            await invoke("sftp_download", { sessionId, remotePath: f.path, localPath: localDest });
+          } else {
+            const remoteDest = `${remotePath}/${f.name}`;
+            await invoke("sftp_upload", { sessionId, localPath: f.path, remotePath: remoteDest });
+          }
+          setTransfers((prev) => prev.map((x) => x.id === t.id ? { ...x, status: "done" } : x));
+        } catch (e) {
+          setTransfers((prev) => prev.map((x) => x.id === t.id ? { ...x, status: "error", error: String(e) } : x));
         }
-        setTransfers((prev) => prev.map((x) => x.id === t.id ? { ...x, status: "done" } : x));
-      } catch (e) {
-        setTransfers((prev) => prev.map((x) => x.id === t.id ? { ...x, status: "error", error: String(e) } : x));
       }
+    } finally {
+      transferringRef.current = false;
+      setTransferring(false);
+      // Refresh the target panel
+      if (targetSide === "local") loadLocal(localPath);
+      else loadRemote(remotePath);
     }
-    setTransferring(false);
-
-    // Refresh the target panel
-    if (targetSide === "local") loadLocal(localPath);
-    else loadRemote(remotePath);
-  }, [localPath, localSep, remotePath, sessionId, getInvoke, loadLocal, loadRemote, transferring]);
+  }, [localPath, localSep, remotePath, sessionId, getInvoke, loadLocal, loadRemote]);
 
   // Delete remote
   const handleDeleteRemote = async () => {

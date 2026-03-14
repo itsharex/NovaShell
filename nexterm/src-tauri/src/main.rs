@@ -995,6 +995,38 @@ async fn sftp_upload(
 }
 
 #[tauri::command]
+async fn sftp_download_dir(
+    session_id: String,
+    remote_path: String,
+    local_path: String,
+    state: State<'_, AppState>,
+) -> Result<u64, String> {
+    let session = {
+        let sessions = state.sftp_sessions.lock()
+            .map_err(|e| format!("SFTP session lock error: {}", e))?;
+        std::sync::Arc::clone(sessions.get(&session_id)
+            .ok_or_else(|| format!("SFTP session '{}' not found", session_id))?)
+    };
+    session.download_dir(&remote_path, &local_path)
+}
+
+#[tauri::command]
+async fn sftp_upload_dir(
+    session_id: String,
+    local_path: String,
+    remote_path: String,
+    state: State<'_, AppState>,
+) -> Result<u64, String> {
+    let session = {
+        let sessions = state.sftp_sessions.lock()
+            .map_err(|e| format!("SFTP session lock error: {}", e))?;
+        std::sync::Arc::clone(sessions.get(&session_id)
+            .ok_or_else(|| format!("SFTP session '{}' not found", session_id))?)
+    };
+    session.upload_dir(&local_path, &remote_path)
+}
+
+#[tauri::command]
 fn sftp_mkdir(
     session_id: String,
     path: String,
@@ -1153,6 +1185,8 @@ fn main() {
             sftp_list_dir,
             sftp_download,
             sftp_upload,
+            sftp_download_dir,
+            sftp_upload_dir,
             sftp_mkdir,
             sftp_delete,
             sftp_rename,

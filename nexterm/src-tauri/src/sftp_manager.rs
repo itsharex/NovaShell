@@ -333,6 +333,53 @@ impl SftpSession {
     pub fn is_connected(&self) -> bool {
         self.session.lock().map(|s| s.authenticated()).unwrap_or(false)
     }
+
+    /// Recursively download a remote directory to a local path
+    pub fn download_dir(&self, remote_dir: &str, local_dir: &str) -> Result<u64, String> {
+        let entries = self.list_dir(remote_dir)?;
+
+        std::fs::create_dir_all(local_dir)
+            .map_err(|e| format!("Cannot create local directory {}: {}", local_dir, e))?;
+
+        let mut total: u64 = 0;
+        for entry in entries {
+            let local_path = Path::new(local_dir).join(&entry.name);
+            let local_str = local_path.to_string_lossy().to_string();
+
+            if entry.is_dir {
+                total += self.download_dir(&entry.path, &local_str)?;
+            } else {
+                total += self.download_file(&entry.path, &local_str)?;
+            }
+        }
+        Ok(total)
+    }
+
+    /// Recursively upload a local directory to a remote path
+    pub fn upload_dir(&self, local_dir: &str, remote_dir: &str) -> Result<u64, String> {
+        let normalized_remote = normalize_remote_path(remote_dir);
+        // Create remote directory (ignore error if it already exists)
+        let _ = self.mkdir(&normalized_remote);
+
+        let entries = std::fs::read_dir(local_dir)
+            .map_err(|e| format!("Cannot read local directory {}: {}", local_dir, e))?;
+
+        let mut total: u64 = 0;
+        for entry in entries {
+            let entry = entry.map_err(|e| format!("Read dir entry error: {}", e))?;
+            let metadata = entry.metadata().map_err(|e| format!("Metadata error: {}", e))?;
+            let name = entry.file_name().to_string_lossy().to_string();
+            let local_path = entry.path().to_string_lossy().to_string();
+            let remote_path = format!("{}/{}", normalized_remote, name);
+
+            if metadata.is_dir() {
+                total += self.upload_dir(&local_path, &remote_path)?;
+            } else {
+                total += self.upload_file(&local_path, &remote_path)?;
+            }
+        }
+        Ok(total)
+    }
 }
 
 impl Drop for SftpSession {

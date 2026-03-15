@@ -70,7 +70,76 @@
 - [x] Editor: Toggle folder panel visibility button in header
 - [x] Editor: Search/filter in both file browser and folder tree
 
+## Completed (recent)
+- [x] Cross-Server Navigation: ServerContext type, navigation stacks in store
+- [x] Cross-Server Navigation: serverNavigation.ts utility (resolve, parse, navigate)
+- [x] Cross-Server Navigation: TerminalPanel.tsx intercept cd server:/path commands
+- [x] Cross-Server Navigation: StatusBar server indicator + navigation stack display
+- [x] Infrastructure Monitor: Rust backend (infra_monitor.rs) with polling thread per server
+- [x] Infrastructure Monitor: 3 Tauri commands (start, stop, stop_all) + AppState field
+- [x] Infrastructure Monitor: Store types (ServerMetrics, InfraAlert, InfraThresholds)
+- [x] Infrastructure Monitor: Store actions (addInfraMetrics with threshold+anomaly detection)
+- [x] Infrastructure Monitor: InfraMonitorPanel.tsx with Overview/Alerts/Settings views
+- [x] Infrastructure Monitor: SparklineSVG (zero-dependency SVG charts)
+- [x] Infrastructure Monitor: ServerCard with health score, metric bars, remediation buttons
+- [x] Infrastructure Monitor: Anomaly detection (mean + 2σ spike detection)
+- [x] Infrastructure Monitor: Cross-server correlation detection (30s window)
+- [x] Infrastructure Monitor: Compact mode toggle
+- [x] Infrastructure Monitor: One-click remediation (top, disk, memory, restart service)
+- [x] Infrastructure Monitor: Sidebar tab with Gauge icon
+- [x] TypeScript compilation verified
+- [x] Rust compilation verified
+- [x] Cross-Server Nav: filesystem-style /servers/webserver/var/www syntax
+- [x] Cross-Server Nav: ls /servers command to list all available servers with status
+- [x] Cross-Server Nav: improved "server not found" message with tip
+- [x] StatusBar: breadcrumb navigation display (local → webserver → dbserver)
+- [x] StatusBar: styled breadcrumb pill with color-coded current server
+- [x] Infra Monitor: Timeline global view with date grouping + color-coded events
+- [x] Infra Monitor: InfraTimelineEvent type + store (timeline state, addEvent, clearTimeline)
+- [x] Infra Monitor: Auto-log alerts to timeline from addInfraMetrics
+- [x] Infra Monitor: Log actions/connections/errors to timeline
+- [x] Infra Monitor: Kill PID action (input + kill button per server card)
+- [x] Infra Monitor: Open Terminal action (cross-server nav to server)
+- [x] Infra Monitor: Clean Logs action (removes .gz, .old, .1 from /var/log)
+- [x] Infra Monitor: Clean Journals action (journalctl --vacuum-size=100M)
+- [x] Infra Monitor: Cache/Buffers info action
+- [x] Infra Monitor: Show All Failed Services action
+- [x] Infra Monitor: Context-aware action groups (CPU/MEM/DISK/Services sections)
+- [x] Infra Monitor: Always-available actions even when metrics are healthy
+- [x] TypeScript + Rust compilation verified (post-improvements)
+- [x] Kill PID: Two-step confirm (SIGTERM/SIGKILL/Cancel) with process info before kill
+- [x] Clean Logs: Scan-first approach (scan large files, scan old logs, vacuum journals 7d)
+- [x] Disk Analyzer: CCleaner-style "Disk" tab in InfraMonitorPanel
+- [x] Disk Analyzer: DiskPartition, DiskCategory, DiskAnalysis types in store
+- [x] Disk Analyzer: SSH-based full disk scan script (partitions + 9 cleanup categories)
+- [x] Disk Analyzer: Donut chart SVG per partition (zero dependencies)
+- [x] Disk Analyzer: Partition cards with gradient bars + used/free/total
+- [x] Disk Analyzer: Cleanup categories (logs, journals, cache, pkgcache, tmp, docker, coredumps, snaps)
+- [x] Disk Analyzer: Total reclaimable calculation
+- [x] Disk Analyzer: Confirm-before-clean for every cleanup action
+- [x] Disk Analyzer: Auto-rescan after cleanup
+- [x] Disk Analyzer: Timeline integration (scan/clean events logged)
+- [x] Disk Analyzer: Multi-server support (server selector buttons)
+- [x] TypeScript + Rust compilation verified (post-disk-analyzer)
+- [x] Disk: Inspect/Preview flow — each category has "Inspect" button showing files before cleaning
+- [x] Disk: Per-category actions (View files, Tail syslog, Show errors, Images, Volumes, Prune, Show all)
+- [x] Disk: Largest Directories treemap-style bars with proportional width (du -xmd1 /)
+- [x] Disk: Click directory → opens terminal at that path via cross-server nav
+- [x] Disk: Disk growth tracking — compares current vs previous scan, shows +deltaMB per directory
+- [x] Disk: Growth alerts panel (red) when any directory grows >500MB between scans
+- [x] Disk: Multi-select cleanup with checkboxes + "Clean Selected" batch action with total summary
+- [x] Disk: "Analyze Disk" button in ServerCard when disk >90% — switches to Disk tab
+- [x] Disk: Safe scan script with timeout 10s/5s + -xdev (no filesystem crossing)
+- [x] Disk: Cross-server terminal integration — "Terminal" button per category opens terminal at relevant path
+- [x] Disk: Previous scan timestamp shown for context
+- [x] Disk: Category expand/collapse with action drawer
+- [x] Store: DiskLargestDir, DiskCategoryAction, DiskGrowthEntry types
+- [x] Store: diskPreviousScans for growth tracking (auto-saved on rescan)
+- [x] TypeScript + Rust compilation verified (post-all-improvements)
+
 ## Pending
+- [ ] Test Cross-Server Navigation with real SSH servers
+- [ ] Test Infrastructure Monitor with real SSH servers
 - [ ] Test Debug Copilot AI analysis with live Ollama
 - [ ] Test full SSH flow end-to-end
 - [ ] Test debug panel with real terminal output

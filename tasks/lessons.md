@@ -90,6 +90,45 @@
 - Remove `transferring` from `useCallback` dependency arrays — the ref doesn't cause re-creation
 - Also: Tauri sync commands block the main thread — make file transfer commands `async`
 
+## Cross-Server Navigation
+- Intercepting `cd server:/path` requires buffering terminal input (ptyInputBuffer) and checking pattern on Enter
+- Must send Ctrl+U (\x15) to clear the shell's line buffer BEFORE intercepting, otherwise shell tries to execute the raw cd command
+- Use a mutable ref object (`currentTermRef`) to track which session (PTY vs SSH) the terminal is currently bound to
+- When switching servers: save current context to a stack, rebind event listeners, update sessionType
+- Credentials resolution: sessionPassword → keychain → null (prompt needed)
+- Tab title update with server name provides visual feedback of current context
+
+## Infrastructure Monitor — Safety
+- Never run `find -delete` or `rm` on production servers from a one-click button — always scan first, show results, then let the user decide in a terminal
+- Kill PID must be two-step: enter PID → confirm with SIGTERM (graceful) vs SIGKILL (force) choice. Show process info (`ps -p PID`) before killing so the user can verify they have the right process
+- `journalctl --vacuum-time=7d` is safer than `--vacuum-size=100M` — time-based retention is predictable and won't delete recent logs
+- Log scan should show sizes + file counts so the user understands the impact before cleanup
+- Always verify PID exists before sending signal (`ps -p PID && kill`) to give a clear error instead of silent failure
+
+## Disk Analyzer (CCleaner-style)
+- No new Rust commands needed — the existing `ssh_exec` command handles all disk scanning and cleanup
+- A single combined shell script collects all disk categories in one SSH call (partitions + 9 categories + largest dirs) to avoid multiple connections
+- `df -hT` gives filesystem type which is useful context (ext4, xfs, btrfs)
+- Parse `journalctl --disk-usage` output carefully — it returns human-readable strings like "4.0G"
+- Package cache location varies by distro: apt=/var/cache/apt/archives, yum=/var/cache/yum, dnf=/var/cache/dnf
+- Every cleanup action needs a confirm step — even "safe" ones like vacuum-time can surprise users
+- Auto-rescan after cleanup gives immediate visual feedback of reclaimed space
+- Donut chart with SVG: strokeDasharray/strokeDashoffset is the trick, rotate -90deg to start from top
+- `timeout 10s du -xmd1 /` prevents hangs on huge filesystems — -xdev prevents crossing mount boundaries
+- `find /tmp -xdev -mtime +7` is critical — without -xdev, find can traverse NFS/bind mounts and hang
+- Disk growth tracking: save previous scan's directory sizes in store, diff on rescan — catches runaway logs/docker
+- Preview-before-clean flow: Inspect (read-only) → Review files → Confirm → Clean — builds user trust
+- Multi-select batch cleanup: combine commands with && for atomicity, show total reclaimable in green summary bar
+- Click-to-navigate: largest dirs are clickable, opens terminal at that exact path via cross-server nav
+
+## Infrastructure Monitor
+- SSH exec_command() creates a NEW connection each poll — no session reuse (simpler, no mutex contention with interactive sessions)
+- Polling thread sleeps in small increments (100ms) to allow quick shutdown when `running` flag is set to false
+- Anomaly detection: mean + 2σ over last 30 samples catches sudden spikes below fixed thresholds
+- Cross-server correlation: if 2+ servers alert within 30 seconds, it suggests a systemic issue
+- MetricsSnapshot fields use snake_case in Rust, camelCase in TypeScript — transform in the event listener
+- Network I/O rate: calculate delta between consecutive snapshots divided by time interval
+
 ## Windows / Antivirus
 - Unsigned compiled `.exe` files in project root trigger Windows Defender false positives
 - Add `*.exe`, `*.msi`, `*.dmg`, etc. to `.gitignore` to prevent accidental commits

@@ -1,7 +1,7 @@
 import { create } from "zustand";
 
 export type ThemeName = "dark" | "light" | "cyberpunk" | "retro" | "hacking";
-export type SidebarTab = "history" | "snippets" | "preview" | "plugins" | "stats" | "ssh" | "sftp" | "servermap" | "editor" | "debug" | "ai" | "docs" | "hacking";
+export type SidebarTab = "history" | "snippets" | "preview" | "plugins" | "stats" | "ssh" | "sftp" | "servermap" | "editor" | "debug" | "ai" | "docs" | "hacking" | "infra";
 
 // === Hacking Mode Types ===
 export type HackingLogLevel = "recon" | "exploit" | "alert" | "info" | "success" | "danger";
@@ -136,6 +136,113 @@ export interface AiMessage {
   role: "user" | "assistant";
   content: string;
   mode: AiMode;
+  timestamp: number;
+}
+
+// === Cross-Server Navigation Types ===
+export interface ServerContext {
+  type: "local" | "ssh";
+  connectionId?: string;
+  sessionId: string;
+  serverName: string;
+}
+
+// === Infrastructure Monitor Types ===
+export interface ServerMetrics {
+  timestamp: number;
+  cpu: number;
+  memPercent: number;
+  memUsedMB: number;
+  memTotalMB: number;
+  diskPercent: number;
+  netRxBytes: number;
+  netTxBytes: number;
+  loadAvg: [number, number, number];
+  topProcesses: { name: string; cpu: number; mem: number }[];
+  failedServices: string[];
+}
+
+export interface InfraAlert {
+  id: string;
+  timestamp: number;
+  connectionId: string;
+  serverName: string;
+  severity: "warning" | "critical";
+  metric: "cpu" | "memory" | "disk" | "service" | "anomaly";
+  value: number;
+  message: string;
+  acknowledged: boolean;
+}
+
+export interface InfraTimelineEvent {
+  id: string;
+  timestamp: number;
+  connectionId: string;
+  serverName: string;
+  type: "alert" | "metric" | "action" | "connection";
+  severity?: "info" | "warning" | "critical";
+  message: string;
+}
+
+export interface InfraThresholds {
+  cpuWarning: number;
+  cpuCritical: number;
+  memWarning: number;
+  memCritical: number;
+  diskWarning: number;
+  diskCritical: number;
+}
+
+// === Disk Analyzer Types (CCleaner-style) ===
+export interface DiskPartition {
+  mount: string;
+  device: string;
+  totalGB: number;
+  usedGB: number;
+  freeGB: number;
+  usedPercent: number;
+  fsType: string;
+}
+
+export interface DiskCategoryAction {
+  label: string;
+  cmd: string;
+  danger?: boolean;
+}
+
+export interface DiskCategory {
+  id: string;
+  name: string;
+  icon: string;
+  sizeMB: number;
+  items: number;
+  reclaimable: boolean;
+  cleanCmd?: string;
+  previewCmd?: string;
+  actions?: DiskCategoryAction[];
+  description: string;
+}
+
+export interface DiskLargestDir {
+  path: string;
+  sizeMB: number;
+}
+
+export interface DiskAnalysis {
+  connectionId: string;
+  timestamp: number;
+  partitions: DiskPartition[];
+  categories: DiskCategory[];
+  largestDirs: DiskLargestDir[];
+  totalReclaimableMB: number;
+}
+
+// Disk growth tracking — stores previous scan sizes per connection
+export interface DiskGrowthEntry {
+  path: string;
+  prevSizeMB: number;
+  currSizeMB: number;
+  deltaMB: number;
   timestamp: number;
 }
 
@@ -314,6 +421,40 @@ interface AppState {
   addHackingAlert: (alert: Omit<HackingAlert, "id" | "timestamp">) => void;
   clearHackingAlerts: () => void;
   dismissHackingAlert: (id: string) => void;
+
+  // Cross-Server Navigation
+  navigationStacks: Record<string, ServerContext[]>;
+  pushServerContext: (tabId: string, ctx: ServerContext) => void;
+  popServerContext: (tabId: string) => ServerContext | null;
+  getCurrentServer: (tabId: string) => ServerContext | null;
+
+  // Infrastructure Monitor
+  infraMonitors: Record<string, { metrics: ServerMetrics[]; status: string }>;
+  infraAlerts: InfraAlert[];
+  infraThresholds: InfraThresholds;
+  infraPollingInterval: number;
+  infraCompactMode: boolean;
+  infraActiveMonitors: Set<string>;
+  addInfraActiveMonitor: (connectionId: string) => void;
+  removeInfraActiveMonitor: (connectionId: string) => void;
+  addInfraMetrics: (connectionId: string, snapshot: ServerMetrics) => void;
+  addInfraAlert: (alert: Omit<InfraAlert, "id" | "timestamp">) => void;
+  acknowledgeInfraAlert: (id: string) => void;
+  setInfraThresholds: (thresholds: Partial<InfraThresholds>) => void;
+  setInfraPollingInterval: (interval: number) => void;
+  toggleInfraCompactMode: () => void;
+  clearInfraMonitor: (connectionId: string) => void;
+
+  // Infrastructure Timeline
+  infraTimeline: InfraTimelineEvent[];
+  addInfraTimelineEvent: (event: Omit<InfraTimelineEvent, "id" | "timestamp">) => void;
+  clearInfraTimeline: () => void;
+
+  // Disk Analyzer
+  diskAnalyses: Record<string, DiskAnalysis>;
+  diskPreviousScans: Record<string, { dirs: Record<string, number>; timestamp: number }>;
+  setDiskAnalysis: (connectionId: string, analysis: DiskAnalysis) => void;
+  clearDiskAnalysis: (connectionId: string) => void;
 
   // Hydration from config file
   _hydrateFromConfig: (config: PersistedConfig) => void;
@@ -617,6 +758,189 @@ export const useAppStore = create<AppState>((set, get) => ({
   })),
   clearAiMessages: () => set({ aiMessages: [] }),
   setAiLoading: (loading) => set({ aiLoading: loading }),
+
+  // Cross-Server Navigation
+  navigationStacks: {},
+  pushServerContext: (tabId, ctx) => set((s) => ({
+    navigationStacks: {
+      ...s.navigationStacks,
+      [tabId]: [...(s.navigationStacks[tabId] || []), ctx],
+    },
+  })),
+  popServerContext: (tabId) => {
+    const stack = get().navigationStacks[tabId];
+    if (!stack || stack.length === 0) return null;
+    const popped = stack[stack.length - 1];
+    set((s) => ({
+      navigationStacks: {
+        ...s.navigationStacks,
+        [tabId]: stack.slice(0, -1),
+      },
+    }));
+    return popped;
+  },
+  getCurrentServer: (tabId) => {
+    const stack = get().navigationStacks[tabId];
+    if (!stack || stack.length === 0) return null;
+    return stack[stack.length - 1];
+  },
+
+  // Infrastructure Monitor
+  infraMonitors: {},
+  infraAlerts: [],
+  infraThresholds: {
+    cpuWarning: 80, cpuCritical: 95,
+    memWarning: 80, memCritical: 95,
+    diskWarning: 85, diskCritical: 95,
+  },
+  infraPollingInterval: 10,
+  infraCompactMode: false,
+  infraActiveMonitors: new Set<string>(),
+  addInfraActiveMonitor: (connectionId) => set((s) => ({
+    infraActiveMonitors: new Set([...s.infraActiveMonitors, connectionId]),
+  })),
+  removeInfraActiveMonitor: (connectionId) => set((s) => {
+    const next = new Set(s.infraActiveMonitors);
+    next.delete(connectionId);
+    return { infraActiveMonitors: next };
+  }),
+
+  addInfraMetrics: (connectionId, snapshot) => set((s) => {
+    const existing = s.infraMonitors[connectionId] || { metrics: [], status: "monitoring" };
+    const metrics = [...existing.metrics, snapshot];
+    if (metrics.length > 60) metrics.splice(0, metrics.length - 60);
+
+    // Check thresholds for alerts
+    const th = s.infraThresholds;
+    const conn = s.sshConnections.find((c) => c.id === connectionId);
+    const serverName = conn?.name || connectionId;
+    const candidateAlerts: Omit<InfraAlert, "id" | "timestamp">[] = [];
+
+    if (snapshot.cpu >= th.cpuCritical) {
+      candidateAlerts.push({ connectionId, serverName, severity: "critical", metric: "cpu", value: snapshot.cpu, message: `CPU at ${snapshot.cpu.toFixed(1)}%`, acknowledged: false });
+    } else if (snapshot.cpu >= th.cpuWarning) {
+      candidateAlerts.push({ connectionId, serverName, severity: "warning", metric: "cpu", value: snapshot.cpu, message: `CPU at ${snapshot.cpu.toFixed(1)}%`, acknowledged: false });
+    }
+    if (snapshot.memPercent >= th.memCritical) {
+      candidateAlerts.push({ connectionId, serverName, severity: "critical", metric: "memory", value: snapshot.memPercent, message: `Memory at ${snapshot.memPercent.toFixed(1)}%`, acknowledged: false });
+    } else if (snapshot.memPercent >= th.memWarning) {
+      candidateAlerts.push({ connectionId, serverName, severity: "warning", metric: "memory", value: snapshot.memPercent, message: `Memory at ${snapshot.memPercent.toFixed(1)}%`, acknowledged: false });
+    }
+    if (snapshot.diskPercent >= th.diskCritical) {
+      candidateAlerts.push({ connectionId, serverName, severity: "critical", metric: "disk", value: snapshot.diskPercent, message: `Disk at ${snapshot.diskPercent.toFixed(1)}%`, acknowledged: false });
+    } else if (snapshot.diskPercent >= th.diskWarning) {
+      candidateAlerts.push({ connectionId, serverName, severity: "warning", metric: "disk", value: snapshot.diskPercent, message: `Disk at ${snapshot.diskPercent.toFixed(1)}%`, acknowledged: false });
+    }
+    if (snapshot.failedServices.length > 0) {
+      candidateAlerts.push({ connectionId, serverName, severity: "critical", metric: "service", value: snapshot.failedServices.length, message: `Failed services: ${snapshot.failedServices.join(", ")}`, acknowledged: false });
+    }
+
+    // Anomaly detection: exclude current point from mean/stddev calculation
+    if (metrics.length >= 11) {
+      const prevMetrics = metrics.slice(-31, -1); // Exclude the just-pushed snapshot
+      const cpuValues = prevMetrics.map((m) => m.cpu);
+      const cpuMean = cpuValues.reduce((a, b) => a + b, 0) / cpuValues.length;
+      const cpuStd = Math.sqrt(cpuValues.reduce((a, b) => a + (b - cpuMean) ** 2, 0) / cpuValues.length);
+      if (cpuStd > 0 && snapshot.cpu > cpuMean + 2 * cpuStd && snapshot.cpu < th.cpuWarning) {
+        candidateAlerts.push({ connectionId, serverName, severity: "warning", metric: "anomaly", value: snapshot.cpu, message: `CPU spike detected: ${snapshot.cpu.toFixed(1)}% (avg ${cpuMean.toFixed(1)}%)`, acknowledged: false });
+      }
+    }
+
+    // Deduplicate: skip alert if same metric+server was alerted in last 60 seconds
+    const now = Date.now();
+    const newAlerts = candidateAlerts.filter((ca) => {
+      const recent = s.infraAlerts.find(
+        (a) => a.connectionId === ca.connectionId && a.metric === ca.metric && !a.acknowledged && (now - a.timestamp) < 60000
+      );
+      return !recent;
+    });
+
+    const alertEntries = newAlerts.map((a) => ({
+      ...a, id: crypto.randomUUID(), timestamp: now,
+    }));
+
+    const allAlerts = [...alertEntries, ...s.infraAlerts];
+    if (allAlerts.length > 200) allAlerts.length = 200;
+
+    // Emit timeline events for new alerts
+    const timelineEvents = alertEntries.map((a) => ({
+      id: crypto.randomUUID(),
+      timestamp: a.timestamp,
+      connectionId: a.connectionId,
+      serverName: a.serverName,
+      type: "alert" as const,
+      severity: a.severity,
+      message: a.message,
+    }));
+    const newTimeline = [...timelineEvents, ...s.infraTimeline];
+    if (newTimeline.length > 500) newTimeline.length = 500;
+
+    return {
+      infraMonitors: { ...s.infraMonitors, [connectionId]: { metrics, status: "monitoring" } },
+      infraAlerts: allAlerts,
+      infraTimeline: newTimeline,
+    };
+  }),
+
+  addInfraAlert: (alert) => set((s) => {
+    const newAlert: InfraAlert = { ...alert, id: crypto.randomUUID(), timestamp: Date.now() };
+    const alerts = [newAlert, ...s.infraAlerts];
+    if (alerts.length > 200) alerts.length = 200;
+    return { infraAlerts: alerts };
+  }),
+
+  acknowledgeInfraAlert: (id) => set((s) => ({
+    infraAlerts: s.infraAlerts.map((a) => a.id === id ? { ...a, acknowledged: true } : a),
+  })),
+
+  setInfraThresholds: (thresholds) => set((s) => ({
+    infraThresholds: { ...s.infraThresholds, ...thresholds },
+  })),
+
+  setInfraPollingInterval: (interval) => set({ infraPollingInterval: interval }),
+
+  toggleInfraCompactMode: () => set((s) => ({ infraCompactMode: !s.infraCompactMode })),
+
+  clearInfraMonitor: (connectionId) => set((s) => {
+    const { [connectionId]: _, ...rest } = s.infraMonitors;
+    return { infraMonitors: rest };
+  }),
+
+  // Infrastructure Timeline
+  infraTimeline: [],
+  addInfraTimelineEvent: (event) => set((s) => {
+    const newEvent: InfraTimelineEvent = {
+      ...event,
+      id: crypto.randomUUID(),
+      timestamp: Date.now(),
+    };
+    const timeline = [newEvent, ...s.infraTimeline];
+    if (timeline.length > 500) timeline.length = 500;
+    return { infraTimeline: timeline };
+  }),
+  clearInfraTimeline: () => set({ infraTimeline: [] }),
+
+  // Disk Analyzer
+  diskAnalyses: {},
+  diskPreviousScans: {},
+  setDiskAnalysis: (connectionId, analysis) => set((s) => {
+    // Save current scan as "previous" for growth tracking
+    const prev = s.diskAnalyses[connectionId];
+    let diskPreviousScans = s.diskPreviousScans;
+    if (prev && prev.largestDirs.length > 0) {
+      const dirs: Record<string, number> = {};
+      for (const d of prev.largestDirs) dirs[d.path] = d.sizeMB;
+      diskPreviousScans = { ...diskPreviousScans, [connectionId]: { dirs, timestamp: prev.timestamp } };
+    }
+    return {
+      diskAnalyses: { ...s.diskAnalyses, [connectionId]: analysis },
+      diskPreviousScans,
+    };
+  }),
+  clearDiskAnalysis: (connectionId) => set((s) => {
+    const { [connectionId]: _, ...rest } = s.diskAnalyses;
+    return { diskAnalyses: rest };
+  }),
 
   _hydrateFromConfig: (config) => {
     const updates: Partial<AppState> = {};

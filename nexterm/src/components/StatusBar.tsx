@@ -8,6 +8,7 @@ import {
   Columns,
   Rows3,
   Square,
+  Server,
 } from "lucide-react";
 import { useAppStore } from "../store/appStore";
 
@@ -23,6 +24,9 @@ export function StatusBar() {
   const addTab = useAppStore((s) => s.addTab);
   const hackingMode = useAppStore((s) => s.hackingMode);
   const hackingAlertCount = useAppStore((s) => s.hackingAlerts.length);
+  const navigationStacks = useAppStore((s) => s.navigationStacks);
+  const sshConnections = useAppStore((s) => s.sshConnections);
+  const infraAlertCount = useAppStore((s) => s.infraAlerts.filter((a) => !a.acknowledged).length);
 
   const [time, setTime] = useState(new Date());
 
@@ -126,6 +130,64 @@ export function StatusBar() {
           <div className="statusbar-item">
             <GitBranch size={12} />
             <span>{gitBranch}</span>
+          </div>
+        )}
+        {(() => {
+          const stack = navigationStacks[activeTabId];
+          if (stack && stack.length > 0) {
+            const current = stack[stack.length - 1];
+            const conn = current.connectionId
+              ? sshConnections.find((c) => c.id === current.connectionId)
+              : null;
+            const isRemote = current.type === "ssh";
+            const serverLabel = conn ? conn.name : current.serverName;
+            const hostLabel = conn ? conn.host : "";
+
+            // Build breadcrumb from stack (already includes local at bottom if present)
+            const breadcrumb = stack.map((s) => s.serverName);
+
+            return (
+              <div className="statusbar-item" style={{ color: isRemote ? "#58a6ff" : "#3fb950", gap: 6 }}>
+                <Server size={12} />
+                <span style={{ fontWeight: 600 }}>{serverLabel}</span>
+                {hostLabel && (
+                  <span style={{ color: "var(--text-muted)", fontSize: 9 }}>{hostLabel}</span>
+                )}
+                {stack.length > 1 && (
+                  <span style={{
+                    color: "var(--text-muted)",
+                    fontSize: 9,
+                    background: "var(--bg-tertiary)",
+                    padding: "1px 6px",
+                    borderRadius: 8,
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 3,
+                  }}>
+                    {breadcrumb.map((name, i) => (
+                      <span key={i}>
+                        {i > 0 && <span style={{ opacity: 0.5 }}> → </span>}
+                        <span style={i === breadcrumb.length - 1 ? { color: "#58a6ff", fontWeight: 600 } : undefined}>
+                          {name}
+                        </span>
+                      </span>
+                    ))}
+                  </span>
+                )}
+              </div>
+            );
+          }
+          return null;
+        })()}
+        {infraAlertCount > 0 && (
+          <div className="statusbar-item" style={{ color: "#ff7b72" }}>
+            <span style={{
+              width: 6, height: 6, borderRadius: "50%",
+              background: "#ff7b72", display: "inline-block",
+              boxShadow: "0 0 6px #ff7b72",
+              animation: "pulse 2s infinite",
+            }} />
+            <span>INFRA {infraAlertCount}</span>
           </div>
         )}
         {hackingMode && (

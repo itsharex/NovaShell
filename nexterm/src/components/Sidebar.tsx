@@ -30,6 +30,7 @@ import {
   X,
   Shield,
   FolderSync,
+  Gauge,
 } from "lucide-react";
 import { useAppStore } from "../store/appStore";
 import type { SidebarTab } from "../store/appStore";
@@ -42,6 +43,7 @@ import { HackingPanel } from "./HackingPanel";
 import { SFTPPanel } from "./SFTPPanel";
 import { ServerMapPanel } from "./ServerMapPanel";
 import { EditorPanel } from "./EditorPanel";
+import { InfraMonitorPanel } from "./InfraMonitorPanel";
 
 const sidebarTabs: { id: SidebarTab; icon: typeof History; label: string }[] = [
   { id: "history", icon: History, label: "History" },
@@ -57,6 +59,7 @@ const sidebarTabs: { id: SidebarTab; icon: typeof History; label: string }[] = [
   { id: "ai", icon: Sparkles, label: "AI Assistant" },
   { id: "docs", icon: FileText, label: "Session Docs" },
   { id: "hacking", icon: Shield, label: "Hacking Mode" },
+  { id: "infra", icon: Gauge, label: "Infra Monitor" },
 ];
 
 export function Sidebar() {
@@ -97,6 +100,7 @@ export function Sidebar() {
         {sidebarTab === "ai" && <AIPanel />}
         {sidebarTab === "docs" && <SessionDocPanel />}
         {sidebarTab === "hacking" && <HackingPanel />}
+        {sidebarTab === "infra" && <InfraMonitorPanel />}
       </div>
       <div style={{ padding: "4px 12px", textAlign: "center", borderTop: "1px solid var(--border-color)", flexShrink: 0 }}>
         <span style={{ fontSize: 9, color: "var(--text-muted)", opacity: 0.5 }}>NovaShell v{APP_VERSION}</span>

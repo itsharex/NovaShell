@@ -2,6 +2,7 @@
 
 mod ai_manager;
 mod hacking_manager;
+mod infra_monitor;
 mod keychain_manager;
 mod log_manager;
 mod pty_manager;
@@ -24,6 +25,7 @@ pub struct AppState {
     pub cached_path_commands: Mutex<Option<Vec<String>>>,
     pub log_manager: Mutex<log_manager::LogManager>,
     pub session_doc_manager: Mutex<session_doc_manager::SessionDocManager>,
+    pub infra_monitors: Mutex<infra_monitor::InfraMonitors>,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -1540,6 +1542,61 @@ fn chrono_timestamp() -> String {
     format!("{}", now)
 }
 
+// ──────────── Infrastructure Monitor Commands ────────────
+
+#[tauri::command]
+fn infra_monitor_start(
+    connection_id: String,
+    host: String,
+    port: u16,
+    username: String,
+    password: Option<String>,
+    private_key: Option<String>,
+    interval: u64,
+    state: State<'_, AppState>,
+    app_handle: tauri::AppHandle,
+) -> Result<(), String> {
+    let mut monitors = state.infra_monitors.lock()
+        .map_err(|e| format!("Monitor lock error: {}", e))?;
+
+    // Stop existing monitor for this connection if any
+    monitors.monitors.remove(&connection_id);
+
+    let monitor = infra_monitor::MonitoredServer::start(
+        connection_id.clone(),
+        host,
+        port,
+        username,
+        password,
+        private_key,
+        interval,
+        app_handle,
+    );
+    monitors.monitors.insert(connection_id, monitor);
+    Ok(())
+}
+
+#[tauri::command]
+fn infra_monitor_stop(
+    connection_id: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let mut monitors = state.infra_monitors.lock()
+        .map_err(|e| format!("Monitor lock error: {}", e))?;
+    monitors.monitors.remove(&connection_id); // Drop triggers stop
+    Ok(())
+}
+
+#[tauri::command]
+fn infra_monitor_stop_all(
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let mut monitors = state.infra_monitors.lock()
+        .map_err(|e| format!("Monitor lock error: {}", e))?;
+    monitors.monitors.clear();
+    Ok(())
+}
+
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
@@ -1555,6 +1612,7 @@ fn main() {
             cached_path_commands: Mutex::new(None),
             log_manager: Mutex::new(log_manager::LogManager::new()),
             session_doc_manager: Mutex::new(session_doc_manager::SessionDocManager::new()),
+            infra_monitors: Mutex::new(infra_monitor::InfraMonitors::new()),
         })
         .invoke_handler(tauri::generate_handler![
             get_available_shells,
@@ -1633,6 +1691,9 @@ fn main() {
             start_log_stream,
             stop_log_stream,
             tail_local_file,
+            infra_monitor_start,
+            infra_monitor_stop,
+            infra_monitor_stop_all,
         ])
         .run(tauri::generate_context!())
         .expect("error while running NovaShell");

@@ -11,6 +11,7 @@ import { Autocomplete } from "./Autocomplete";
 import { parseTerminalOutput } from "./DebugPanel";
 import { scanForSecurityEvents } from "../utils/hackingAlerts";
 import type { SnippetRunMode } from "../store/appStore";
+import { isServerNavCommand, parseServerNavCommand, resolveServer, getConnectionCredentials, navigateToServer, listServers } from "../utils/serverNavigation";
 
 let tauriCore: { invoke: typeof import("@tauri-apps/api/core")["invoke"] } | null = null;
 let tauriEvent: { listen: typeof import("@tauri-apps/api/event")["listen"] } | null = null;
@@ -73,6 +74,7 @@ interface TerminalRef {
   fitAddon: FitAddon;
   searchAddon: SearchAddon;
   sessionId: string | null;
+  sessionType: "pty" | "ssh";
   disposables: Array<{ dispose: () => void }>;
   unlisteners: Array<() => void>;
 }
@@ -139,6 +141,189 @@ const themeColors: Record<string, Record<string, string>> = {
     brightBlue: "#00e5ff", brightMagenta: "#ff44ff", brightCyan: "#44ffff", brightWhite: "#e0ffe0",
   },
 };
+
+// Sync session info to the TerminalRef Map (for snippet execution, autocomplete, resize, cleanup)
+function syncTerminalRef(
+  terminalsMap: Map<string, TerminalRef>,
+  tabId: string,
+  sessionId: string | null,
+  sessionType: "pty" | "ssh",
+) {
+  const ref = terminalsMap.get(tabId);
+  if (ref) {
+    ref.sessionId = sessionId;
+    ref.sessionType = sessionType;
+  }
+}
+
+async function handleServerNavigation(
+  tabId: string,
+  terminal: Terminal,
+  serverName: string,
+  path: string,
+  currentTermRef: { sessionId: string | null; sessionType: "pty" | "ssh"; activeDataUnlisten: (() => void) | null },
+  liveSession: { id: string | null; type: "pty" | "ssh" },
+  terminalsMap: Map<string, TerminalRef>,
+  unlisteners: Array<() => void>,
+  disposables: Array<{ dispose: () => void }>,
+) {
+  const store = useAppStore.getState();
+
+  // Handle "ls /servers" listing
+  if (serverName === "__list__") {
+    terminal.write("\r\n" + listServers() + "\r\n");
+    return;
+  }
+
+  const resolved = resolveServer(serverName);
+
+  if (!resolved) {
+    terminal.write(`\r\n\x1b[33m[NovaShell]\x1b[0m Server '\x1b[1m${serverName}\x1b[0m' not found.\r\n`);
+    terminal.write(`\x1b[90mTip: Use 'ls /servers' to see available servers.\x1b[0m\r\n`);
+    return;
+  }
+
+  if (resolved === "local") {
+    // Navigate back to local — pop the entire stack to find the original local context
+    const stack = store.navigationStacks[tabId];
+    if (!stack || stack.length === 0) {
+      terminal.write(`\r\n\x1b[33m[NovaShell]\x1b[0m Already on local machine.\r\n`);
+      return;
+    }
+
+    // Find the first local context in the stack (bottom of stack)
+    const localCtx = stack.find((ctx) => ctx.type === "local");
+    if (!localCtx) {
+      terminal.write(`\r\n\x1b[33m[NovaShell]\x1b[0m No local context found in navigation stack.\r\n`);
+      return;
+    }
+
+    terminal.write(`\r\n\x1b[36m[NovaShell]\x1b[0m Returning to local machine...\r\n`);
+
+    try {
+      const { listen } = await getTauriEvent();
+      const { invoke } = await getTauriCore();
+
+      // Clear the entire navigation stack for this tab (we're going home)
+      useAppStore.setState((s) => ({
+        navigationStacks: { ...s.navigationStacks, [tabId]: [] },
+      }));
+
+      // Unsubscribe from previous session's data listener
+      if (currentTermRef.activeDataUnlisten) {
+        currentTermRef.activeDataUnlisten();
+        currentTermRef.activeDataUnlisten = null;
+      }
+
+      const localSessionId = localCtx.sessionId;
+      const tabName = store.tabs.find((t) => t.id === tabId)?.title || tabId;
+
+      const unlistenData = await listen<string>(`pty-data-${localSessionId}`, (event) => {
+        terminal.write(event.payload);
+        queueDebugParse(event.payload, tabName);
+      });
+      unlisteners.push(unlistenData);
+      currentTermRef.activeDataUnlisten = unlistenData;
+
+      currentTermRef.sessionId = localSessionId;
+      currentTermRef.sessionType = "pty";
+      liveSession.id = localSessionId;
+      liveSession.type = "pty";
+      syncTerminalRef(terminalsMap, tabId, localSessionId, "pty");
+
+      if (path && path !== "~") {
+        await invoke("write_to_pty", { sessionId: localSessionId, data: `cd ${path}\r` });
+      }
+
+      store.updateTab(tabId, { title: `Terminal`, sessionId: localSessionId });
+    } catch (e) {
+      terminal.write(`\r\n\x1b[31m[NovaShell]\x1b[0m Error returning to local: ${e}\r\n`);
+    }
+    return;
+  }
+
+  // Navigate to SSH server
+  const conn = resolved;
+  terminal.write(`\r\n\x1b[36m[NovaShell]\x1b[0m Connecting to \x1b[1m${conn.name}\x1b[0m (${conn.host})...\r\n`);
+
+  try {
+    const credentials = await getConnectionCredentials(conn);
+    if (!credentials) {
+      terminal.write(`\x1b[31m[NovaShell]\x1b[0m No credentials available for ${conn.name}. Connect via SSH panel first.\r\n`);
+      return;
+    }
+
+    // Save current context before switching
+    if (!currentTermRef.sessionId) {
+      terminal.write(`\r\n\x1b[31m[NovaShell]\x1b[0m No active session to save.\r\n`);
+      return;
+    }
+    // Find current connection if we're on SSH
+    const currentConn = currentTermRef.sessionType === "ssh"
+      ? store.sshConnections.find((c) => c.sessionId === currentTermRef.sessionId)
+      : null;
+    store.pushServerContext(tabId, {
+      type: currentTermRef.sessionType === "ssh" ? "ssh" : "local",
+      connectionId: currentConn?.id,
+      sessionId: currentTermRef.sessionId,
+      serverName: currentConn?.name || "local",
+    });
+
+    const newSessionId = await navigateToServer(conn, path, credentials);
+
+    // Unsubscribe from previous session's data listener before binding new one
+    if (currentTermRef.activeDataUnlisten) {
+      currentTermRef.activeDataUnlisten();
+      currentTermRef.activeDataUnlisten = null;
+    }
+
+    // Set up SSH data listener
+    const { listen } = await getTauriEvent();
+    const tabName = store.tabs.find((t) => t.id === tabId)?.title || tabId;
+
+    const unlistenData = await listen<string>(`ssh-data-${newSessionId}`, (event) => {
+      terminal.write(event.payload);
+      queueDebugParse(event.payload, tabName);
+    });
+    unlisteners.push(unlistenData);
+    currentTermRef.activeDataUnlisten = unlistenData;
+
+    const unlistenExit = await listen(`ssh-exit-${newSessionId}`, () => {
+      terminal.write(`\r\n\x1b[31m[NovaShell]\x1b[0m SSH connection to ${conn.name} lost.\r\n`);
+      // Auto-restore previous context
+      const prevCtx = store.popServerContext(tabId);
+      if (prevCtx) {
+        const restoredType = prevCtx.type === "local" ? "pty" as const : "ssh" as const;
+        currentTermRef.sessionId = prevCtx.sessionId;
+        currentTermRef.sessionType = restoredType;
+        liveSession.id = prevCtx.sessionId;
+        liveSession.type = restoredType;
+        syncTerminalRef(terminalsMap, tabId, prevCtx.sessionId, restoredType);
+        store.updateTab(tabId, { title: `Terminal` });
+      }
+    });
+    unlisteners.push(unlistenExit);
+
+    const unlistenError = await listen<string>(`ssh-error-${newSessionId}`, (event) => {
+      terminal.write(`\r\n\x1b[31m[NovaShell]\x1b[0m SSH Error: ${event.payload}\r\n`);
+    });
+    unlisteners.push(unlistenError);
+
+    // Update current ref
+    currentTermRef.sessionId = newSessionId;
+    currentTermRef.sessionType = "ssh";
+    liveSession.id = newSessionId;
+    liveSession.type = "ssh";
+    syncTerminalRef(terminalsMap, tabId, newSessionId, "ssh");
+
+    // Update tab title
+    store.updateTab(tabId, { title: `${conn.name}: ${path}` });
+
+    terminal.write(`\x1b[32m[NovaShell]\x1b[0m Connected! Navigating to ${path}\r\n`);
+  } catch (e) {
+    terminal.write(`\r\n\x1b[31m[NovaShell]\x1b[0m Connection failed: ${e}\r\n`);
+  }
+}
 
 export function TerminalPanel() {
   const tabs = useAppStore((s) => s.tabs);
@@ -239,7 +424,8 @@ export function TerminalPanel() {
 
       if (ref.sessionId) {
         getTauriCore().then(({ invoke }) => {
-          invoke("write_to_pty", { sessionId: ref.sessionId, data: joined + "\r" });
+          const writeCmd = ref.sessionType === "ssh" ? "ssh_write" : "write_to_pty";
+          invoke(writeCmd, { sessionId: ref.sessionId, data: joined + "\r" });
         }).catch(() => {});
       } else {
         // Demo mode - execute first command only
@@ -299,6 +485,15 @@ export function TerminalPanel() {
       fitAddon.fit();
 
       let sessionId: string | null = null;
+      // Live session tracking — updated by cross-server navigation
+      const liveSession = { id: null as string | null, type: "pty" as "pty" | "ssh" };
+      const writeToLiveSession = (text: string) => {
+        if (!liveSession.id) return;
+        const cmd = liveSession.type === "ssh" ? "ssh_write" : "write_to_pty";
+        getTauriCore().then(({ invoke }) => {
+          invoke(cmd, { sessionId: liveSession.id, data: text });
+        });
+      };
 
       // Copy: Ctrl+C with selection copies to clipboard (otherwise sends SIGINT)
       terminal.attachCustomKeyEventHandler((e) => {
@@ -312,11 +507,7 @@ export function TerminalPanel() {
         // Ctrl+V = paste from clipboard
         if ((e.ctrlKey || e.metaKey) && e.key === "v") {
           navigator.clipboard.readText().then((text) => {
-            if (text && sessionId) {
-              getTauriCore().then(({ invoke }) => {
-                invoke("write_to_pty", { sessionId, data: text });
-              });
-            }
+            if (text) writeToLiveSession(text);
           });
           return false;
         }
@@ -331,11 +522,7 @@ export function TerminalPanel() {
         // Ctrl+Shift+V = paste (alternative)
         if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === "V") {
           navigator.clipboard.readText().then((text) => {
-            if (text && sessionId) {
-              getTauriCore().then(({ invoke }) => {
-                invoke("write_to_pty", { sessionId, data: text });
-              });
-            }
+            if (text) writeToLiveSession(text);
           });
           return false;
         }
@@ -350,11 +537,7 @@ export function TerminalPanel() {
           terminal.clearSelection();
         } else {
           navigator.clipboard.readText().then((text) => {
-            if (text && sessionId) {
-              getTauriCore().then(({ invoke }) => {
-                invoke("write_to_pty", { sessionId, data: text });
-              });
-            }
+            if (text) writeToLiveSession(text);
           });
         }
       };
@@ -371,6 +554,8 @@ export function TerminalPanel() {
         const shellPath = tab?.shellType || defaultShell;
 
         sessionId = await invoke<string>("create_pty_session", { shellPath });
+        liveSession.id = sessionId;
+        liveSession.type = "pty";
         updateTab(tabId, { sessionId });
 
         const tabName = tab?.title || tabId;
@@ -402,8 +587,31 @@ export function TerminalPanel() {
         unlisteners.push(unlistenError);
 
         let ptyInputBuffer = "";
+        const currentTermRef = { sessionId, sessionType: "pty" as "pty" | "ssh", activeDataUnlisten: unlistenData as (() => void) | null };
+        const writeToSession = (d: string) => {
+          const cmd = currentTermRef.sessionType === "ssh" ? "ssh_write" : "write_to_pty";
+          invoke(cmd, { sessionId: currentTermRef.sessionId, data: d });
+        };
         const dataDisposable = terminal.onData((data) => {
-          invoke("write_to_pty", { sessionId, data });
+          // Check for cross-server navigation on Enter
+          if ((data === "\r" || data === "\n") && isServerNavCommand(ptyInputBuffer)) {
+            const parsed = parseServerNavCommand(ptyInputBuffer);
+            if (parsed) {
+              // Send Ctrl+U to cancel the pending command in the shell buffer
+              writeToSession("\x15");
+              // Handle navigation asynchronously
+              handleServerNavigation(
+                tabId, terminal, parsed.serverName, parsed.path,
+                currentTermRef, liveSession, terminalsRef.current,
+                unlisteners, disposables
+              );
+              ptyInputBuffer = "";
+              setShowAutocomplete(false);
+              return; // Don't forward Enter to shell
+            }
+          }
+
+          writeToSession(data);
 
           if (data === "\r" || data === "\n") {
             const cmd = ptyInputBuffer.trim();
@@ -461,7 +669,7 @@ export function TerminalPanel() {
               const selected = suggestionsRef.current[selectedSuggestionRef.current] || suggestionsRef.current[0];
               const remaining = selected.slice(ptyInputBuffer.length);
               if (remaining) {
-                invoke("write_to_pty", { sessionId, data: remaining });
+                writeToSession(remaining);
                 ptyInputBuffer = selected;
               }
               setShowAutocomplete(false);
@@ -469,8 +677,12 @@ export function TerminalPanel() {
           } else if (data === "\x1b[A" || data === "\x1b[B") {
             // Arrow up/down - clear buffer since shell is navigating history
             ptyInputBuffer = "";
+          } else if (data === "\x03" || data === "\x15") {
+            // Ctrl+C or Ctrl+U — shell line is being cancelled, clear input buffer
+            ptyInputBuffer = "";
+            setShowAutocomplete(false);
           } else if (data.charCodeAt(0) < 32) {
-            // Control characters - ignore for buffer
+            // Other control characters - ignore for buffer
           } else if (data >= " ") {
             // Cap buffer to prevent unbounded growth (e.g. pasted large text)
             if (ptyInputBuffer.length < 4096) {
@@ -489,7 +701,8 @@ export function TerminalPanel() {
         disposables.push(dataDisposable);
 
         const resizeDisposable = terminal.onResize(({ cols, rows }) => {
-          invoke("resize_pty", { sessionId, cols, rows });
+          const resizeCmd = currentTermRef.sessionType === "ssh" ? "ssh_resize" : "resize_pty";
+          invoke(resizeCmd, { sessionId: currentTermRef.sessionId, cols, rows });
         });
         disposables.push(resizeDisposable);
 
@@ -595,6 +808,7 @@ export function TerminalPanel() {
         fitAddon,
         searchAddon,
         sessionId,
+        sessionType: "pty",
         disposables,
         unlisteners,
       });
@@ -626,8 +840,9 @@ export function TerminalPanel() {
       // Close PTY session, then dispose terminal after PTY is cleaned up
       const sid = ref.sessionId;
       if (sid) {
+        const closeCmd = ref.sessionType === "ssh" ? "ssh_disconnect" : "close_pty_session";
         getTauriCore().then(({ invoke }) => {
-          invoke("close_pty_session", { sessionId: sid }).catch(() => {});
+          invoke(closeCmd, { sessionId: sid }).catch(() => {});
         }).catch(() => {}).finally(() => {
           ref.terminal.dispose();
         });
@@ -667,8 +882,9 @@ export function TerminalPanel() {
         ref.disposables.forEach((d) => d.dispose());
         ref.unlisteners.forEach((fn) => fn());
         if (ref.sessionId) {
+          const closeCmd = ref.sessionType === "ssh" ? "ssh_disconnect" : "close_pty_session";
           getTauriCore().then(({ invoke }) => {
-            invoke("close_pty_session", { sessionId: ref.sessionId });
+            invoke(closeCmd, { sessionId: ref.sessionId });
           }).catch(() => {});
         }
         ref.terminal.dispose();
@@ -685,7 +901,8 @@ export function TerminalPanel() {
       getTauriCore().then(({ invoke }) => {
         const remaining = cmd.slice(inputBufferRef.current.length);
         if (remaining) {
-          invoke("write_to_pty", { sessionId: ref.sessionId, data: remaining });
+          const writeCmd = ref.sessionType === "ssh" ? "ssh_write" : "write_to_pty";
+          invoke(writeCmd, { sessionId: ref.sessionId, data: remaining });
         }
       }).catch(() => {});
     } else {

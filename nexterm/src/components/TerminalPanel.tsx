@@ -409,8 +409,38 @@ export function TerminalPanel() {
             const cmd = ptyInputBuffer.trim();
             // Only record meaningful commands (not empty, not single chars, not escape sequences)
             if (cmd && cmd.length > 1 && !cmd.startsWith("\x1b")) {
-              useAppStore.getState().addHistory({ command: cmd, shell: tab?.shellType || "shell" });
+              const entryData: { command: string; shell: string; screenshot?: string } = { command: cmd, shell: tab?.shellType || "shell" };
+              useAppStore.getState().addHistory(entryData);
               useAppStore.getState().incrementCommandCount();
+              // Capture terminal screenshot after output renders (800ms delay)
+              setTimeout(() => {
+                try {
+                  const termEl = terminal.element;
+                  if (!termEl) return;
+                  const canvases = termEl.querySelectorAll<HTMLCanvasElement>(".xterm-screen canvas");
+                  if (canvases.length === 0) return;
+                  // Use the last (topmost) canvas — xterm renders layers
+                  const srcCanvas = canvases[canvases.length - 1];
+                  const tmpCanvas = document.createElement("canvas");
+                  tmpCanvas.width = srcCanvas.width;
+                  tmpCanvas.height = srcCanvas.height;
+                  const ctx = tmpCanvas.getContext("2d");
+                  if (!ctx) return;
+                  // Draw all canvas layers (text + cursor + links)
+                  canvases.forEach((c) => ctx.drawImage(c, 0, 0));
+                  const dataUrl = tmpCanvas.toDataURL("image/png");
+                  if (dataUrl && dataUrl.length > 100) {
+                    // Update the most recent history entry with screenshot
+                    const store = useAppStore.getState();
+                    const latest = store.history[0];
+                    if (latest && latest.command === cmd) {
+                      useAppStore.setState({
+                        history: [{ ...latest, screenshot: dataUrl }, ...store.history.slice(1)],
+                      });
+                    }
+                  }
+                } catch {}
+              }, 800);
             }
             ptyInputBuffer = "";
             setShowAutocomplete(false);

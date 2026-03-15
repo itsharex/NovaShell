@@ -1177,6 +1177,53 @@ fn sftp_read_text(
     session.read_text_file(&path, 1_048_576) // 1MB max
 }
 
+/// Save a base64 PNG screenshot to the session-docs directory, return the filename
+#[tauri::command]
+fn save_screenshot(data_url: String) -> Result<String, String> {
+    let base64_data = data_url
+        .strip_prefix("data:image/png;base64,")
+        .ok_or("Invalid data URL")?;
+    let bytes = base64_decode(base64_data)
+        .map_err(|e| format!("Base64 decode error: {}", e))?;
+
+    let doc_dir = dirs::data_dir()
+        .or_else(|| dirs::home_dir())
+        .unwrap_or_else(|| std::path::PathBuf::from("."))
+        .join("novashell")
+        .join("session-docs")
+        .join("screenshots");
+    std::fs::create_dir_all(&doc_dir)
+        .map_err(|e| format!("Cannot create screenshots dir: {}", e))?;
+
+    let filename = format!("screenshot_{}.png", chrono_timestamp());
+    let filepath = doc_dir.join(&filename);
+    std::fs::write(&filepath, &bytes)
+        .map_err(|e| format!("Write error: {}", e))?;
+
+    Ok(filepath.to_string_lossy().to_string())
+}
+
+fn base64_decode(input: &str) -> Result<Vec<u8>, String> {
+    // Simple base64 decoder
+    const TABLE: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut buf: Vec<u8> = Vec::with_capacity(input.len() * 3 / 4);
+    let mut bits: u32 = 0;
+    let mut bit_count: u32 = 0;
+    for &b in input.as_bytes() {
+        let val = if b == b'=' { continue }
+        else if let Some(pos) = TABLE.iter().position(|&t| t == b) { pos as u32 }
+        else { continue };
+        bits = (bits << 6) | val;
+        bit_count += 6;
+        if bit_count >= 8 {
+            bit_count -= 8;
+            buf.push((bits >> bit_count) as u8);
+            bits &= (1 << bit_count) - 1;
+        }
+    }
+    Ok(buf)
+}
+
 fn chrono_timestamp() -> String {
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -1231,6 +1278,7 @@ fn main() {
             load_app_config,
             save_app_config,
             open_in_explorer,
+            save_screenshot,
             pick_folder,
             ai_health,
             ai_list_models,

@@ -28,5 +28,10 @@ export function renderMarkdown(text: string): string {
   html = html.replace(/^(\d+)\. (.+)$/gm,
     '<div style="display:flex;gap:6px;align-items:baseline;margin:2px 0"><span style="color:var(--accent-primary);min-width:16px">$1.</span><span>$2</span></div>'
   );
+  // Images: ![alt](path) — convert file:// paths to Tauri asset protocol
+  html = html.replace(/!\[([^\]]*)\]\(file:\/\/([^)]+)\)/g, (_m, alt, path) => {
+    const assetUrl = `https://asset.localhost/${encodeURIComponent(path)}`;
+    return `<div style="margin:8px 0"><img src="${assetUrl}" alt="${alt}" style="max-width:100%;border-radius:var(--radius-sm);border:1px solid var(--border-subtle)" /><div style="font-size:9px;color:var(--text-muted);margin-top:2px">${alt}</div></div>`;
+  });
   return html;
 }

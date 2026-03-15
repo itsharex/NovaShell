@@ -96,29 +96,66 @@ export function SessionDocPanel() {
     try {
       const invoke = await getInvoke();
       // Collect only current session data (filter by sessionStartTime)
-      const commands = history
+      const sessionHistory = history
         .filter((h) => h.timestamp >= sessionStartTime)
         .slice(0, 50)
-        .map((h) => h.command);
+        .reverse(); // Chronological order
+      const commands = sessionHistory.map((h) => h.command);
       const errors = debugLogs
         .filter((l) => l.timestamp >= sessionStartTime && (l.level === "error" || l.level === "warn"))
         .slice(0, 20)
         .map((l) => `[${l.level.toUpperCase()}] ${l.message}`);
       const durationMinutes = Math.round((Date.now() - sessionStartTime) / 60000);
 
+      // Save screenshots to disk and build mapping: command -> file path
+      const screenshotPaths: Record<string, string> = {};
+      for (const h of sessionHistory) {
+        if (h.screenshot) {
+          try {
+            const filePath = await invoke<string>("save_screenshot", { dataUrl: h.screenshot });
+            screenshotPaths[h.command] = filePath;
+          } catch {}
+        }
+      }
+
       // Generate with AI
       const content = await invoke<string>("ai_generate_session_doc", {
-        commands: commands.reverse(), // Chronological order
+        commands,
         errors,
         durationMinutes,
       });
 
+      // Insert screenshots into the generated markdown after their command code blocks
+      let finalContent = content;
+      for (const [cmd, imgPath] of Object.entries(screenshotPaths)) {
+        // Find the command in a code block and insert image after it
+        const escapedCmd = cmd.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        const codeBlockPattern = new RegExp("(```[^\\n]*\\n[^`]*?" + escapedCmd + "[^`]*?```)", "g");
+        finalContent = finalContent.replace(codeBlockPattern, (match) => {
+          const assetPath = imgPath.replace(/\\/g, "/");
+          return `${match}\n\n![Terminal output after: ${cmd}](file://${assetPath})\n`;
+        });
+      }
+
+      // If no code blocks matched, append screenshots section at the end
+      const unmatchedScreenshots = Object.entries(screenshotPaths).filter(([cmd]) => {
+        const escaped = cmd.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        return !new RegExp("!\\[.*" + escaped).test(finalContent);
+      });
+      if (unmatchedScreenshots.length > 0) {
+        finalContent += "\n\n## Terminal Screenshots\n\n";
+        for (const [cmd, imgPath] of unmatchedScreenshots) {
+          const assetPath = imgPath.replace(/\\/g, "/");
+          finalContent += `### \`${cmd}\`\n![Terminal output](file://${assetPath})\n\n`;
+        }
+      }
+
       // Save to disk
-      const filename = await invoke<string>("session_doc_save", { content });
+      const filename = await invoke<string>("session_doc_save", { content: finalContent });
 
       // Refresh list and show
       await loadDocs();
-      setViewingDoc({ filename, content });
+      setViewingDoc({ filename, content: finalContent });
     } catch (e: unknown) {
       setError(String(e));
     }

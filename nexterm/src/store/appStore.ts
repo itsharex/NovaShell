@@ -96,6 +96,7 @@ interface HistoryEntry {
   timestamp: number;
   shell: string;
   exitCode?: number;
+  screenshot?: string; // base64 PNG data URI of terminal at execution time
 }
 
 export interface PluginEntry {
@@ -173,7 +174,7 @@ function scheduleSave() {
       snippetFolders: s.snippetFolders,
       sshConnections: s.sshConnections.map(({ status, sessionId, errorMessage, sessionPassword, ...rest }) => rest),
       plugins: s.plugins,
-      history: s.history.slice(0, 200), // persist last 200 commands
+      history: s.history.slice(0, 200).map(({ screenshot, ...rest }) => rest), // persist last 200, strip screenshots
       debugPersist: s.debugPersist,
     };
     import("@tauri-apps/api/core").then(({ invoke }) => {

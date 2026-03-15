@@ -20,6 +20,15 @@
 - **Colored Prompts** — Init scripts inject styled prompts, syntax highlighting, and `ls` coloring per shell
 - **Offline-Ready** — Bundled JetBrains Mono font, no internet required
 
+### Cross-Server Navigation
+- **Jump Between Servers** — Navigate SSH servers like folders: `cd webserver:/var/www`
+- **Filesystem Syntax** — Global path style: `cd /servers/webserver/var/www`
+- **Server Listing** — `ls /servers` shows all SSH connections with status
+- **Navigation Stack** — Breadcrumb in StatusBar shows: `local → webserver → dbserver`
+- **Multi-Hop** — Chain servers: local → web → db → back to local with `cd local:~`
+- **Auto-Restore** — SSH disconnect auto-restores previous context
+- **Session-Aware** — Clipboard paste, terminal resize, snippets, and autocomplete all route to the correct active session (PTY or SSH)
+
 ### SSH Client
 - **Full SSH Terminal** — Built-in SSH connections with xterm.js emulation
 - **Dual Authentication** — Password or private key (PEM, OpenSSH, ECDSA, Ed25519)
@@ -35,6 +44,36 @@
 - **Text File Preview** — View remote text files up to 1 MB directly in the panel
 - **Reuses SSH Connections** — Connects via saved SSH configs with keychain/session password support
 - **Transfer Log** — Real-time transfer history with status indicators
+
+### Infrastructure Monitor
+Real-time monitoring dashboard for all connected SSH servers:
+- **Live Metrics** — CPU, RAM, Disk, Network I/O, Load Average, Top Processes — polled every 10s via SSH
+- **SVG Sparklines** — Zero-dependency inline charts showing metric trends (60 data points)
+- **Health Score** — 0-100 composite score per server (weighted: 40% CPU, 35% Memory, 25% Disk)
+- **Anomaly Detection** — Statistical spike detection (mean + 2 standard deviations) even below fixed thresholds
+- **Cross-Server Correlation** — Alerts when 2+ servers spike within 30 seconds (systemic issue indicator)
+- **Alert System** — Threshold-based warnings/criticals with 60-second deduplication cooldown
+- **Global Timeline** — Chronological event log: alerts, actions, connections, disk cleanups
+- **Control Center** — One-click actions per server:
+  - CPU High: Show Processes, Kill PID (SIGTERM/SIGKILL with 2-step confirm), Open Terminal
+  - Memory High: Memory Map, Cache/Buffers info, Open Terminal
+  - Disk High: Analyze Disk (opens Disk tab), Scan Large Files, Open Terminal
+  - Failed Services: Restart service, Show all failed
+- **Compact Mode** — Toggle between full cards and one-line-per-server view
+- **Configurable** — Adjustable polling intervals (5-60s) and warning/critical thresholds
+
+### Disk Analyzer (CCleaner-style)
+Built into the Infrastructure Monitor — scan and clean remote server disks:
+- **Partition Overview** — Donut charts per partition with used/free/total and filesystem type
+- **Largest Directories** — Treemap-style bars from `du -xmd1 /` (click any to open terminal there)
+- **Disk Growth Tracking** — Compares current vs previous scan, highlights directories with >500MB growth
+- **9 Cleanup Categories** — System Logs, Systemd Journal, System Cache, Package Cache, Temp Files, Docker, Core Dumps, Snap Packages, Old Kernels
+- **Inspect Before Clean** — Preview files that will be affected before any deletion
+- **Per-Category Actions** — View files, Tail syslog, Show errors, Docker images/volumes, and more
+- **Multi-Select Cleanup** — Check categories, see total reclaimable space, batch clean with one click
+- **Confirm Before Delete** — Every cleanup action requires explicit confirmation
+- **Auto-Rescan** — Automatic re-scan after cleanup to show reclaimed space
+- **Safe Scans** — `timeout` + `-xdev` flags prevent hangs on large/networked filesystems
 
 ### Themes
 - **5 Built-in Themes** — Dark, Light, Cyberpunk (neon glow), Retro (green CRT), Hacking (matrix green)
@@ -53,10 +92,13 @@
 - **System Stats** — Real-time CPU, memory, disk usage, process list with performance sparklines
 - **SSH** — Connection manager (see SSH Client section)
 - **SFTP Transfer** — Dual-panel file transfer (see SFTP section)
+- **Server Map** — Service discovery and port scanning on remote servers
+- **Editor** — Built-in file editor with VS Code-like syntax highlighting
 - **Debug Console** — Live log monitoring (see below)
 - **AI Assistant** — Local AI chat via Ollama (see below)
 - **Session Docs** — Auto-generated session documentation (see below)
 - **Hacking Mode** — Security toolkit (see below)
+- **Infra Monitor** — Live infrastructure monitoring + disk analyzer (see above)
 
 ### Debug Console
 - **Live Log Monitoring** — Real-time log capture with level filters (error, warn, info, debug, trace, output)
@@ -97,7 +139,7 @@
 ### Other
 - **Single Instance** — Prevents duplicate app windows
 - **Custom NSIS Installer** — Desktop shortcut, Start menu, "Open NovaShell here" context menu (Windows)
-- **Resizable Sidebar** — Drag to resize sidebar width (260px–700px)
+- **Resizable Sidebar** — Drag to resize sidebar width (260px-700px)
 - **File-Based Config** — Settings, connections, snippets, and history persist across app updates (stored in OS data directory)
 
 ---
@@ -123,6 +165,42 @@ Download from [Releases](../../releases):
 - `.AppImage` — Run directly: `chmod +x NovaShell_*.AppImage && ./NovaShell_*.AppImage`
 - `.deb` — `sudo dpkg -i NovaShell_*_amd64.deb`
 - `.rpm` — `sudo rpm -i NovaShell-*-1.x86_64.rpm`
+
+---
+
+## Quick Start: Cross-Server Navigation
+
+Once you have SSH connections configured in the SSH panel:
+
+```bash
+# Jump to a server
+cd webserver:/var/www
+
+# Or use filesystem-style syntax
+cd /servers/webserver/var/www
+
+# List available servers
+ls /servers
+
+# Jump between servers directly
+cd dbserver:/home
+
+# Return to local machine
+cd local:~
+```
+
+The StatusBar shows your current location and navigation breadcrumb.
+
+---
+
+## Quick Start: Infrastructure Monitor
+
+1. Open the **Infra Monitor** tab in the sidebar (Gauge icon)
+2. Connect to SSH servers in the SSH panel first
+3. Click **Play** on a server card to start monitoring
+4. Watch real-time metrics, sparklines, and health scores update
+5. Click **Disk** tab to scan and analyze disk usage
+6. Use **Timeline** to see all events chronologically
 
 ---
 
@@ -184,9 +262,10 @@ nexterm/
 ├── src-tauri/                     # Rust backend (Tauri v2)
 │   ├── src/
 │   │   ├── main.rs                # Commands, shell detection, AppState, security whitelist
-│   │   ├── pty_manager.rs         # PTY session lifecycle
-│   │   ├── ssh_manager.rs         # SSH connections & terminal I/O
+│   │   ├── pty_manager.rs         # PTY session lifecycle (two-thread batching)
+│   │   ├── ssh_manager.rs         # SSH connections, terminal I/O, log streams
 │   │   ├── sftp_manager.rs        # SFTP file transfer operations
+│   │   ├── infra_monitor.rs       # Infrastructure monitoring engine (per-server polling threads)
 │   │   ├── keychain_manager.rs    # System keychain integration
 │   │   ├── log_manager.rs         # JSONL log persistence & rotation
 │   │   ├── session_doc_manager.rs # Session documentation storage
@@ -203,27 +282,37 @@ nexterm/
 │   ├── components/
 │   │   ├── TitleBar.tsx           # Window controls, theme selector, hacking mode toggle
 │   │   ├── TabBar.tsx             # Multi-tab management, dynamic shell selector
-│   │   ├── TerminalPanel.tsx      # xterm.js terminal with PTY bridge
-│   │   ├── Sidebar.tsx            # Tab navigation + all sidebar panels
+│   │   ├── TerminalPanel.tsx      # xterm.js terminal with PTY bridge + cross-server navigation
+│   │   ├── Sidebar.tsx            # Tab navigation + all sidebar panels (15 tabs)
 │   │   ├── SSHPanel.tsx           # SSH connection manager & terminal
 │   │   ├── SFTPPanel.tsx          # SFTP dual-panel file transfer explorer
+│   │   ├── InfraMonitorPanel.tsx  # Infrastructure monitor + disk analyzer dashboard
+│   │   ├── ServerMapPanel.tsx     # Server service discovery & port scanning
 │   │   ├── FileExplorer.tsx       # Local filesystem browser
-│   │   ├── StatusBar.tsx          # Shell, git branch, stats, clock
+│   │   ├── EditorPanel.tsx        # Built-in file editor with syntax highlighting
+│   │   ├── StatusBar.tsx          # Shell, git branch, server breadcrumb, infra alerts, clock
 │   │   ├── DebugPanel.tsx         # Debug console with log persistence
 │   │   ├── AIPanel.tsx            # Ollama AI assistant chat interface
 │   │   ├── SessionDocPanel.tsx    # Session documentation viewer
 │   │   ├── HackingPanel.tsx       # Hacking mode sub-tab container
 │   │   ├── UpdateNotification.tsx # Auto-update UI
+│   │   ├── SearchOverlay.tsx      # Terminal search (Ctrl+F)
+│   │   ├── Autocomplete.tsx       # Command autocomplete dropdown
 │   │   └── hacking/              # Hacking mode sub-components
 │   │       ├── ReconView.tsx      # Reconnaissance & port scanning
 │   │       ├── ExploitView.tsx    # Exploit database & scripts
 │   │       ├── AiSecView.tsx      # AI security copilot
 │   │       ├── HistoryView.tsx    # Encrypted session history
+│   │       ├── AlertsView.tsx     # Security alert management
+│   │       ├── AlertToast.tsx     # Animated alert toasts
 │   │       └── ToolsView.tsx      # Hash, encode/decode, reverse shells
 │   ├── store/
-│   │   └── appStore.ts            # Zustand state (tabs, themes, SSH, SFTP, debug, AI, hacking)
+│   │   └── appStore.ts            # Zustand state (tabs, themes, SSH, infra, disk, navigation)
 │   ├── utils/
-│   │   └── hackingAlerts.ts       # Security monitor & alert generation
+│   │   ├── serverNavigation.ts    # Cross-server navigation (resolve, parse, navigate)
+│   │   ├── hackingAlerts.ts       # Security monitor & alert generation
+│   │   ├── pdfGenerator.ts        # PDF document generation
+│   │   └── markdown.ts            # Markdown parsing utilities
 │   ├── styles/
 │   │   └── global.css             # 5 theme systems & all component styles
 │   ├── main.tsx

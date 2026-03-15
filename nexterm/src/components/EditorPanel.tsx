@@ -8,9 +8,10 @@ import {
 import { EditorView, keymap, lineNumbers, highlightActiveLineGutter, highlightActiveLine, drawSelection } from "@codemirror/view";
 import { EditorState, Compartment } from "@codemirror/state";
 import { defaultKeymap, indentWithTab, history, historyKeymap } from "@codemirror/commands";
-import { syntaxHighlighting, defaultHighlightStyle, bracketMatching, foldGutter, indentOnInput } from "@codemirror/language";
+import { syntaxHighlighting, bracketMatching, foldGutter, indentOnInput } from "@codemirror/language";
 import { searchKeymap, highlightSelectionMatches } from "@codemirror/search";
 import { autocompletion, closeBrackets } from "@codemirror/autocomplete";
+import { oneDarkHighlightStyle } from "@codemirror/theme-one-dark";
 import { javascript } from "@codemirror/lang-javascript";
 import { python } from "@codemirror/lang-python";
 import { json } from "@codemirror/lang-json";
@@ -214,18 +215,25 @@ function detectInfra(name: string, content: string): InfraType | null {
 // ── Editor theme + lang ──
 
 const novaTheme = EditorView.theme({
-  "&": { backgroundColor: "var(--bg-primary)", color: "var(--text-primary)", fontSize: "12px", fontFamily: "'JetBrains Mono', 'Fira Code', monospace", height: "100%" },
-  ".cm-scroller": { overflow: "auto" },
-  ".cm-content": { caretColor: "var(--accent-primary)", padding: "4px 0" },
-  ".cm-cursor": { borderLeftColor: "var(--accent-primary)", borderLeftWidth: "2px" },
-  ".cm-activeLine": { backgroundColor: "rgba(255,255,255,0.03)" },
-  ".cm-activeLineGutter": { backgroundColor: "rgba(255,255,255,0.05)" },
-  ".cm-gutters": { backgroundColor: "var(--bg-secondary)", color: "var(--text-muted)", border: "none", fontSize: "10px" },
-  ".cm-lineNumbers .cm-gutterElement": { padding: "0 8px 0 4px", minWidth: "32px" },
-  ".cm-selectionBackground": { backgroundColor: "rgba(88,166,255,0.2) !important" },
-  ".cm-matchingBracket": { backgroundColor: "rgba(88,166,255,0.3)", outline: "1px solid rgba(88,166,255,0.5)" },
-  ".cm-foldGutter": { padding: "0 2px" },
-  ".cm-tooltip": { backgroundColor: "var(--bg-tertiary)", border: "1px solid var(--border-subtle)", color: "var(--text-primary)" },
+  "&": { backgroundColor: "var(--bg-primary)", color: "#d4d4d4", fontSize: "13px", fontFamily: "'JetBrains Mono', 'Fira Code', 'Cascadia Code', 'Consolas', monospace", height: "100%" },
+  ".cm-scroller": { overflow: "auto", lineHeight: "1.6" },
+  ".cm-content": { caretColor: "#528bff", padding: "4px 0" },
+  ".cm-cursor": { borderLeftColor: "#528bff", borderLeftWidth: "2px" },
+  ".cm-activeLine": { backgroundColor: "rgba(255,255,255,0.04)" },
+  ".cm-activeLineGutter": { backgroundColor: "rgba(255,255,255,0.06)", color: "#c6c6c6" },
+  ".cm-gutters": { backgroundColor: "var(--bg-secondary)", color: "rgba(180,180,180,0.4)", border: "none", fontSize: "11px", minWidth: "40px" },
+  ".cm-lineNumbers .cm-gutterElement": { padding: "0 12px 0 8px", minWidth: "40px", textAlign: "right" },
+  ".cm-selectionBackground": { backgroundColor: "rgba(88,166,255,0.25) !important" },
+  "&.cm-focused .cm-selectionBackground": { backgroundColor: "rgba(88,166,255,0.35) !important" },
+  ".cm-matchingBracket": { backgroundColor: "rgba(88,166,255,0.3)", outline: "1px solid rgba(88,166,255,0.5)", color: "#fff !important" },
+  ".cm-foldGutter": { padding: "0 4px" },
+  ".cm-foldGutter .cm-gutterElement": { color: "rgba(180,180,180,0.3)", transition: "color 0.15s" },
+  ".cm-foldGutter .cm-gutterElement:hover": { color: "rgba(180,180,180,0.8)" },
+  ".cm-tooltip": { backgroundColor: "var(--bg-tertiary)", border: "1px solid var(--border-subtle)", color: "var(--text-primary)", borderRadius: "4px", boxShadow: "0 2px 8px rgba(0,0,0,0.3)" },
+  ".cm-tooltip-autocomplete": { "& > ul > li[aria-selected]": { backgroundColor: "rgba(88,166,255,0.15)" } },
+  ".cm-searchMatch": { backgroundColor: "rgba(255,213,0,0.2)", outline: "1px solid rgba(255,213,0,0.4)" },
+  ".cm-searchMatch-selected": { backgroundColor: "rgba(255,213,0,0.4)" },
+  ".cm-selectionMatch": { backgroundColor: "rgba(88,166,255,0.12)" },
 }, { dark: true });
 
 function getLang(ext: string) {
@@ -440,7 +448,7 @@ export function EditorPanel() {
     lineNumbers(), highlightActiveLineGutter(), highlightActiveLine(), drawSelection(),
     bracketMatching(), closeBrackets(), autocompletion(), foldGutter(), indentOnInput(),
     history(), highlightSelectionMatches(),
-    syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
+    syntaxHighlighting(oneDarkHighlightStyle, { fallback: true }),
     keymap.of([...defaultKeymap, ...historyKeymap, ...searchKeymap, indentWithTab]),
     novaTheme, EditorView.lineWrapping,
   ], []);
@@ -877,7 +885,7 @@ export function EditorPanel() {
         {/* Folder tree panel */}
         {renderFolderPanel()}
         {/* CodeMirror editor */}
-        <div ref={editorRef} style={{ flex: 1, overflow: "auto", minWidth: 0 }} />
+        <div ref={editorRef} style={{ flex: 1, overflow: "hidden", minWidth: 0 }} />
 
         {/* Live logs panel */}
         {liveLogsOpen && (

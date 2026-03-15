@@ -191,6 +191,14 @@ export function ServerMapPanel() {
   const [copiedCmd, setCopiedCmd] = useState<string | null>(null);
   const credCacheRef = useRef<Map<string, { password: string | null; privateKey: string | null }>>(new Map());
 
+  // Multi-exec state
+  const [multiExecOpen, setMultiExecOpen] = useState(false);
+  const [multiCmd, setMultiCmd] = useState("");
+  const [multiSelected, setMultiSelected] = useState<Set<string>>(new Set());
+  const [multiRunning, setMultiRunning] = useState(false);
+  const [multiResults, setMultiResults] = useState<Array<{ server: string; output: string; error: boolean; duration: number }>>([]);
+  const [multiCmdHistory, setMultiCmdHistory] = useState<string[]>([]);
+
   const getCredentials = useCallback(async (conn: SSHConnection): Promise<{ password: string | null; privateKey: string | null } | null> => {
     const cached = credCacheRef.current.get(conn.id);
     if (cached) return cached;
@@ -274,6 +282,45 @@ export function ServerMapPanel() {
 
   const submitPassword = () => { if (!passwordPrompt) return; scanServer(passwordPrompt.conn, passwordPrompt.password); setPasswordPrompt(null); };
 
+  // Multi-server command execution
+  const runMultiExec = async () => {
+    if (!multiCmd.trim() || multiSelected.size === 0 || multiRunning) return;
+    const cmd = multiCmd.trim();
+    setMultiRunning(true);
+    setMultiResults([]);
+    setMultiCmdHistory((prev) => [cmd, ...prev.filter((c) => c !== cmd)].slice(0, 20));
+
+    const targets = sshConnections.filter((c) => multiSelected.has(c.id));
+    const { invoke } = await getTauriCore();
+
+    // Execute on all selected servers in parallel
+    const promises = targets.map(async (conn) => {
+      const start = Date.now();
+      try {
+        const creds = await getCredentials(conn);
+        if (!creds) return { server: conn.name, output: "No credentials available", error: true, duration: 0 };
+        const output = await invoke<string>("ssh_exec", {
+          host: conn.host, port: conn.port, username: conn.username,
+          password: creds.password, privateKey: creds.privateKey, command: cmd,
+        });
+        return { server: conn.name, output: output || "(no output)", error: false, duration: Date.now() - start };
+      } catch (e) {
+        return { server: conn.name, output: String(e), error: true, duration: Date.now() - start };
+      }
+    });
+
+    const results = await Promise.all(promises);
+    setMultiResults(results);
+    setMultiRunning(false);
+  };
+
+  const toggleMultiSelect = (id: string) => {
+    setMultiSelected((prev) => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  };
+  const selectAllServers = () => {
+    setMultiSelected(new Set(sshConnections.map((c) => c.id)));
+  };
+
   const runAction = async (conn: SSHConnection, action: SmartAction) => {
     if (action.copyOnly) {
       navigator.clipboard.writeText(action.cmd).then(() => {
@@ -323,12 +370,93 @@ export function ServerMapPanel() {
         <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 4 }}>
           {copiedCmd && <span style={{ fontSize: 8, color: "var(--accent-secondary)" }}>Copied!</span>}
           {autoRefresh && <span style={{ fontSize: 8, color: "var(--accent-primary)" }}>{countdown}s</span>}
+          <button onClick={() => setMultiExecOpen(!multiExecOpen)} title="Multi-server command"
+            style={{ ...btnS, padding: "3px 8px", background: multiExecOpen ? "var(--accent-secondary)" : "var(--bg-tertiary)", color: multiExecOpen ? "white" : "var(--text-secondary)" }}>
+            <Terminal size={9} /> Multi
+          </button>
           <button onClick={() => setAutoRefresh(!autoRefresh)} title={autoRefresh ? "Stop auto-refresh" : "Auto-refresh 30s"}
             style={{ ...btnS, padding: "3px 8px", background: autoRefresh ? "var(--accent-primary)" : "var(--bg-tertiary)", color: autoRefresh ? "white" : "var(--text-secondary)" }}>
             <Timer size={9} /> {autoRefresh ? "Live" : "Auto"}
           </button>
         </div>
       </div>
+
+      {/* Multi-server exec panel */}
+      {multiExecOpen && (
+        <div style={{ flexShrink: 0, marginBottom: 6, padding: 8, background: "var(--bg-tertiary)", borderRadius: "var(--radius-sm)", border: "1px solid var(--accent-secondary)" }}>
+          {/* Command input */}
+          <div style={{ display: "flex", gap: 4, marginBottom: 6 }}>
+            <div style={{ flex: 1, position: "relative" }}>
+              <Terminal size={10} style={{ position: "absolute", left: 6, top: 7, color: "var(--text-muted)" }} />
+              <input value={multiCmd} onChange={(e) => setMultiCmd(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) runMultiExec(); }}
+                placeholder="Command to run on all selected servers..."
+                style={{ width: "100%", padding: "5px 8px 5px 22px", background: "var(--bg-secondary)", border: "1px solid var(--border-subtle)", borderRadius: "var(--radius-sm)", color: "var(--text-primary)", fontSize: 11, fontFamily: "'JetBrains Mono', monospace", outline: "none" }}
+              />
+            </div>
+            <button onClick={runMultiExec} disabled={multiRunning || multiSelected.size === 0 || !multiCmd.trim()}
+              style={{ ...btnS, padding: "5px 12px", background: multiSelected.size > 0 && multiCmd.trim() ? "var(--accent-secondary)" : "var(--bg-active)", color: multiSelected.size > 0 && multiCmd.trim() ? "white" : "var(--text-muted)" }}>
+              {multiRunning ? <Loader2 size={10} style={{ animation: "spin 1s linear infinite" }} /> : <Play size={10} />}
+              Run ({multiSelected.size})
+            </button>
+          </div>
+
+          {/* Quick command history */}
+          {multiCmdHistory.length > 0 && (
+            <div style={{ display: "flex", gap: 3, flexWrap: "wrap", marginBottom: 6 }}>
+              {multiCmdHistory.slice(0, 8).map((cmd, i) => (
+                <button key={i} onClick={() => setMultiCmd(cmd)}
+                  style={{ ...btnS, padding: "2px 6px", background: "var(--bg-active)", color: "var(--text-secondary)", fontSize: 8, fontFamily: "'JetBrains Mono', monospace", maxWidth: 120, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {cmd}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* Server selection */}
+          <div style={{ display: "flex", gap: 3, flexWrap: "wrap", alignItems: "center" }}>
+            <button onClick={selectAllServers} style={{ ...btnS, padding: "2px 6px", background: "var(--bg-active)", color: "var(--accent-primary)", fontSize: 8 }}>
+              Select all
+            </button>
+            <button onClick={() => setMultiSelected(new Set())} style={{ ...btnS, padding: "2px 6px", background: "var(--bg-active)", color: "var(--text-muted)", fontSize: 8 }}>
+              None
+            </button>
+            <span style={{ width: 1, height: 12, background: "var(--border-subtle)" }} />
+            {sshConnections.map((conn) => (
+              <label key={conn.id} style={{ display: "flex", alignItems: "center", gap: 3, fontSize: 9, color: "var(--text-primary)", cursor: "pointer", padding: "2px 6px", borderRadius: "var(--radius-sm)", background: multiSelected.has(conn.id) ? "rgba(63,185,80,0.15)" : "var(--bg-active)" }}>
+                <input type="checkbox" checked={multiSelected.has(conn.id)} onChange={() => toggleMultiSelect(conn.id)}
+                  style={{ width: 10, height: 10, accentColor: "var(--accent-secondary)" }} />
+                {conn.name}
+              </label>
+            ))}
+          </div>
+
+          {/* Results */}
+          {multiResults.length > 0 && (
+            <div style={{ marginTop: 8, maxHeight: 300, overflowY: "auto" }} className="hacking-log-container">
+              {multiResults.map((r, i) => (
+                <div key={i} style={{ marginBottom: 6 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 2 }}>
+                    <span style={{ width: 6, height: 6, borderRadius: "50%", background: r.error ? "#EF4444" : "#10B981" }} />
+                    <span style={{ fontSize: 10, fontWeight: 600, color: "var(--text-primary)" }}>{r.server}</span>
+                    <span style={{ fontSize: 8, color: "var(--text-muted)" }}>{r.duration}ms</span>
+                    <button onClick={() => navigator.clipboard.writeText(r.output)} title="Copy" style={{ ...btnS, background: "none", color: "var(--text-muted)", padding: "1px", marginLeft: "auto" }}><Copy size={8} /></button>
+                  </div>
+                  <pre style={{
+                    margin: 0, padding: "6px 8px", fontSize: 10, fontFamily: "'JetBrains Mono', monospace",
+                    background: r.error ? "rgba(239,68,68,0.05)" : "var(--bg-secondary)",
+                    border: `1px solid ${r.error ? "rgba(239,68,68,0.2)" : "var(--border-subtle)"}`,
+                    borderRadius: "var(--radius-sm)", color: r.error ? "#EF4444" : "var(--text-primary)",
+                    whiteSpace: "pre-wrap", wordBreak: "break-all", maxHeight: 120, overflow: "auto",
+                  }}>
+                    {r.output}
+                  </pre>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Search bar */}
       {scans.size > 0 && (

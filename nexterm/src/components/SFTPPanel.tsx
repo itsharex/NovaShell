@@ -371,7 +371,8 @@ function SFTPExplorer({
   const [dragSide, setDragSide] = useState<"local" | "remote" | null>(null);
   const dragStartPos = useRef<{ x: number; y: number } | null>(null);
   const pendingDragData = useRef<{ side: "local" | "remote"; files: Array<{ name: string; path: string; is_dir: boolean; size: number }> } | null>(null);
-  const dragStateRef = useRef({ isDragging: false, side: null as "local" | "remote" | null, files: null as Array<{ name: string; path: string; is_dir: boolean; size: number }> | null, overPanel: null as "local" | "remote" | null });
+  const [dragOverFolder, setDragOverFolder] = useState<string | null>(null); // path of folder being hovered during drag
+  const dragStateRef = useRef({ isDragging: false, side: null as "local" | "remote" | null, files: null as Array<{ name: string; path: string; is_dir: boolean; size: number }> | null, overPanel: null as "local" | "remote" | null, overFolderPath: null as string | null });
 
   // Cached invoke
   const invokeRef = useRef<typeof import("@tauri-apps/api/core")["invoke"] | null>(null);
@@ -484,16 +485,26 @@ function SFTPExplorer({
   // Download: remote -> local (files + directories)
   const handleDownload = async () => {
     const curSelected = selectedRemoteRef.current;
-    const curLocalPath = localPathRef.current;
     const curRemoteFiles = remoteFilesRef.current;
-    const curLocalSep = curLocalPath.includes("\\") ? "\\" : "/";
 
     if (curSelected.size === 0) { setTransferStatus("No files selected"); return; }
-    if (!curLocalPath) { setTransferStatus("No local path set"); return; }
     if (transferringRef.current) { setTransferStatus("Transfer already in progress"); return; }
 
     const items = curRemoteFiles.filter((f) => curSelected.has(f.path));
     if (items.length === 0) { setTransferStatus("Nothing selected"); return; }
+
+    // Show folder picker dialog
+    let curLocalPath: string;
+    try {
+      const invoke = await getInvoke();
+      const picked = await invoke<string | null>("pick_folder", { defaultPath: localPathRef.current || null });
+      if (!picked) return; // user cancelled
+      curLocalPath = picked;
+    } catch (e) {
+      setTransferStatus(`Folder dialog error: ${String(e)}`);
+      return;
+    }
+    const curLocalSep = curLocalPath.includes("\\") ? "\\" : "/";
 
     transferringRef.current = true;
     setTransferring(true);
@@ -630,6 +641,7 @@ function SFTPExplorer({
           side: pendingDragData.current.side,
           files: pendingDragData.current.files,
           overPanel: null,
+          overFolderPath: null,
         };
         setIsDragging(true);
         setDragSide(pendingDragData.current.side);
@@ -640,12 +652,13 @@ function SFTPExplorer({
     const onMouseUp = () => {
       const st = dragStateRef.current;
       if (st.isDragging && st.files && st.overPanel && st.side !== st.overPanel) {
-        performDragTransfer(st.side!, st.overPanel, st.files);
+        performDragTransfer(st.side!, st.overPanel, st.files, st.overFolderPath);
       }
-      dragStateRef.current = { isDragging: false, side: null, files: null, overPanel: null };
+      dragStateRef.current = { isDragging: false, side: null, files: null, overPanel: null, overFolderPath: null };
       setIsDragging(false);
       setDragSide(null);
       setDragOver(null);
+      setDragOverFolder(null);
       dragStartPos.current = null;
       pendingDragData.current = null;
     };
@@ -659,11 +672,12 @@ function SFTPExplorer({
   }, []);
 
   // Perform the actual transfer after a successful drag & drop
-  const performDragTransfer = async (fromSide: "local" | "remote", toSide: "local" | "remote", items: Array<{ name: string; path: string; is_dir: boolean; size: number }>) => {
+  const performDragTransfer = async (fromSide: "local" | "remote", toSide: "local" | "remote", items: Array<{ name: string; path: string; is_dir: boolean; size: number }>, targetFolderPath?: string | null) => {
     if (items.length === 0 || transferringRef.current) return;
 
-    const curLocalPath = localPathRef.current;
-    const curRemotePath = remotePathRef.current;
+    // If dropped on a specific folder, use that as destination
+    const curLocalPath = toSide === "local" && targetFolderPath ? targetFolderPath : localPathRef.current;
+    const curRemotePath = toSide === "remote" && targetFolderPath ? targetFolderPath : remotePathRef.current;
     const curLocalSep = curLocalPath.includes("\\") ? "\\" : "/";
     const direction = toSide === "local" ? "download" : "upload";
 
@@ -721,7 +735,23 @@ function SFTPExplorer({
   const handlePanelMouseLeave = (panel: "local" | "remote") => {
     if (dragStateRef.current.isDragging && dragStateRef.current.overPanel === panel) {
       dragStateRef.current.overPanel = null;
+      dragStateRef.current.overFolderPath = null;
       setDragOver(null);
+      setDragOverFolder(null);
+    }
+  };
+
+  // Track hover over a folder entry during drag (drop into that folder)
+  const handleEntryMouseEnterDrag = (entryPath: string, isDir: boolean) => {
+    if (dragStateRef.current.isDragging && isDir) {
+      dragStateRef.current.overFolderPath = entryPath;
+      setDragOverFolder(entryPath);
+    }
+  };
+  const handleEntryMouseLeaveDrag = () => {
+    if (dragStateRef.current.isDragging) {
+      dragStateRef.current.overFolderPath = null;
+      setDragOverFolder(null);
     }
   };
 
@@ -958,12 +988,16 @@ function SFTPExplorer({
                   <div
                     key={entry.path}
                     onMouseDown={(e) => handleDragMouseDown(e, "local", getLocalDragFiles(entry))}
+                    onMouseEnter={() => handleEntryMouseEnterDrag(entry.path, entry.is_dir)}
+                    onMouseLeave={handleEntryMouseLeaveDrag}
                     onClick={() => toggleLocalSelect(entry.path)}
                     onDoubleClick={() => navigateLocal(entry)}
                     style={{
                       display: "flex", alignItems: "center", gap: 6, padding: "3px 6px",
                       cursor: isDragging && dragSide === "local" ? "grabbing" : "grab",
-                      background: isSelected ? "rgba(88,166,255,0.15)" : "transparent",
+                      background: isDragging && dragOverFolder === entry.path && entry.is_dir
+                        ? "rgba(88,166,255,0.3)"
+                        : isSelected ? "rgba(88,166,255,0.15)" : "transparent",
                       opacity: isDragging && dragSide === "local" && isSelected ? 0.5 : 1,
                       borderBottom: "1px solid var(--border-subtle)", fontSize: 11,
                     }}
@@ -1050,12 +1084,16 @@ function SFTPExplorer({
                   <div
                     key={entry.path}
                     onMouseDown={(e) => handleDragMouseDown(e, "remote", getRemoteDragFiles(entry))}
+                    onMouseEnter={() => handleEntryMouseEnterDrag(entry.path, entry.is_dir)}
+                    onMouseLeave={handleEntryMouseLeaveDrag}
                     onClick={() => toggleRemoteSelect(entry.path)}
                     onDoubleClick={() => navigateRemote(entry)}
                     style={{
                       display: "flex", alignItems: "center", gap: 6, padding: "3px 6px",
                       cursor: isDragging && dragSide === "remote" ? "grabbing" : "grab",
-                      background: isSelected ? "rgba(63,185,80,0.15)" : "transparent",
+                      background: isDragging && dragOverFolder === entry.path && entry.is_dir
+                        ? "rgba(63,185,80,0.3)"
+                        : isSelected ? "rgba(63,185,80,0.15)" : "transparent",
                       opacity: isDragging && dragSide === "remote" && isSelected ? 0.5 : 1,
                       borderBottom: "1px solid var(--border-subtle)", fontSize: 11,
                     }}

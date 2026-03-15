@@ -519,6 +519,48 @@ fn save_app_config(data: String) -> Result<(), String> {
 }
 
 #[tauri::command]
+fn pick_folder(default_path: Option<String>) -> Result<Option<String>, String> {
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+        let script = if let Some(ref p) = default_path {
+            format!(
+                "Add-Type -AssemblyName System.Windows.Forms; $d = New-Object System.Windows.Forms.FolderBrowserDialog; $d.SelectedPath = '{}'; if ($d.ShowDialog() -eq 'OK') {{ $d.SelectedPath }}",
+                p.replace('\'', "''")
+            )
+        } else {
+            "Add-Type -AssemblyName System.Windows.Forms; $d = New-Object System.Windows.Forms.FolderBrowserDialog; if ($d.ShowDialog() -eq 'OK') { $d.SelectedPath }".to_string()
+        };
+        let output = std::process::Command::new("powershell")
+            .args(["-NoProfile", "-Command", &script])
+            .creation_flags(CREATE_NO_WINDOW)
+            .output()
+            .map_err(|e| format!("Dialog error: {}", e))?;
+        let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if path.is_empty() { Ok(None) } else { Ok(Some(path)) }
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let output = std::process::Command::new("osascript")
+            .args(["-e", "POSIX path of (choose folder)"])
+            .output()
+            .map_err(|e| format!("Dialog error: {}", e))?;
+        let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if path.is_empty() || !output.status.success() { Ok(None) } else { Ok(Some(path)) }
+    }
+    #[cfg(target_os = "linux")]
+    {
+        let output = std::process::Command::new("zenity")
+            .args(["--file-selection", "--directory"])
+            .output()
+            .map_err(|e| format!("Dialog error: {}", e))?;
+        let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if path.is_empty() || !output.status.success() { Ok(None) } else { Ok(Some(path)) }
+    }
+}
+
+#[tauri::command]
 fn open_in_explorer(path: String) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     {
@@ -1189,6 +1231,7 @@ fn main() {
             load_app_config,
             save_app_config,
             open_in_explorer,
+            pick_folder,
             ai_health,
             ai_list_models,
             ai_pull_model,

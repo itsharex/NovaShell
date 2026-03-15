@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import {
   FileText, Save, X, AlertTriangle, Loader2, Sparkles, Check,
   Play, Square, RotateCcw, RefreshCw, Terminal, Eye, Settings,
@@ -249,29 +249,35 @@ export function EditorPanel() {
     return () => window.removeEventListener("novashell-open-editor" as any, handler as any);
   }, []);
 
+  // Memoize base CodeMirror extensions (never changes)
+  const baseExtensions = useMemo(() => [
+    lineNumbers(), highlightActiveLineGutter(), highlightActiveLine(), drawSelection(),
+    bracketMatching(), closeBrackets(), autocompletion(), foldGutter(), indentOnInput(),
+    history(), highlightSelectionMatches(),
+    syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
+    keymap.of([...defaultKeymap, ...historyKeymap, ...searchKeymap, indentWithTab]),
+    novaTheme, EditorView.lineWrapping,
+  ], []);
+
   // CodeMirror instance
   useEffect(() => {
     if (!file || !editorRef.current) return;
     const ext = file.name.split(".").pop() || "";
     if (viewRef.current) { viewRef.current.destroy(); viewRef.current = null; }
+    const fileNameRef = file.name; // capture for closure
     const state = EditorState.create({
       doc: file.content,
       extensions: [
-        lineNumbers(), highlightActiveLineGutter(), highlightActiveLine(), drawSelection(),
-        bracketMatching(), closeBrackets(), autocompletion(), foldGutter(), indentOnInput(),
-        history(), highlightSelectionMatches(),
-        syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
-        keymap.of([...defaultKeymap, ...historyKeymap, ...searchKeymap, indentWithTab]),
-        novaTheme, langCompartment.current.of(getLang(ext)),
+        ...baseExtensions,
+        langCompartment.current.of(getLang(ext)),
         EditorView.updateListener.of((update) => {
           if (update.docChanged) {
             contentRef.current = update.state.doc.toString();
             setFile((prev) => prev ? { ...prev, modified: true } : null);
             if (debounceTimer.current) clearTimeout(debounceTimer.current);
-            debounceTimer.current = setTimeout(() => analyzeContent(contentRef.current, file.name), 3000);
+            debounceTimer.current = setTimeout(() => analyzeContent(contentRef.current, fileNameRef), 3000);
           }
         }),
-        EditorView.lineWrapping,
       ],
     });
     const view = new EditorView({ state, parent: editorRef.current });

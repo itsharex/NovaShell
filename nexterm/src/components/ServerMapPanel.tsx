@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef } from "react";
+import { useState, useCallback, useEffect, useRef, useMemo } from "react";
 import {
   Server, Loader2, RefreshCw, X, Play, Square, FileText, RotateCcw,
   Globe, Database, Shield, Container, Cpu, Wifi, ChevronDown, ChevronRight,
@@ -243,6 +243,16 @@ export function ServerMapPanel() {
     setScanning(null);
   }, [getCredentials]);
 
+  // Auto-refresh with stable refs to avoid setInterval leak
+  const scansRef = useRef(scans);
+  scansRef.current = scans;
+  const sshConnectionsRef = useRef(sshConnections);
+  sshConnectionsRef.current = sshConnections;
+  const scanServerRef = useRef(scanServer);
+  scanServerRef.current = scanServer;
+  const scanningRef = useRef(scanning);
+  scanningRef.current = scanning;
+
   useEffect(() => {
     if (!autoRefresh) { setCountdown(30); return; }
     let count = 30;
@@ -253,14 +263,14 @@ export function ServerMapPanel() {
       if (count <= 0) {
         count = 30;
         setCountdown(30);
-        scans.forEach((_s, connId) => {
-          const conn = sshConnections.find((c) => c.id === connId);
-          if (conn && !scanning) scanServer(conn);
+        scansRef.current.forEach((_s, connId) => {
+          const conn = sshConnectionsRef.current.find((c) => c.id === connId);
+          if (conn && !scanningRef.current) scanServerRef.current(conn);
         });
       }
     }, 1000);
     return () => clearInterval(timer);
-  }, [autoRefresh, scans, sshConnections, scanServer, scanning]);
+  }, [autoRefresh]); // Only depends on the toggle — stable interval
 
   const refreshStats = async (conn: SSHConnection) => {
     const creds = await getCredentials(conn);
@@ -355,12 +365,12 @@ export function ServerMapPanel() {
   const toggleGroup = (key: string) => setExpandedGroups((p) => { const n = new Set(p); n.has(key) ? n.delete(key) : n.add(key); return n; });
   const toggleService = (key: string) => setExpandedService((p) => p === key ? null : key);
 
-  // Filter services across all servers
-  const filterServices = (svcs: DetectedService[]) => {
-    if (!searchQuery) return svcs;
-    const q = searchQuery.toLowerCase();
-    return svcs.filter((s) => s.name.toLowerCase().includes(q) || s.kind.includes(q) || s.detail.toLowerCase().includes(q) || (s.port && String(s.port).includes(q)));
-  };
+  // Filter services across all servers — memoized
+  const searchLower = useMemo(() => searchQuery.toLowerCase(), [searchQuery]);
+  const filterServices = useCallback((svcs: DetectedService[]) => {
+    if (!searchLower) return svcs;
+    return svcs.filter((s) => s.name.toLowerCase().includes(searchLower) || s.kind.includes(searchLower) || s.detail.toLowerCase().includes(searchLower) || (s.port && String(s.port).includes(searchLower)));
+  }, [searchLower]);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", gap: 0 }}>

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import {
   History,
   Code2,
@@ -111,9 +111,11 @@ function HistoryPanel() {
   const executeSnippet = useAppStore((s) => s.executeSnippet);
   const [filter, setFilter] = useState("");
 
-  const filtered = history.filter((h) =>
-    h.command.toLowerCase().includes(filter.toLowerCase())
-  );
+  const filtered = useMemo(() => {
+    if (!filter) return history;
+    const q = filter.toLowerCase();
+    return history.filter((h) => h.command.toLowerCase().includes(q));
+  }, [history, filter]);
 
   const handleRerun = (command: string) => {
     if (executeSnippet) executeSnippet(command);

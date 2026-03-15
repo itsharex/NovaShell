@@ -13,7 +13,6 @@ const MemoizedTabBar = memo(TabBar);
 const MemoizedStatusBar = memo(StatusBar);
 
 const MIN_SIDEBAR_WIDTH = 260;
-const MAX_SIDEBAR_WIDTH = 700;
 const DEFAULT_SIDEBAR_WIDTH = 320;
 
 function App() {
@@ -43,7 +42,8 @@ function App() {
       if (!isResizing.current) return;
       // Sidebar is on the right, so dragging left = wider
       const delta = startX - ev.clientX;
-      const newWidth = Math.min(MAX_SIDEBAR_WIDTH, Math.max(MIN_SIDEBAR_WIDTH, startWidth + delta));
+      const maxWidth = Math.floor(window.innerWidth * 0.8); // 80% of window
+      const newWidth = Math.min(maxWidth, Math.max(MIN_SIDEBAR_WIDTH, startWidth + delta));
       setSidebarWidth(newWidth);
     };
 

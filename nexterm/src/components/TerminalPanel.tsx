@@ -412,35 +412,40 @@ export function TerminalPanel() {
               const entryData: { command: string; shell: string; screenshot?: string } = { command: cmd, shell: tab?.shellType || "shell" };
               useAppStore.getState().addHistory(entryData);
               useAppStore.getState().incrementCommandCount();
-              // Capture terminal screenshot after output renders (800ms delay)
-              setTimeout(() => {
+              // Capture terminal screenshot after output renders (debounced, async)
+              if ((window as any).__screenshotTimer) clearTimeout((window as any).__screenshotTimer);
+              const captureCmd = cmd;
+              (window as any).__screenshotTimer = setTimeout(async () => {
                 try {
                   const termEl = terminal.element;
                   if (!termEl) return;
                   const canvases = termEl.querySelectorAll<HTMLCanvasElement>(".xterm-screen canvas");
                   if (canvases.length === 0) return;
-                  // Use the last (topmost) canvas — xterm renders layers
-                  const srcCanvas = canvases[canvases.length - 1];
                   const tmpCanvas = document.createElement("canvas");
-                  tmpCanvas.width = srcCanvas.width;
-                  tmpCanvas.height = srcCanvas.height;
+                  tmpCanvas.width = canvases[0].width;
+                  tmpCanvas.height = canvases[0].height;
                   const ctx = tmpCanvas.getContext("2d");
                   if (!ctx) return;
-                  // Draw all canvas layers (text + cursor + links)
                   canvases.forEach((c) => ctx.drawImage(c, 0, 0));
-                  const dataUrl = tmpCanvas.toDataURL("image/png");
-                  if (dataUrl && dataUrl.length > 100) {
-                    // Update the most recent history entry with screenshot
-                    const store = useAppStore.getState();
-                    const latest = store.history[0];
-                    if (latest && latest.command === cmd) {
-                      useAppStore.setState({
-                        history: [{ ...latest, screenshot: dataUrl }, ...store.history.slice(1)],
-                      });
+                  // Use async blob conversion instead of sync toDataURL
+                  const blob = await new Promise<Blob | null>((res) => tmpCanvas.toBlob(res, "image/png"));
+                  if (!blob) return;
+                  const reader = new FileReader();
+                  reader.onload = () => {
+                    const dataUrl = reader.result as string;
+                    if (dataUrl && dataUrl.length > 100) {
+                      const store = useAppStore.getState();
+                      const latest = store.history[0];
+                      if (latest && latest.command === captureCmd) {
+                        useAppStore.setState({
+                          history: [{ ...latest, screenshot: dataUrl }, ...store.history.slice(1)],
+                        });
+                      }
                     }
-                  }
+                  };
+                  reader.readAsDataURL(blob);
                 } catch {}
-              }, 800);
+              }, 1000);
             }
             ptyInputBuffer = "";
             setShowAutocomplete(false);

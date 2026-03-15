@@ -214,7 +214,8 @@ function detectInfra(name: string, content: string): InfraType | null {
 // ── Editor theme + lang ──
 
 const novaTheme = EditorView.theme({
-  "&": { backgroundColor: "var(--bg-primary)", color: "var(--text-primary)", fontSize: "12px", fontFamily: "'JetBrains Mono', 'Fira Code', monospace" },
+  "&": { backgroundColor: "var(--bg-primary)", color: "var(--text-primary)", fontSize: "12px", fontFamily: "'JetBrains Mono', 'Fira Code', monospace", height: "100%" },
+  ".cm-scroller": { overflow: "auto" },
   ".cm-content": { caretColor: "var(--accent-primary)", padding: "4px 0" },
   ".cm-cursor": { borderLeftColor: "var(--accent-primary)", borderLeftWidth: "2px" },
   ".cm-activeLine": { backgroundColor: "rgba(255,255,255,0.03)" },
@@ -467,6 +468,8 @@ export function EditorPanel() {
     });
     const view = new EditorView({ state, parent: editorRef.current });
     viewRef.current = view;
+    // Focus the editor so it accepts keyboard input immediately
+    requestAnimationFrame(() => view.focus());
     return () => { view.destroy(); viewRef.current = null; };
   }, [file?.path]);
 

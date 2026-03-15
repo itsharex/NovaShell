@@ -83,7 +83,7 @@ export function Sidebar() {
           </button>
         ))}
       </div>
-      <div className="sidebar-content">
+      <div className="sidebar-content" style={sidebarTab === "editor" ? { padding: 0, overflow: "hidden" } : undefined}>
         {sidebarTab === "history" && <HistoryPanel />}
         {sidebarTab === "snippets" && <SnippetsPanel />}
         {sidebarTab === "preview" && <FileExplorer />}

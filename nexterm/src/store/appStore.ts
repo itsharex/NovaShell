@@ -218,6 +218,9 @@ interface AppState {
   toggleSidebar: () => void;
   setSidebarTab: (tab: SidebarTab) => void;
 
+  pendingEditorFile: { path: string; name: string; content: string; source: "local" | "sftp"; sftpSessionId?: string; sshHost?: string; sshPort?: number; sshUsername?: string; sshPassword?: string | null; sshPrivateKey?: string | null } | null;
+  setPendingEditorFile: (file: AppState["pendingEditorFile"]) => void;
+
   focusMode: boolean;
   toggleFocusMode: () => void;
 
@@ -377,6 +380,9 @@ export const useAppStore = create<AppState>((set, get) => ({
   sidebarTab: "history",
   toggleSidebar: () => set((s) => ({ sidebarOpen: !s.sidebarOpen })),
   setSidebarTab: (tab) => set({ sidebarTab: tab, sidebarOpen: true }),
+
+  pendingEditorFile: null,
+  setPendingEditorFile: (file) => set({ pendingEditorFile: file }),
 
   focusMode: false,
   toggleFocusMode: () => set((s) => ({ focusMode: !s.focusMode })),

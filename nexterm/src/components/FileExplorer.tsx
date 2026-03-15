@@ -152,7 +152,9 @@ export function FileExplorer() {
     try {
       const invoke = await getInvoke();
       const content = await invoke<string>("read_file_preview", { path: file.path });
-      setPreviewFile({ name: file.name, content, extension: file.extension });
+      const store = useAppStore.getState();
+      store.setPendingEditorFile({ path: file.path, name: file.name, content, source: "local" });
+      store.setSidebarTab("editor");
     } catch {
       setPreviewFile({ name: file.name, content: "(Cannot preview this file)", extension: file.extension });
     }
@@ -162,10 +164,9 @@ export function FileExplorer() {
     try {
       const invoke = await getInvoke();
       const content = await invoke<string>("read_file_preview", { path: file.path });
-      window.dispatchEvent(new CustomEvent("novashell-open-editor", {
-        detail: { path: file.path, name: file.name, content, source: "local" },
-      }));
-      useAppStore.getState().setSidebarTab("editor");
+      const store = useAppStore.getState();
+      store.setPendingEditorFile({ path: file.path, name: file.name, content, source: "local" });
+      store.setSidebarTab("editor");
     } catch {}
   }, []);
 
@@ -194,10 +195,9 @@ export function FileExplorer() {
           </span>
           <button onClick={() => {
             // Open current preview file in editor
-            window.dispatchEvent(new CustomEvent("novashell-open-editor", {
-              detail: { path: rootPath + (rootPath.includes("\\") ? "\\" : "/") + previewFile.name, name: previewFile.name, content: previewFile.content, source: "local" },
-            }));
-            useAppStore.getState().setSidebarTab("editor");
+            const store = useAppStore.getState();
+            store.setPendingEditorFile({ path: rootPath + (rootPath.includes("\\") ? "\\" : "/") + previewFile.name, name: previewFile.name, content: previewFile.content, source: "local" });
+            store.setSidebarTab("editor");
           }} style={{ padding: "2px 6px", border: "none", borderRadius: "var(--radius-sm)", background: "var(--accent-primary)", color: "white", fontSize: 9, cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", gap: 3 }}>
             Edit
           </button>

@@ -20,6 +20,7 @@ import { css } from "@codemirror/lang-css";
 import { yaml } from "@codemirror/lang-yaml";
 import { markdown } from "@codemirror/lang-markdown";
 import { sql } from "@codemirror/lang-sql";
+import { useAppStore } from "../store/appStore";
 
 let invokeCache: typeof import("@tauri-apps/api/core").invoke | null = null;
 async function getInvoke() {
@@ -428,20 +429,19 @@ export function EditorPanel() {
   const filterEntries = useCallback((files: FileEntry[], filter: string) =>
     filter ? files.filter((f) => f.name.toLowerCase().includes(filter.toLowerCase())) : files, []);
 
-  // Open file from event
+  // Open file from store (set by FileExplorer / SFTPPanel)
+  const pendingEditorFile = useAppStore((s) => s.pendingEditorFile);
   useEffect(() => {
-    const handler = (e: CustomEvent) => {
-      const d = e.detail;
-      setFile({ ...d, modified: false });
-      contentRef.current = d.content;
-      setAiAnalysis(null);
-      setShowAnalysis(false);
-      setInfra(detectInfra(d.name, d.content));
-      stopLiveLogs();
-    };
-    window.addEventListener("novashell-open-editor" as any, handler as any);
-    return () => window.removeEventListener("novashell-open-editor" as any, handler as any);
-  }, []);
+    if (!pendingEditorFile) return;
+    const d = pendingEditorFile;
+    setFile({ ...d, modified: false });
+    contentRef.current = d.content;
+    setAiAnalysis(null);
+    setShowAnalysis(false);
+    setInfra(detectInfra(d.name, d.content));
+    stopLiveLogs();
+    useAppStore.getState().setPendingEditorFile(null);
+  }, [pendingEditorFile]);
 
   // Memoize base CodeMirror extensions (never changes)
   const baseExtensions = useMemo(() => [

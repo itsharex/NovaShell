@@ -813,15 +813,14 @@ function SFTPExplorer({
       const invoke = await getInvoke();
       const content = await invoke<string>("sftp_read_text", { sessionId, path: entry.path });
       // Find SSH connection to pass credentials for infra actions
-      const conn = useAppStore.getState().sshConnections.find((c) => c.name === connName);
-      window.dispatchEvent(new CustomEvent("novashell-open-editor", {
-        detail: {
-          path: entry.path, name: entry.name, content, source: "sftp", sftpSessionId: sessionId,
-          sshHost: conn?.host, sshPort: conn?.port, sshUsername: conn?.username,
-          sshPassword: conn?.sessionPassword || null, sshPrivateKey: conn?.privateKey || null,
-        },
-      }));
-      useAppStore.getState().setSidebarTab("editor");
+      const store = useAppStore.getState();
+      const conn = store.sshConnections.find((c) => c.name === connName);
+      store.setPendingEditorFile({
+        path: entry.path, name: entry.name, content, source: "sftp", sftpSessionId: sessionId,
+        sshHost: conn?.host, sshPort: conn?.port, sshUsername: conn?.username,
+        sshPassword: conn?.sessionPassword || null, sshPrivateKey: conn?.privateKey || null,
+      });
+      store.setSidebarTab("editor");
     } catch {}
   };
 

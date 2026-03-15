@@ -27,8 +27,12 @@ export const UpdateNotification = memo(function UpdateNotification() {
   const [dismissed, setDismissed] = useState(false);
   const [minimized, setMinimized] = useState(false);
   const dismissTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const updateInstalledRef = useRef(false);
 
   const checkForUpdates = useCallback(async (silent = true) => {
+    // Don't re-check if we already downloaded and installed an update
+    if (updateInstalledRef.current) return;
+
     try {
       setStatus({ phase: "checking" });
       const { check } = await getUpdater();
@@ -71,20 +75,23 @@ export const UpdateNotification = memo(function UpdateNotification() {
       }
 
       let lastProgress = 0;
+      let totalSize = 0;
       await update.downloadAndInstall((event) => {
-        if (event.event === "Started" && event.data.contentLength) {
+        if (event.event === "Started") {
           lastProgress = 0;
+          totalSize = event.data.contentLength ?? 0;
         } else if (event.event === "Progress") {
           lastProgress += event.data.chunkLength;
-          const total = (event as any).data.contentLength;
-          if (total && total > 0) {
-            setStatus({ phase: "downloading", progress: Math.min(99, Math.round((lastProgress / total) * 100)) });
+          if (totalSize > 0) {
+            setStatus({ phase: "downloading", progress: Math.min(99, Math.round((lastProgress / totalSize) * 100)) });
           }
         } else if (event.event === "Finished") {
           setStatus({ phase: "ready" });
         }
       });
 
+      // Mark as installed so auto-check doesn't re-notify
+      updateInstalledRef.current = true;
       setStatus({ phase: "ready" });
     } catch (e) {
       setStatus({ phase: "error", message: String(e) });

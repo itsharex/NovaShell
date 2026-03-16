@@ -267,13 +267,13 @@ const vscodeDarkHighlight = HighlightStyle.define([
 const novaTheme = EditorView.theme({
   "&": {
     backgroundColor: "#1e1e1e",
-    color: "#d4d4d4",
     fontSize: "13px",
     fontFamily: "'JetBrains Mono', 'Fira Code', 'Cascadia Code', 'Consolas', monospace",
     height: "100%",
   },
+  // Default text color on content only — does NOT override syntax highlight colors
+  ".cm-content": { color: "#d4d4d4", caretColor: "#aeafad" },
   ".cm-scroller": { overflow: "auto", lineHeight: "1.6" },
-  ".cm-content": { caretColor: "#aeafad" },
   ".cm-cursor": { borderLeftColor: "#aeafad", borderLeftWidth: "2px" },
   ".cm-activeLine": { backgroundColor: "rgba(255,255,255,0.04)" },
   ".cm-activeLineGutter": { backgroundColor: "rgba(255,255,255,0.04)", color: "#c6c6c6" },

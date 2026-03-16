@@ -170,21 +170,14 @@
   --terminal-selection: rgba(0, 255, 65, 0.2);
 }
 
-*, *::before, *::after {
+/* Zero-specificity reset: any class-based rule (including CodeMirror) automatically wins */
+:where(*, *::before, *::after) {
   box-sizing: border-box;
   margin: 0;
   padding: 0;
 }
 
-/* CodeMirror protection — revert global reset so CM uses browser defaults it expects */
-.cm-editor *,
-.cm-editor *::before,
-.cm-editor *::after {
-  box-sizing: revert;
-  margin: revert;
-  padding: revert;
-}
-
+/* CodeMirror text selection override (body has user-select: none) */
 .cm-editor .cm-content,
 .cm-editor .cm-line {
   user-select: text;

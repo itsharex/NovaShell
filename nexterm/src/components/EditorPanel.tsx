@@ -577,8 +577,14 @@ export function EditorPanel() {
     });
     const view = new EditorView({ state, parent: editorRef.current });
     viewRef.current = view;
-    // Focus the editor so it accepts keyboard input immediately
-    requestAnimationFrame(() => view.focus());
+    // Force CodeMirror to remeasure line heights after CSS is fully applied
+    // This fixes gutter/content vertical desync in WebView2 environments
+    requestAnimationFrame(() => {
+      view.requestMeasure();
+      view.focus();
+      // Second measure after layout stabilizes
+      requestAnimationFrame(() => view.requestMeasure());
+    });
     return () => { view.destroy(); viewRef.current = null; };
   }, [file?.path]);
 

@@ -176,14 +176,17 @@
   padding: 0;
 }
 
-/* Protect CodeMirror internals from global reset */
+/* CodeMirror protection — revert global reset so CM uses browser defaults it expects */
 .cm-editor *,
 .cm-editor *::before,
 .cm-editor *::after {
-  box-sizing: initial;
+  box-sizing: revert;
+  margin: revert;
+  padding: revert;
 }
 
-.cm-editor .cm-content {
+.cm-editor .cm-content,
+.cm-editor .cm-line {
   user-select: text;
   -webkit-user-select: text;
 }

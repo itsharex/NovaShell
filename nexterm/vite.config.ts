@@ -30,18 +30,6 @@ export default defineConfig({
       output: {
         manualChunks: {
           'vendor-xterm': ['@xterm/xterm', '@xterm/addon-fit', '@xterm/addon-canvas', '@xterm/addon-search', '@xterm/addon-web-links'],
-          'vendor-codemirror': [
-            '@codemirror/view', '@codemirror/state', '@codemirror/commands',
-            '@codemirror/language', '@codemirror/search', '@codemirror/autocomplete',
-            '@codemirror/theme-one-dark', '@lezer/highlight',
-          ],
-          'vendor-codemirror-langs': [
-            '@codemirror/lang-javascript', '@codemirror/lang-python', '@codemirror/lang-json',
-            '@codemirror/lang-html', '@codemirror/lang-css', '@codemirror/lang-yaml',
-            '@codemirror/lang-markdown', '@codemirror/lang-sql', '@codemirror/lang-rust',
-            '@codemirror/lang-cpp', '@codemirror/lang-java', '@codemirror/lang-php',
-            '@codemirror/lang-xml', '@codemirror/lang-go', '@codemirror/lang-sass',
-          ],
         },
       },
     },

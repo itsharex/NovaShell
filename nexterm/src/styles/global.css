@@ -170,18 +170,27 @@
   --terminal-selection: rgba(0, 255, 65, 0.2);
 }
 
-/* Zero-specificity reset: any class-based rule (including CodeMirror) automatically wins */
+/* Global reset */
 :where(*, *::before, *::after) {
   box-sizing: border-box;
   margin: 0;
   padding: 0;
 }
 
-/* CodeMirror text selection override (body has user-select: none) */
+/* CodeMirror isolation — prevent global styles from breaking editor layout.
+   The !important ensures this wins in all environments (dev + prod + WebView2). */
+.cm-editor .cm-scroller {
+  display: flex !important;
+  align-items: flex-start !important;
+}
+.cm-editor .cm-gutters {
+  position: sticky !important;
+  left: 0 !important;
+}
 .cm-editor .cm-content,
 .cm-editor .cm-line {
-  user-select: text;
-  -webkit-user-select: text;
+  user-select: text !important;
+  -webkit-user-select: text !important;
 }
 
 html, body, #root {

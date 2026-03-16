@@ -8,10 +8,10 @@ import {
 import { EditorView, keymap, lineNumbers, highlightActiveLineGutter, highlightActiveLine, drawSelection } from "@codemirror/view";
 import { EditorState, Compartment } from "@codemirror/state";
 import { defaultKeymap, indentWithTab, history, historyKeymap } from "@codemirror/commands";
-import { syntaxHighlighting, bracketMatching, foldGutter, indentOnInput } from "@codemirror/language";
+import { syntaxHighlighting, bracketMatching, foldGutter, indentOnInput, HighlightStyle, StreamLanguage } from "@codemirror/language";
 import { searchKeymap, highlightSelectionMatches } from "@codemirror/search";
 import { autocompletion, closeBrackets } from "@codemirror/autocomplete";
-import { oneDarkHighlightStyle } from "@codemirror/theme-one-dark";
+import { tags as t } from "@lezer/highlight";
 import { javascript } from "@codemirror/lang-javascript";
 import { python } from "@codemirror/lang-python";
 import { json } from "@codemirror/lang-json";
@@ -27,7 +27,6 @@ import { php } from "@codemirror/lang-php";
 import { xml } from "@codemirror/lang-xml";
 import { go } from "@codemirror/lang-go";
 import { sass } from "@codemirror/lang-sass";
-import { StreamLanguage } from "@codemirror/language";
 import { shell } from "@codemirror/legacy-modes/mode/shell";
 import { dockerFile } from "@codemirror/legacy-modes/mode/dockerfile";
 import { toml } from "@codemirror/legacy-modes/mode/toml";
@@ -227,6 +226,42 @@ function detectInfra(name: string, content: string): InfraType | null {
 
 // ── Editor theme + lang ──
 
+// VS Code Dark+ exact highlight style
+const vscodeDarkHighlight = HighlightStyle.define([
+  { tag: t.keyword, color: "#569cd6" },                          // blue: const, let, if, return, function
+  { tag: [t.controlKeyword, t.moduleKeyword, t.operatorKeyword], color: "#c586c0" }, // purple: import, export, from, as
+  { tag: t.variableName, color: "#9cdcfe" },                     // light blue: variable names
+  { tag: [t.function(t.variableName), t.function(t.propertyName)], color: "#dcdcaa" }, // yellow: function names
+  { tag: t.propertyName, color: "#9cdcfe" },                     // light blue: property access
+  { tag: [t.typeName, t.className, t.namespace], color: "#4ec9b0" }, // teal: types, classes
+  { tag: [t.string, t.special(t.string)], color: "#ce9178" },    // orange: strings
+  { tag: t.number, color: "#b5cea8" },                           // green: numbers
+  { tag: t.bool, color: "#569cd6" },                             // blue: true, false
+  { tag: t.null, color: "#569cd6" },                             // blue: null, undefined
+  { tag: t.regexp, color: "#d16969" },                           // red: regex
+  { tag: t.operator, color: "#d4d4d4" },                         // white: operators
+  { tag: t.punctuation, color: "#d4d4d4" },                      // white: brackets, commas
+  { tag: [t.comment, t.lineComment, t.blockComment], color: "#6a9955", fontStyle: "italic" }, // green italic: comments
+  { tag: t.meta, color: "#569cd6" },                             // blue: decorators, pragma
+  { tag: [t.attributeName], color: "#9cdcfe" },                   // light blue: HTML attributes
+  { tag: [t.attributeValue], color: "#ce9178" },                  // orange: HTML attribute values
+  { tag: t.tagName, color: "#569cd6" },                           // blue: HTML tags
+  { tag: t.angleBracket, color: "#808080" },                      // gray: < >
+  { tag: t.self, color: "#569cd6" },                              // blue: this, self
+  { tag: t.definition(t.variableName), color: "#9cdcfe" },        // light blue: definitions
+  { tag: t.definition(t.propertyName), color: "#dcdcaa" },        // yellow: method definitions
+  { tag: t.heading, color: "#569cd6", fontWeight: "bold" },       // blue bold: markdown headings
+  { tag: t.emphasis, fontStyle: "italic" },                       // italic: markdown *text*
+  { tag: t.strong, fontWeight: "bold" },                          // bold: markdown **text**
+  { tag: t.link, color: "#3794ff", textDecoration: "underline" }, // blue underline: links
+  { tag: t.url, color: "#3794ff" },                               // blue: URLs
+  { tag: t.atom, color: "#569cd6" },                              // blue: atoms
+  { tag: t.labelName, color: "#dcdcaa" },                         // yellow: labels
+  { tag: t.inserted, color: "#b5cea8" },                          // green: diff inserted
+  { tag: t.deleted, color: "#ce9178" },                           // orange: diff deleted
+  { tag: t.invalid, color: "#f44747" },                           // red: invalid
+]);
+
 const novaTheme = EditorView.theme({
   "&": {
     backgroundColor: "#1e1e1e",
@@ -235,40 +270,34 @@ const novaTheme = EditorView.theme({
     fontFamily: "'JetBrains Mono', 'Fira Code', 'Cascadia Code', 'Consolas', monospace",
     height: "100%",
   },
-  ".cm-scroller": { overflow: "auto", lineHeight: "1.65" },
+  ".cm-scroller": { overflow: "auto", lineHeight: "1.6" },
   ".cm-content": { caretColor: "#aeafad", padding: "4px 0" },
   ".cm-cursor": { borderLeftColor: "#aeafad", borderLeftWidth: "2px" },
-  // Active line — subtle but visible like VS Code
-  ".cm-activeLine": { backgroundColor: "rgba(255,255,255,0.07)" },
-  ".cm-activeLineGutter": { backgroundColor: "rgba(255,255,255,0.07)", color: "#c6c6c6" },
-  // Gutter (line numbers) — VS Code style: subtle, separated
+  ".cm-activeLine": { backgroundColor: "rgba(255,255,255,0.04)" },
+  ".cm-activeLineGutter": { backgroundColor: "rgba(255,255,255,0.04)", color: "#c6c6c6" },
   ".cm-gutters": {
     backgroundColor: "#1e1e1e",
     color: "#858585",
     border: "none",
-    borderRight: "1px solid #2d2d2d",
-    fontSize: "12px",
-    minWidth: "48px",
+    borderRight: "1px solid rgba(255,255,255,0.06)",
+    fontSize: "13px",
+    minWidth: "50px",
   },
   ".cm-lineNumbers .cm-gutterElement": {
-    padding: "0 16px 0 12px",
-    minWidth: "48px",
+    padding: "0 12px 0 16px",
+    minWidth: "50px",
     textAlign: "right",
   },
-  // Selection
   ".cm-selectionBackground": { backgroundColor: "rgba(38,79,120,0.6) !important" },
   "&.cm-focused .cm-selectionBackground": { backgroundColor: "rgba(38,79,120,0.8) !important" },
-  // Bracket matching — VS Code yellow outline
   ".cm-matchingBracket": {
-    backgroundColor: "rgba(0,0,0,0)",
-    outline: "1px solid #888",
+    backgroundColor: "rgba(0,100,200,0.15)",
+    outline: "1px solid rgba(100,150,200,0.5)",
     color: "inherit !important",
   },
-  // Fold gutter
-  ".cm-foldGutter": { padding: "0 4px" },
+  ".cm-foldGutter": { padding: "0 4px 0 2px" },
   ".cm-foldGutter .cm-gutterElement": { color: "#858585", transition: "color 0.15s", cursor: "pointer" },
   ".cm-foldGutter .cm-gutterElement:hover": { color: "#d4d4d4" },
-  // Tooltips & autocomplete — VS Code suggest widget style
   ".cm-tooltip": {
     backgroundColor: "#252526",
     border: "1px solid #454545",
@@ -277,15 +306,12 @@ const novaTheme = EditorView.theme({
     boxShadow: "0 2px 8px rgba(0,0,0,0.5)",
   },
   ".cm-tooltip-autocomplete": {
-    "& > ul": { fontFamily: "'JetBrains Mono', 'Fira Code', monospace", fontSize: "12px" },
+    "& > ul": { fontFamily: "'JetBrains Mono', 'Fira Code', monospace", fontSize: "13px" },
     "& > ul > li[aria-selected]": { backgroundColor: "#04395e", color: "#fff" },
   },
-  // Search match
   ".cm-searchMatch": { backgroundColor: "rgba(234,92,0,0.33)", outline: "1px solid rgba(234,92,0,0.5)" },
   ".cm-searchMatch-selected": { backgroundColor: "rgba(234,92,0,0.55)" },
   ".cm-selectionMatch": { backgroundColor: "rgba(173,214,255,0.15)" },
-  // Indentation guides (subtle)
-  ".cm-line": { position: "relative" },
 }, { dark: true });
 
 function getLang(ext: string, filename?: string) {
@@ -523,7 +549,7 @@ export function EditorPanel() {
     lineNumbers(), highlightActiveLineGutter(), highlightActiveLine(), drawSelection(),
     bracketMatching(), closeBrackets(), autocompletion(), foldGutter(), indentOnInput(),
     history(), highlightSelectionMatches(),
-    syntaxHighlighting(oneDarkHighlightStyle, { fallback: true }),
+    syntaxHighlighting(vscodeDarkHighlight, { fallback: true }),
     keymap.of([...defaultKeymap, ...historyKeymap, ...searchKeymap, indentWithTab]),
     novaTheme, EditorView.lineWrapping,
   ], []);

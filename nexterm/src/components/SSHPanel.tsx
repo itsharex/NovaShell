@@ -110,7 +110,11 @@ const btnStyle: React.CSSProperties = {
 };
 
 export function SSHPanel() {
-  const { sshConnections, addSSHConnection, updateSSHConnection, removeSSHConnection, theme } = useAppStore();
+  const sshConnections = useAppStore((s) => s.sshConnections);
+  const addSSHConnection = useAppStore((s) => s.addSSHConnection);
+  const updateSSHConnection = useAppStore((s) => s.updateSSHConnection);
+  const removeSSHConnection = useAppStore((s) => s.removeSSHConnection);
+  const theme = useAppStore((s) => s.theme);
   const t = useT();
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -413,7 +417,7 @@ export function SSHPanel() {
     return () => {
       observer.disconnect();
     };
-  }, [activeSessionId, theme]);
+  }, [activeSessionId]);
 
   // Update terminal theme when it changes
   useEffect(() => {

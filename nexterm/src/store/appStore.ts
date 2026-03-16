@@ -595,21 +595,28 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   systemStats: null,
-  setSystemStats: (stats) => {
-    set({ systemStats: stats });
-    // Also record metrics history for sparklines
-    if (stats) {
-      get().addMetricsSnapshot(stats.cpu, stats.memoryPercent);
-    }
-  },
+  setSystemStats: (stats) => set((s) => {
+    if (!stats) return { systemStats: stats };
+    // Combine stats + metrics history in a single set() to avoid double re-render
+    const maxPoints = 60;
+    const cpuArr = s.metricsHistory.cpu.length >= maxPoints
+      ? [...s.metricsHistory.cpu.slice(1), stats.cpu]
+      : [...s.metricsHistory.cpu, stats.cpu];
+    const memArr = s.metricsHistory.memory.length >= maxPoints
+      ? [...s.metricsHistory.memory.slice(1), stats.memoryPercent]
+      : [...s.metricsHistory.memory, stats.memoryPercent];
+    return { systemStats: stats, metricsHistory: { cpu: cpuArr, memory: memArr } };
+  }),
 
   metricsHistory: { cpu: [], memory: [] },
   addMetricsSnapshot: (cpu, memory) => set((s) => {
     const maxPoints = 60;
-    const cpuArr = [...s.metricsHistory.cpu, cpu];
-    const memArr = [...s.metricsHistory.memory, memory];
-    if (cpuArr.length > maxPoints) cpuArr.splice(0, cpuArr.length - maxPoints);
-    if (memArr.length > maxPoints) memArr.splice(0, memArr.length - maxPoints);
+    const cpuArr = s.metricsHistory.cpu.length >= maxPoints
+      ? [...s.metricsHistory.cpu.slice(1), cpu]
+      : [...s.metricsHistory.cpu, cpu];
+    const memArr = s.metricsHistory.memory.length >= maxPoints
+      ? [...s.metricsHistory.memory.slice(1), memory]
+      : [...s.metricsHistory.memory, memory];
     return { metricsHistory: { cpu: cpuArr, memory: memArr } };
   }),
 
@@ -805,9 +812,12 @@ export const useAppStore = create<AppState>((set, get) => ({
   infraPollingInterval: 10,
   infraCompactMode: false,
   infraActiveMonitors: new Set<string>(),
-  addInfraActiveMonitor: (connectionId) => set((s) => ({
-    infraActiveMonitors: new Set([...s.infraActiveMonitors, connectionId]),
-  })),
+  addInfraActiveMonitor: (connectionId) => set((s) => {
+    if (s.infraActiveMonitors.has(connectionId)) return s;
+    const next = new Set(s.infraActiveMonitors);
+    next.add(connectionId);
+    return { infraActiveMonitors: next };
+  }),
   removeInfraActiveMonitor: (connectionId) => set((s) => {
     const next = new Set(s.infraActiveMonitors);
     next.delete(connectionId);
@@ -886,8 +896,8 @@ export const useAppStore = create<AppState>((set, get) => ({
 
     return {
       infraMonitors: { ...s.infraMonitors, [connectionId]: { metrics, status: "monitoring" } },
-      infraAlerts: allAlerts,
-      infraTimeline: newTimeline,
+      // Only update alerts/timeline if new alerts were actually generated
+      ...(alertEntries.length > 0 ? { infraAlerts: allAlerts, infraTimeline: newTimeline } : {}),
     };
   }),
 

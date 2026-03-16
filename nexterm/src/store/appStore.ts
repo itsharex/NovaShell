@@ -2,6 +2,7 @@ import { create } from "zustand";
 
 export type ThemeName = "dark" | "light" | "cyberpunk" | "retro" | "hacking";
 export type SidebarTab = "history" | "snippets" | "preview" | "plugins" | "stats" | "ssh" | "sftp" | "servermap" | "editor" | "debug" | "ai" | "docs" | "hacking" | "infra";
+export type AppLanguage = "en" | "es";
 
 // === Hacking Mode Types ===
 export type HackingLogLevel = "recon" | "exploit" | "alert" | "info" | "success" | "danger";
@@ -255,6 +256,7 @@ interface PersistedConfig {
   plugins?: PluginEntry[];
   history?: HistoryEntry[];
   debugPersist?: boolean;
+  language?: AppLanguage;
 }
 
 let configLoaded = false;
@@ -283,6 +285,7 @@ function scheduleSave() {
       plugins: s.plugins,
       history: s.history.slice(0, 200).map(({ screenshot, ...rest }) => rest), // persist last 200, strip screenshots
       debugPersist: s.debugPersist,
+      language: s.language,
     };
     import("@tauri-apps/api/core").then(({ invoke }) => {
       invoke("save_app_config", { data: JSON.stringify(config, null, 2) }).catch(() => {});
@@ -312,6 +315,9 @@ interface AppState {
   theme: ThemeName;
   themesVisited: string[];
   setTheme: (theme: ThemeName) => void;
+
+  language: AppLanguage;
+  setLanguage: (lang: AppLanguage) => void;
 
   tabs: Tab[];
   activeTabId: string;
@@ -486,6 +492,9 @@ export const useAppStore = create<AppState>((set, get) => ({
     scheduleSave();
     return { theme, themesVisited: visited };
   }),
+
+  language: "en" as AppLanguage,
+  setLanguage: (lang) => { set({ language: lang }); scheduleSave(); },
 
   tabs: [{ id: "tab-0", title: "Terminal 1", shellType: navigator.platform.startsWith("Win") ? "powershell.exe" : "/bin/bash", sessionId: null }],
   activeTabId: "tab-0",
@@ -951,6 +960,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (config.history) updates.history = config.history;
     // debugEnabled is intentionally NOT restored — always starts ON
     if (config.debugPersist !== undefined) updates.debugPersist = config.debugPersist;
+    if (config.language) updates.language = config.language;
     if (config.sshConnections && config.sshConnections.length > 0) {
       updates.sshConnections = config.sshConnections.map((c) => ({
         ...c,
@@ -1034,6 +1044,7 @@ if (typeof window !== "undefined") {
         plugins: s.plugins,
         history: s.history.slice(0, 200),
         debugPersist: s.debugPersist,
+        language: s.language,
       };
       // Use synchronous XHR-style approach via navigator.sendBeacon isn't available for Tauri
       // Fire and forget — the invoke will execute before the page unloads

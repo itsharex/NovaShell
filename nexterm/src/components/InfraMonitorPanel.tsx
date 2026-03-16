@@ -25,6 +25,7 @@ import {
   Search,
 } from "lucide-react";
 import { useAppStore } from "../store/appStore";
+import { useT } from "../i18n";
 import type { SSHConnection, ServerMetrics, InfraAlert, InfraTimelineEvent, DiskPartition, DiskCategory, DiskAnalysis, DiskLargestDir } from "../store/appStore";
 
 let tauriCore: { invoke: typeof import("@tauri-apps/api/core")["invoke"] } | null = null;
@@ -157,6 +158,7 @@ function ServerCard({
   onRemediation: (action: string) => void;
   compact: boolean;
 }) {
+  const t = useT();
   const [expanded, setExpanded] = useState(false);
   const [killPidInput, setKillPidInput] = useState("");
   const [killConfirm, setKillConfirm] = useState<{ pid: string; signal: "SIGTERM" | "SIGKILL" } | null>(null);
@@ -250,7 +252,7 @@ function ServerCard({
         </span>
         {m && (
           <span style={{ color: scoreColor, fontWeight: 700, fontSize: 12 }}>
-            Score: {score}
+            {t("infra.score")}: {score}
           </span>
         )}
         {!monitoring ? (
@@ -328,8 +330,8 @@ function ServerCard({
             <div style={{ marginBottom: 6 }}>
               <div style={{ fontSize: 10, color: "#ff7b72", fontWeight: 600, marginBottom: 4 }}>CPU High ({m.cpu.toFixed(1)}%)</div>
               <div style={{ display: "flex", gap: 4, flexWrap: "wrap", alignItems: "center" }}>
-                <ActionBtn label="Show Processes" icon={<Activity size={10} />} onClick={() => onRemediation("top")} />
-                <ActionBtn label="Open Terminal" icon={<Terminal size={10} />} onClick={() => onRemediation("terminal")} />
+                <ActionBtn label={t("infra.showProcesses")} icon={<Activity size={10} />} onClick={() => onRemediation("top")} />
+                <ActionBtn label={t("infra.openTerminal")} icon={<Terminal size={10} />} onClick={() => onRemediation("terminal")} />
                 {/* Kill PID — two-step: enter PID → confirm signal */}
                 {!killConfirm ? (
                   <div style={{ display: "flex", gap: 2, alignItems: "center" }}>
@@ -342,7 +344,7 @@ function ServerCard({
                       style={{ ...inputStyle, width: 52, padding: "2px 6px", fontSize: 10 }}
                     />
                     <ActionBtn
-                      label="Kill..."
+                      label={t("infra.killPid") + "..."}
                       icon={<Skull size={10} />}
                       danger
                       onClick={() => {
@@ -395,9 +397,9 @@ function ServerCard({
             <div style={{ marginBottom: 6 }}>
               <div style={{ fontSize: 10, color: "#d29922", fontWeight: 600, marginBottom: 4 }}>Memory High ({m.memPercent.toFixed(1)}%)</div>
               <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
-                <ActionBtn label="Memory Map" icon={<Activity size={10} />} onClick={() => onRemediation("memory")} />
-                <ActionBtn label="Cache/Buffers" icon={<Eraser size={10} />} onClick={() => onRemediation("drop_caches")} />
-                <ActionBtn label="Open Terminal" icon={<Terminal size={10} />} onClick={() => onRemediation("terminal")} />
+                <ActionBtn label={t("infra.memoryMap")} icon={<Activity size={10} />} onClick={() => onRemediation("memory")} />
+                <ActionBtn label={t("infra.cacheBuffers")} icon={<Eraser size={10} />} onClick={() => onRemediation("drop_caches")} />
+                <ActionBtn label={t("infra.openTerminal")} icon={<Terminal size={10} />} onClick={() => onRemediation("terminal")} />
               </div>
             </div>
           )}
@@ -407,10 +409,10 @@ function ServerCard({
             <div style={{ marginBottom: 6 }}>
               <div style={{ fontSize: 10, color: "#d29922", fontWeight: 600, marginBottom: 4 }}>Disk High ({m.diskPercent.toFixed(0)}%)</div>
               <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
-                <ActionBtn label="Analyze Disk" icon={<HardDrive size={10} />} onClick={() => onRemediation("analyze_disk")} />
-                <ActionBtn label="Scan Large Files" icon={<FolderOpen size={10} />} onClick={() => onRemediation("disk_scan")} />
-                <ActionBtn label="Scan Old Logs" icon={<Eraser size={10} />} onClick={() => onRemediation("log_scan")} />
-                <ActionBtn label="Open Terminal" icon={<Terminal size={10} />} onClick={() => onRemediation("terminal")} />
+                <ActionBtn label={t("infra.analyzeDisk")} icon={<HardDrive size={10} />} onClick={() => onRemediation("analyze_disk")} />
+                <ActionBtn label={t("infra.scanLargeFiles")} icon={<FolderOpen size={10} />} onClick={() => onRemediation("disk_scan")} />
+                <ActionBtn label={t("infra.scanOldLogs")} icon={<Eraser size={10} />} onClick={() => onRemediation("log_scan")} />
+                <ActionBtn label={t("infra.openTerminal")} icon={<Terminal size={10} />} onClick={() => onRemediation("terminal")} />
               </div>
             </div>
           )}
@@ -423,7 +425,7 @@ function ServerCard({
                 {m.failedServices.map((svc) => (
                   <ActionBtn key={svc} label={`Restart ${svc}`} onClick={() => onRemediation(`restart:${svc}`)} />
                 ))}
-                <ActionBtn label="Show All Failed" onClick={() => onRemediation("show_failed")} />
+                <ActionBtn label={t("infra.showAllFailed")} onClick={() => onRemediation("show_failed")} />
               </div>
             </div>
           )}
@@ -431,8 +433,8 @@ function ServerCard({
           {/* Always available actions */}
           {m.cpu < thresholds.cpuWarning && m.memPercent < thresholds.memWarning && m.diskPercent < thresholds.diskWarning && m.failedServices.length === 0 && (
             <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
-              <ActionBtn label="Show Processes" icon={<Activity size={10} />} onClick={() => onRemediation("top")} />
-              <ActionBtn label="Open Terminal" icon={<Terminal size={10} />} onClick={() => onRemediation("terminal")} />
+              <ActionBtn label={t("infra.showProcesses")} icon={<Activity size={10} />} onClick={() => onRemediation("top")} />
+              <ActionBtn label={t("infra.openTerminal")} icon={<Terminal size={10} />} onClick={() => onRemediation("terminal")} />
               <ActionBtn label="Disk Usage" icon={<FolderOpen size={10} />} onClick={() => onRemediation("disk")} />
             </div>
           )}
@@ -442,7 +444,7 @@ function ServerCard({
       {!m && monitoring && (
         <div style={{ padding: "12px", textAlign: "center", fontSize: 11, color: "var(--text-muted)" }}>
           <RefreshCw size={14} style={{ animation: "spin 1s linear infinite" }} />
-          <div style={{ marginTop: 4 }}>Collecting metrics...</div>
+          <div style={{ marginTop: 4 }}>{t("infra.collectingMetrics")}</div>
         </div>
       )}
     </div>
@@ -493,6 +495,7 @@ const btnStyle: React.CSSProperties = {
 type InfraView = "overview" | "timeline" | "alerts" | "disk" | "settings";
 
 export function InfraMonitorPanel() {
+  const t = useT();
   const sshConnections = useAppStore((s) => s.sshConnections);
   const infraMonitors = useAppStore((s) => s.infraMonitors);
   const infraAlerts = useAppStore((s) => s.infraAlerts);
@@ -719,7 +722,7 @@ export function InfraMonitorPanel() {
       {/* Header */}
       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
         <Activity size={14} style={{ color: "var(--accent-primary)" }} />
-        <span style={{ fontWeight: 600, fontSize: 13, flex: 1 }}>Infrastructure Monitor</span>
+        <span style={{ fontWeight: 600, fontSize: 13, flex: 1 }}>{t("infra.title")}</span>
         <button
           onClick={toggleInfraCompactMode}
           style={btnStyle}
@@ -752,14 +755,14 @@ export function InfraMonitorPanel() {
             {v === "timeline" ? (
               <span style={{ display: "inline-flex", alignItems: "center", gap: 3 }}>
                 <Clock size={10} />
-                Timeline
+                {t("infra.timeline")}
               </span>
             ) : v === "disk" ? (
               <span style={{ display: "inline-flex", alignItems: "center", gap: 3 }}>
                 <HardDrive size={10} />
-                Disk
+                {t("infra.disk")}
               </span>
-            ) : v}
+            ) : t(`infra.${v}`)}
             {v === "alerts" && unacknowledgedAlerts.length > 0 && (
               <span style={{
                 marginLeft: 3,
@@ -778,10 +781,10 @@ export function InfraMonitorPanel() {
 
       {/* Status line */}
       <div style={{ fontSize: 10, color: "var(--text-muted)" }}>
-        {activeMonitors.size} server{activeMonitors.size !== 1 ? "s" : ""} monitored | Polling: {infraPollingInterval}s
+        {activeMonitors.size} {t("infra.monitored")} | {t("infra.polling")}: {infraPollingInterval}s
         {correlatedAlerts && (
           <span style={{ color: "#ff7b72", fontWeight: 600, marginLeft: 8 }}>
-            Correlated events detected
+            {t("infra.correlatedEvents")}
           </span>
         )}
       </div>
@@ -892,6 +895,7 @@ function OverviewView({
   onStop: (connId: string) => void;
   onRemediation: (conn: SSHConnection, action: string) => void;
 }) {
+  const t = useT();
   const relevantConnections = allConnections.filter(
     (c) => c.status === "connected" || infraMonitors[c.id]
   );
@@ -900,8 +904,8 @@ function OverviewView({
     return (
       <div style={{ textAlign: "center", padding: 30, color: "var(--text-muted)", fontSize: 12 }}>
         <Activity size={28} style={{ marginBottom: 8, opacity: 0.3 }} />
-        <div>No servers connected.</div>
-        <div style={{ fontSize: 10, marginTop: 4 }}>Connect to SSH servers first, then start monitoring here.</div>
+        <div>{t("infra.noServers")}</div>
+        <div style={{ fontSize: 10, marginTop: 4 }}>{t("infra.connectFirst")}</div>
       </div>
     );
   }
@@ -939,12 +943,13 @@ function TimelineView({
   timeline: InfraTimelineEvent[];
   onClear: () => void;
 }) {
+  const t = useT();
   if (timeline.length === 0) {
     return (
       <div style={{ textAlign: "center", padding: 30, color: "var(--text-muted)", fontSize: 12 }}>
         <Clock size={28} style={{ marginBottom: 8, opacity: 0.3 }} />
-        <div>No events yet.</div>
-        <div style={{ fontSize: 10, marginTop: 4 }}>Start monitoring servers to see the timeline.</div>
+        <div>{t("infra.noEvents")}</div>
+        <div style={{ fontSize: 10, marginTop: 4 }}>{t("infra.startMonitoringTimeline")}</div>
       </div>
     );
   }
@@ -1035,11 +1040,12 @@ function AlertsView({
   alerts: InfraAlert[];
   onAcknowledge: (id: string) => void;
 }) {
+  const t = useT();
   if (alerts.length === 0) {
     return (
       <div style={{ textAlign: "center", padding: 30, color: "var(--text-muted)", fontSize: 12 }}>
         <CheckCircle size={28} style={{ marginBottom: 8, opacity: 0.3 }} />
-        <div>All clear. No alerts.</div>
+        <div>{t("infra.allClear")}</div>
       </div>
     );
   }
@@ -1313,6 +1319,7 @@ function DiskAnalyzerView({
   onSetAnalysis: (id: string, analysis: DiskAnalysis) => void;
   onTimelineEvent: (event: Omit<InfraTimelineEvent, "id" | "timestamp">) => void;
 }) {
+  const t = useT();
   const [scanning, setScanning] = useState<string | null>(null);
   const [selectedServer, setSelectedServer] = useState<string | null>(null);
   const [cleaningId, setCleaningId] = useState<string | null>(null);
@@ -1410,8 +1417,8 @@ function DiskAnalyzerView({
     return (
       <div style={{ textAlign: "center", padding: 30, color: "var(--text-muted)", fontSize: 12 }}>
         <HardDrive size={28} style={{ marginBottom: 8, opacity: 0.3 }} />
-        <div>No servers connected.</div>
-        <div style={{ fontSize: 10, marginTop: 4 }}>Connect to SSH servers to analyze disk usage.</div>
+        <div>{t("disk.noServersConnected")}</div>
+        <div style={{ fontSize: 10, marginTop: 4 }}>{t("disk.connectToAnalyze")}</div>
       </div>
     );
   }
@@ -1467,13 +1474,13 @@ function DiskAnalyzerView({
       {!activeAnalysis && !scanning && (
         <div style={{ textAlign: "center", padding: 20, color: "var(--text-muted)", fontSize: 11 }}>
           <Search size={20} style={{ marginBottom: 6, opacity: 0.3 }} />
-          <div>Click a server to scan disk usage</div>
+          <div>{t("disk.clickToScan")}</div>
         </div>
       )}
       {scanning && !activeAnalysis && (
         <div style={{ textAlign: "center", padding: 20, color: "var(--text-muted)", fontSize: 11 }}>
           <RefreshCw size={18} style={{ animation: "spin 1s linear infinite", marginBottom: 6 }} />
-          <div>Scanning disk usage...</div>
+          <div>{t("disk.scanningDisk")}</div>
         </div>
       )}
 
@@ -1486,7 +1493,7 @@ function DiskAnalyzerView({
               borderRadius: "var(--radius-md)", padding: "8px 12px",
             }}>
               <div style={{ fontSize: 10, fontWeight: 600, color: "#ff7b72", marginBottom: 4 }}>
-                <AlertTriangle size={10} style={{ verticalAlign: "middle" }} /> Disk Growth Detected
+                <AlertTriangle size={10} style={{ verticalAlign: "middle" }} /> {t("disk.growthDetected")}
               </div>
               {growthAlerts.map((g) => (
                 <div key={g.path} style={{ fontSize: 10, color: "var(--text-secondary)", display: "flex", justifyContent: "space-between" }}>
@@ -1505,10 +1512,10 @@ function DiskAnalyzerView({
           {/* Partitions */}
           <div style={{ background: "var(--bg-secondary)", borderRadius: "var(--radius-md)", border: "1px solid var(--border-subtle)", padding: 12 }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
-              <span style={{ fontWeight: 600, fontSize: 12 }}>Partitions</span>
+              <span style={{ fontWeight: 600, fontSize: 12 }}>{t("disk.partitions")}</span>
               <button onClick={() => runScan(activeConn)} disabled={scanning !== null}
                 style={{ ...btnStyle, fontSize: 10, opacity: scanning ? 0.5 : 1 }}>
-                <RefreshCw size={10} /><span style={{ marginLeft: 3 }}>Rescan</span>
+                <RefreshCw size={10} /><span style={{ marginLeft: 3 }}>{t("infra.rescan")}</span>
               </button>
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
@@ -1540,7 +1547,7 @@ function DiskAnalyzerView({
           {/* Largest Directories — treemap-style bars */}
           {activeAnalysis.largestDirs.length > 0 && (
             <div style={{ background: "var(--bg-secondary)", borderRadius: "var(--radius-md)", border: "1px solid var(--border-subtle)", padding: 12 }}>
-              <span style={{ fontWeight: 600, fontSize: 12 }}>Largest Directories</span>
+              <span style={{ fontWeight: 600, fontSize: 12 }}>{t("disk.largestDirs")}</span>
               <div style={{ marginTop: 6, display: "flex", flexDirection: "column", gap: 2 }}>
                 {activeAnalysis.largestDirs.slice(0, 10).map((d) => {
                   const maxSize = activeAnalysis.largestDirs[0]?.sizeMB || 1;
@@ -1573,7 +1580,7 @@ function DiskAnalyzerView({
                 })}
               </div>
               <div style={{ fontSize: 8, color: "var(--text-muted)", marginTop: 4 }}>
-                Click a directory to open terminal there
+                {t("disk.clickDirTerminal")}
               </div>
             </div>
           )}
@@ -1582,10 +1589,10 @@ function DiskAnalyzerView({
           {activeAnalysis.categories.length > 0 && (
             <div style={{ background: "var(--bg-secondary)", borderRadius: "var(--radius-md)", border: "1px solid var(--border-subtle)", padding: 12 }}>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
-                <span style={{ fontWeight: 600, fontSize: 12 }}>Cleanup</span>
+                <span style={{ fontWeight: 600, fontSize: 12 }}>{t("disk.cleanup")}</span>
                 {activeAnalysis.totalReclaimableMB > 0 && (
                   <span style={{ fontSize: 10, fontWeight: 600, color: "#3fb950", background: "rgba(63,185,80,0.1)", padding: "2px 8px", borderRadius: 8 }}>
-                    ~{formatSize(activeAnalysis.totalReclaimableMB)} reclaimable
+                    ~{formatSize(activeAnalysis.totalReclaimableMB)} {t("disk.reclaimable")}
                   </span>
                 )}
               </div>
@@ -1635,14 +1642,14 @@ function DiskAnalyzerView({
                           {/* Action buttons row */}
                           <div style={{ display: "flex", gap: 3, flexWrap: "wrap" }}>
                             {cat.previewCmd && (
-                              <ActionBtn label="Inspect" icon={<Search size={10} />}
+                              <ActionBtn label={t("disk.inspect")} icon={<Search size={10} />}
                                 onClick={() => runAction(activeConn, cat.previewCmd!, `Preview: ${cat.name}`)} />
                             )}
                             {(cat.actions || []).map((a, i) => (
                               <ActionBtn key={i} label={a.label} danger={a.danger}
                                 onClick={() => runAction(activeConn, a.cmd, a.label)} />
                             ))}
-                            <ActionBtn label="Terminal" icon={<Terminal size={10} />}
+                            <ActionBtn label={t("disk.terminal")} icon={<Terminal size={10} />}
                               onClick={() => {
                                 const path = cat.id === "logs" ? "/var/log" : cat.id === "tmp" ? "/tmp" : cat.id === "cache" ? "/var/cache" : "~";
                                 const executeSnippet = useAppStore.getState().executeSnippet;
@@ -1651,11 +1658,11 @@ function DiskAnalyzerView({
                             {cat.reclaimable && cat.cleanCmd && (
                               cleanConfirm?.catId === cat.id ? (
                                 <>
-                                  <ActionBtn label="Confirm Clean" danger onClick={() => runClean(activeConn, cat.id, cat.cleanCmd!, cat.name)} />
+                                  <ActionBtn label={t("disk.confirmClean")} danger onClick={() => runClean(activeConn, cat.id, cat.cleanCmd!, cat.name)} />
                                   <ActionBtn label="Cancel" onClick={() => setCleanConfirm(null)} />
                                 </>
                               ) : (
-                                <ActionBtn label="Clean" icon={<Eraser size={10} />}
+                                <ActionBtn label={t("disk.clean")} icon={<Eraser size={10} />}
                                   onClick={() => setCleanConfirm({ catId: cat.id, cmd: cat.cleanCmd!, name: cat.name })} />
                               )
                             )}
@@ -1684,7 +1691,7 @@ function DiskAnalyzerView({
                     </div>
                   </div>
                   <ActionBtn
-                    label={cleaningId === "__batch__" ? "Cleaning..." : "Clean Selected"}
+                    label={cleaningId === "__batch__" ? "Cleaning..." : t("disk.cleanSelected")}
                     danger
                     icon={cleaningId === "__batch__" ? <RefreshCw size={10} style={{ animation: "spin 1s linear infinite" }} /> : <Eraser size={10} />}
                     onClick={() => runCleanSelected(activeConn, activeAnalysis)}
@@ -1696,8 +1703,8 @@ function DiskAnalyzerView({
 
           {/* Scan timestamp */}
           <div style={{ fontSize: 9, color: "var(--text-muted)", textAlign: "right" }}>
-            Last scan: {new Date(activeAnalysis.timestamp).toLocaleTimeString()}
-            {prevScan && <span> | Previous: {new Date(prevScan.timestamp).toLocaleTimeString()}</span>}
+            {t("disk.lastScan")}: {new Date(activeAnalysis.timestamp).toLocaleTimeString()}
+            {prevScan && <span> | {t("disk.previous")}: {new Date(prevScan.timestamp).toLocaleTimeString()}</span>}
           </div>
         </>
       )}
@@ -1734,10 +1741,11 @@ function SettingsView({
   onSetThresholds: (t: any) => void;
   onSetInterval: (n: number) => void;
 }) {
+  const t = useT();
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12, fontSize: 12 }}>
       <div>
-        <div style={{ fontWeight: 600, marginBottom: 6 }}>Polling Interval</div>
+        <div style={{ fontWeight: 600, marginBottom: 6 }}>{t("infra.pollingInterval")}</div>
         <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
           {[5, 10, 15, 30, 60].map((n) => (
             <button
@@ -1760,7 +1768,7 @@ function SettingsView({
       </div>
 
       <div>
-        <div style={{ fontWeight: 600, marginBottom: 6 }}>Alert Thresholds</div>
+        <div style={{ fontWeight: 600, marginBottom: 6 }}>{t("infra.alertThresholds")}</div>
         {(["cpu", "mem", "disk"] as const).map((metric) => {
           const wKey = `${metric}Warning` as keyof typeof thresholds;
           const cKey = `${metric}Critical` as keyof typeof thresholds;

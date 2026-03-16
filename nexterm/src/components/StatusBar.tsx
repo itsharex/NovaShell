@@ -11,6 +11,7 @@ import {
   Server,
 } from "lucide-react";
 import { useAppStore } from "../store/appStore";
+import { useT } from "../i18n";
 
 export function StatusBar() {
   const activeTabId = useAppStore((s) => s.activeTabId);
@@ -27,6 +28,9 @@ export function StatusBar() {
   const navigationStacks = useAppStore((s) => s.navigationStacks);
   const sshConnections = useAppStore((s) => s.sshConnections);
   const infraAlertCount = useAppStore((s) => s.infraAlerts.filter((a) => !a.acknowledged).length);
+  const language = useAppStore((s) => s.language);
+  const setLanguage = useAppStore((s) => s.setLanguage);
+  const t = useT();
 
   const [time, setTime] = useState(new Date());
 
@@ -120,7 +124,7 @@ export function StatusBar() {
       <div className="statusbar-left">
         <div className="statusbar-item">
           <span className="statusbar-indicator" />
-          <span>Ready</span>
+          <span>{t("statusbar.ready")}</span>
         </div>
         <div className="statusbar-item">
           <Terminal size={12} />
@@ -187,7 +191,7 @@ export function StatusBar() {
               boxShadow: "0 0 6px #ff7b72",
               animation: "pulse 2s infinite",
             }} />
-            <span>INFRA {infraAlertCount}</span>
+            <span>{t("statusbar.infra")} {infraAlertCount}</span>
           </div>
         )}
         {hackingMode && (
@@ -197,7 +201,7 @@ export function StatusBar() {
               background: "#00ff41", display: "inline-block",
               boxShadow: "0 0 6px #00ff41",
             }} />
-            <span>HACKING MODE</span>
+            <span>{t("statusbar.hackingMode")}</span>
             {hackingAlertCount > 0 && (
               <span style={{
                 background: "#ff0040", color: "#fff", borderRadius: 8,
@@ -212,7 +216,7 @@ export function StatusBar() {
       <div className="statusbar-right">
         <button className="statusbar-btn" onClick={cycleSplit} title={`Split: ${splitMode}`}>
           <SplitIcon size={12} />
-          <span style={{ textTransform: "capitalize" }}>{splitMode === "none" ? "No Split" : `Split ${splitMode}`}</span>
+          <span style={{ textTransform: "capitalize" }}>{splitMode === "none" ? t("statusbar.noSplit") : splitMode === "vertical" ? t("statusbar.splitVertical") : t("statusbar.splitHorizontal")}</span>
         </button>
         <div className="statusbar-item">
           <Palette size={12} />
@@ -220,8 +224,16 @@ export function StatusBar() {
         </div>
         <div className="statusbar-item">
           <Zap size={12} />
-          <span>UTF-8</span>
+          <span>{t("statusbar.utf8")}</span>
         </div>
+        <button
+          className="statusbar-btn"
+          onClick={() => setLanguage(language === "en" ? "es" : "en")}
+          title={t("lang.language")}
+          style={{ fontWeight: 600, fontSize: 10, textTransform: "uppercase", letterSpacing: 0.5 }}
+        >
+          {language === "en" ? "EN" : "ES"}
+        </button>
         <div className="statusbar-item">
           <Clock size={12} />
           <span>{time.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>

@@ -7,6 +7,7 @@ import { StatusBar } from "./components/StatusBar";
 import { UpdateNotification } from "./components/UpdateNotification";
 import { useAppStore } from "./store/appStore";
 import { AlertToast } from "./components/hacking/AlertToast";
+import { I18nProvider } from "./i18n";
 
 const MemoizedTerminalPanel = memo(TerminalPanel);
 const MemoizedTabBar = memo(TabBar);
@@ -63,33 +64,35 @@ function App() {
   }, [sidebarWidth]);
 
   return (
-    <div className={`app-container theme-${theme} ${focusMode ? "focus-mode" : ""}`}>
-      <TitleBar />
-      <div className="app-body">
-        <div className="main-area">
-          <MemoizedTabBar />
-          <MemoizedTerminalPanel />
+    <I18nProvider>
+      <div className={`app-container theme-${theme} ${focusMode ? "focus-mode" : ""}`}>
+        <TitleBar />
+        <div className="app-body">
+          <div className="main-area">
+            <MemoizedTabBar />
+            <MemoizedTerminalPanel />
+          </div>
+          <div
+            ref={sidebarWrapperRef}
+            className={`sidebar-wrapper ${sidebarOpen ? "sidebar-open" : "sidebar-closed"}`}
+            style={{ width: sidebarOpen ? sidebarWidth : 0, position: "relative" }}
+          >
+            {sidebarOpen && (
+              <>
+                <div
+                  className="sidebar-resize-handle"
+                  onMouseDown={startResize}
+                />
+                <Sidebar />
+              </>
+            )}
+          </div>
         </div>
-        <div
-          ref={sidebarWrapperRef}
-          className={`sidebar-wrapper ${sidebarOpen ? "sidebar-open" : "sidebar-closed"}`}
-          style={{ width: sidebarOpen ? sidebarWidth : 0, position: "relative" }}
-        >
-          {sidebarOpen && (
-            <>
-              <div
-                className="sidebar-resize-handle"
-                onMouseDown={startResize}
-              />
-              <Sidebar />
-            </>
-          )}
-        </div>
+        <MemoizedStatusBar />
+        <UpdateNotification />
+        {hackingMode && <AlertToast />}
       </div>
-      <MemoizedStatusBar />
-      <UpdateNotification />
-      {hackingMode && <AlertToast />}
-    </div>
+    </I18nProvider>
   );
 }
 

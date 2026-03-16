@@ -44,28 +44,30 @@ import { SFTPPanel } from "./SFTPPanel";
 import { ServerMapPanel } from "./ServerMapPanel";
 import { EditorPanel } from "./EditorPanel";
 import { InfraMonitorPanel } from "./InfraMonitorPanel";
+import { useT } from "../i18n";
 
-const sidebarTabs: { id: SidebarTab; icon: typeof History; label: string }[] = [
-  { id: "history", icon: History, label: "History" },
-  { id: "snippets", icon: Code2, label: "Snippets" },
-  { id: "preview", icon: FolderTree, label: "Explorer" },
-  { id: "plugins", icon: Puzzle, label: "Plugins" },
-  { id: "stats", icon: BarChart3, label: "Stats" },
-  { id: "ssh", icon: Monitor, label: "SSH" },
-  { id: "sftp", icon: FolderSync, label: "SFTP Transfer" },
-  { id: "servermap", icon: Activity, label: "Server Map" },
-  { id: "editor", icon: Edit3, label: "Editor" },
-  { id: "debug", icon: Bug, label: "Debug" },
-  { id: "ai", icon: Sparkles, label: "AI Assistant" },
-  { id: "docs", icon: FileText, label: "Session Docs" },
-  { id: "hacking", icon: Shield, label: "Hacking Mode" },
-  { id: "infra", icon: Gauge, label: "Infra Monitor" },
+const sidebarTabs: { id: SidebarTab; icon: typeof History; labelKey: string }[] = [
+  { id: "history", icon: History, labelKey: "sidebar.history" },
+  { id: "snippets", icon: Code2, labelKey: "sidebar.snippets" },
+  { id: "preview", icon: FolderTree, labelKey: "sidebar.explorer" },
+  { id: "plugins", icon: Puzzle, labelKey: "sidebar.plugins" },
+  { id: "stats", icon: BarChart3, labelKey: "sidebar.stats" },
+  { id: "ssh", icon: Monitor, labelKey: "sidebar.ssh" },
+  { id: "sftp", icon: FolderSync, labelKey: "sidebar.sftpTransfer" },
+  { id: "servermap", icon: Activity, labelKey: "sidebar.serverMap" },
+  { id: "editor", icon: Edit3, labelKey: "sidebar.editor" },
+  { id: "debug", icon: Bug, labelKey: "sidebar.debug" },
+  { id: "ai", icon: Sparkles, labelKey: "sidebar.aiAssistant" },
+  { id: "docs", icon: FileText, labelKey: "sidebar.sessionDocs" },
+  { id: "hacking", icon: Shield, labelKey: "sidebar.hackingMode" },
+  { id: "infra", icon: Gauge, labelKey: "sidebar.infraMonitor" },
 ];
 
 export function Sidebar() {
   const sidebarTab = useAppStore((s) => s.sidebarTab);
   const setSidebarTab = useAppStore((s) => s.setSidebarTab);
   const hackingMode = useAppStore((s) => s.hackingMode);
+  const t = useT();
 
   return (
     <div className="sidebar">
@@ -75,8 +77,8 @@ export function Sidebar() {
             key={tab.id}
             className={`sidebar-tab-btn ${sidebarTab === tab.id ? "active" : ""}`}
             onClick={() => setSidebarTab(tab.id)}
-            title={tab.label}
-            aria-label={tab.label}
+            title={t(tab.labelKey)}
+            aria-label={t(tab.labelKey)}
             style={tab.id === "hacking" && hackingMode ? {
               color: "#00ff41",
               filter: "drop-shadow(0 0 4px rgba(0,255,65,0.6))",
@@ -114,6 +116,7 @@ function HistoryPanel() {
   const clearHistory = useAppStore((s) => s.clearHistory);
   const executeSnippet = useAppStore((s) => s.executeSnippet);
   const [filter, setFilter] = useState("");
+  const t = useT();
 
   const filtered = useMemo(() => {
     if (!filter) return history;
@@ -132,7 +135,7 @@ function HistoryPanel() {
           <Search size={12} style={{ position: "absolute", left: 8, top: 7, color: "var(--text-muted)" }} />
           <input
             type="text"
-            placeholder="Filter history..."
+            placeholder={t("history.filterPlaceholder")}
             value={filter}
             onChange={(e) => setFilter(e.target.value)}
             aria-label="Filter command history"
@@ -145,7 +148,7 @@ function HistoryPanel() {
           />
         </div>
         {history.length > 0 && (
-          <button onClick={clearHistory} style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", padding: 4 }} title="Clear history" aria-label="Clear history">
+          <button onClick={clearHistory} style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", padding: 4 }} title={t("history.clearHistory")} aria-label={t("history.clearHistory")}>
             <Trash2 size={14} />
           </button>
         )}
@@ -153,11 +156,11 @@ function HistoryPanel() {
 
       {filtered.length === 0 ? (
         <div style={{ textAlign: "center", color: "var(--text-muted)", padding: 20, fontSize: 12 }}>
-          {history.length === 0 ? "No commands yet. Start typing!" : "No matches found"}
+          {history.length === 0 ? t("history.noCommands") : t("history.noMatches")}
         </div>
       ) : (
         filtered.map((entry) => (
-          <div key={entry.id} className="history-item" onClick={() => handleRerun(entry.command)} title="Click to re-run">
+          <div key={entry.id} className="history-item" onClick={() => handleRerun(entry.command)} title={t("history.clickToRerun")}>
             <span className="history-command">{entry.command}</span>
             <span className="history-time">
               {new Date(entry.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}

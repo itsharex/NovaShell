@@ -12,6 +12,7 @@ import { parseTerminalOutput } from "./DebugPanel";
 import { scanForSecurityEvents } from "../utils/hackingAlerts";
 import type { SnippetRunMode } from "../store/appStore";
 import { isServerNavCommand, parseServerNavCommand, resolveServer, getConnectionCredentials, navigateToServer, listServers } from "../utils/serverNavigation";
+import { useT } from "../i18n";
 
 let tauriCore: { invoke: typeof import("@tauri-apps/api/core")["invoke"] } | null = null;
 let tauriEvent: { listen: typeof import("@tauri-apps/api/event")["listen"] } | null = null;

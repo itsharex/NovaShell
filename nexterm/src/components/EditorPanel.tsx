@@ -8,7 +8,7 @@ import {
 import { EditorView, keymap, lineNumbers, highlightActiveLineGutter, highlightActiveLine, drawSelection } from "@codemirror/view";
 import { EditorState, Compartment } from "@codemirror/state";
 import { defaultKeymap, indentWithTab, history, historyKeymap } from "@codemirror/commands";
-import { syntaxHighlighting, bracketMatching, foldGutter, indentOnInput, HighlightStyle, StreamLanguage } from "@codemirror/language";
+import { syntaxHighlighting, defaultHighlightStyle, bracketMatching, foldGutter, indentOnInput, HighlightStyle, StreamLanguage } from "@codemirror/language";
 import { searchKeymap, highlightSelectionMatches } from "@codemirror/search";
 import { autocompletion, closeBrackets } from "@codemirror/autocomplete";
 import { tags } from "@lezer/highlight";
@@ -566,7 +566,8 @@ export function EditorPanel() {
       extensions: [
         ...baseExtensions,
         langCompartment.current.of(getLang(ext, file.name)),
-        // Highlight style AFTER language so it colors the parsed tokens
+        // Default highlight as base, then VS Code Dark+ colors override
+        syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
         syntaxHighlighting(vscodeDarkHighlight),
         EditorView.updateListener.of((update) => {
           if (update.docChanged) {

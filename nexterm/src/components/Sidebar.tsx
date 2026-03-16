@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo, lazy, Suspense } from "react";
 import {
   History,
   Code2,
@@ -34,16 +34,24 @@ import {
 } from "lucide-react";
 import { useAppStore } from "../store/appStore";
 import type { SidebarTab } from "../store/appStore";
-import { SSHPanel } from "./SSHPanel";
 import { DebugPanel } from "./DebugPanel";
 import { AIPanel } from "./AIPanel";
 import { FileExplorer } from "./FileExplorer";
 import { SessionDocPanel } from "./SessionDocPanel";
-import { HackingPanel } from "./HackingPanel";
-import { SFTPPanel } from "./SFTPPanel";
-import { ServerMapPanel } from "./ServerMapPanel";
-import { EditorPanel } from "./EditorPanel";
-import { InfraMonitorPanel } from "./InfraMonitorPanel";
+
+// Lazy-load heavy panels — deferred until user selects the tab
+const SSHPanel = lazy(() => import("./SSHPanel").then(m => ({ default: m.SSHPanel })));
+const SFTPPanel = lazy(() => import("./SFTPPanel").then(m => ({ default: m.SFTPPanel })));
+const EditorPanel = lazy(() => import("./EditorPanel").then(m => ({ default: m.EditorPanel })));
+const InfraMonitorPanel = lazy(() => import("./InfraMonitorPanel").then(m => ({ default: m.InfraMonitorPanel })));
+const HackingPanel = lazy(() => import("./HackingPanel").then(m => ({ default: m.HackingPanel })));
+const ServerMapPanel = lazy(() => import("./ServerMapPanel").then(m => ({ default: m.ServerMapPanel })));
+
+const LazyFallback = () => (
+  <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: 120, color: "var(--text-muted)", fontSize: 12 }}>
+    Loading...
+  </div>
+);
 import { useT } from "../i18n";
 
 const sidebarTabs: { id: SidebarTab; icon: typeof History; labelKey: string }[] = [
@@ -94,15 +102,15 @@ export function Sidebar() {
         {sidebarTab === "preview" && <FileExplorer />}
         {sidebarTab === "plugins" && <PluginsPanel />}
         {sidebarTab === "stats" && <StatsPanel />}
-        {sidebarTab === "ssh" && <SSHPanel />}
-        {sidebarTab === "sftp" && <SFTPPanel />}
-        {sidebarTab === "servermap" && <ServerMapPanel />}
-        {sidebarTab === "editor" && <EditorPanel />}
+        {sidebarTab === "ssh" && <Suspense fallback={<LazyFallback />}><SSHPanel /></Suspense>}
+        {sidebarTab === "sftp" && <Suspense fallback={<LazyFallback />}><SFTPPanel /></Suspense>}
+        {sidebarTab === "servermap" && <Suspense fallback={<LazyFallback />}><ServerMapPanel /></Suspense>}
+        {sidebarTab === "editor" && <Suspense fallback={<LazyFallback />}><EditorPanel /></Suspense>}
         {sidebarTab === "debug" && <DebugPanel />}
         {sidebarTab === "ai" && <AIPanel />}
         {sidebarTab === "docs" && <SessionDocPanel />}
-        {sidebarTab === "hacking" && <HackingPanel />}
-        {sidebarTab === "infra" && <InfraMonitorPanel />}
+        {sidebarTab === "hacking" && <Suspense fallback={<LazyFallback />}><HackingPanel /></Suspense>}
+        {sidebarTab === "infra" && <Suspense fallback={<LazyFallback />}><InfraMonitorPanel /></Suspense>}
       </div>
       <div style={{ padding: "4px 12px", textAlign: "center", borderTop: "1px solid var(--border-color)", flexShrink: 0 }}>
         <span style={{ fontSize: 9, color: "var(--text-muted)", opacity: 0.5 }}>NovaShell v{APP_VERSION}</span>

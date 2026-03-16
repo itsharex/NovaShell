@@ -483,6 +483,7 @@ const DEFAULT_PLUGINS: PluginEntry[] = [
 ];
 
 let tabCounter = 0;
+let debugIdCounter = 0;
 
 export const useAppStore = create<AppState>((set, get) => ({
   theme: "dark",
@@ -539,12 +540,12 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   history: [],
   addHistory: (entry) => {
-    set((s) => ({
-      history: [
-        { ...entry, id: crypto.randomUUID(), timestamp: Date.now() },
-        ...s.history,
-      ].slice(0, 500),
-    }));
+    set((s) => {
+      const prev = s.history.length >= 500 ? s.history.slice(0, 499) : s.history;
+      return {
+        history: [{ ...entry, id: crypto.randomUUID(), timestamp: Date.now() }, ...prev],
+      };
+    });
     scheduleSave();
   },
   clearHistory: () => { set({ history: [] }); scheduleSave(); },
@@ -683,7 +684,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       if (!s.debugEnabled) return s;
       const newEntry: DebugLogEntry = {
         ...entry,
-        id: crypto.randomUUID(),
+        id: `dbg-${++debugIdCounter}`,
         timestamp: Date.now(),
       };
       const logs = [newEntry, ...s.debugLogs];

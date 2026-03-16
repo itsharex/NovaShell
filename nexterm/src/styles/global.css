@@ -177,14 +177,66 @@
   padding: 0;
 }
 
-/* CodeMirror isolation — prevent global styles from breaking editor layout.
-   The !important ensures this wins in all environments (dev + prod + WebView2). */
+/* CodeMirror isolation */
 .cm-editor .cm-scroller {
   display: flex !important;
   align-items: flex-start !important;
 }
 .cm-editor .cm-gutters {
   position: sticky !important;
+}
+
+/* VS Code Dark+ syntax colors — static CSS classes from classHighlighter.
+   This bypasses CodeMirror's dynamic StyleModule/adoptedStyleSheets which
+   breaks in WebView2 production builds. */
+.tok-keyword { color: #569cd6; }
+.tok-controlKeyword { color: #c586c0; }
+.tok-operatorKeyword { color: #c586c0; }
+.tok-moduleKeyword { color: #c586c0; }
+.tok-operator { color: #d4d4d4; }
+.tok-punctuation { color: #d4d4d4; }
+.tok-variableName { color: #9cdcfe; }
+.tok-propertyName { color: #9cdcfe; }
+.tok-typeName { color: #4ec9b0; }
+.tok-className { color: #4ec9b0; }
+.tok-namespace { color: #4ec9b0; }
+.tok-macroName { color: #dcdcaa; }
+.tok-labelName { color: #dcdcaa; }
+.tok-literal { color: #569cd6; }
+.tok-string { color: #ce9178; }
+.tok-string2 { color: #ce9178; }
+.tok-character { color: #ce9178; }
+.tok-number { color: #b5cea8; }
+.tok-integer { color: #b5cea8; }
+.tok-float { color: #b5cea8; }
+.tok-bool { color: #569cd6; }
+.tok-null { color: #569cd6; }
+.tok-atom { color: #569cd6; }
+.tok-regexp { color: #d16969; }
+.tok-escape { color: #d7ba7d; }
+.tok-comment { color: #6a9955; font-style: italic; }
+.tok-lineComment { color: #6a9955; font-style: italic; }
+.tok-blockComment { color: #6a9955; font-style: italic; }
+.tok-docComment { color: #6a9955; font-style: italic; }
+.tok-tagName { color: #569cd6; }
+.tok-attributeName { color: #9cdcfe; }
+.tok-attributeValue { color: #ce9178; }
+.tok-angleBracket { color: #808080; }
+.tok-self { color: #569cd6; }
+.tok-meta { color: #569cd6; }
+.tok-invalid { color: #f44747; }
+.tok-heading { color: #569cd6; font-weight: bold; }
+.tok-heading1 { color: #569cd6; font-weight: bold; font-size: 1.3em; }
+.tok-heading2 { color: #569cd6; font-weight: bold; font-size: 1.15em; }
+.tok-link { color: #3794ff; text-decoration: underline; }
+.tok-url { color: #3794ff; }
+.tok-emphasis { font-style: italic; }
+.tok-strong { font-weight: bold; }
+.tok-inserted { color: #b5cea8; }
+.tok-deleted { color: #ce9178; }
+.tok-changed { color: #569cd6; }
+
+.cm-editor .cm-gutters {
   left: 0 !important;
 }
 .cm-editor .cm-content,

@@ -8,11 +8,10 @@ import {
 import { EditorView, keymap, lineNumbers, highlightActiveLineGutter, highlightActiveLine, drawSelection } from "@codemirror/view";
 import { EditorState, Compartment } from "@codemirror/state";
 import { defaultKeymap, indentWithTab, history, historyKeymap } from "@codemirror/commands";
-import { syntaxHighlighting, defaultHighlightStyle, bracketMatching, foldGutter, indentOnInput, HighlightStyle, StreamLanguage } from "@codemirror/language";
+import { syntaxHighlighting, bracketMatching, foldGutter, indentOnInput, StreamLanguage } from "@codemirror/language";
 import { searchKeymap, highlightSelectionMatches } from "@codemirror/search";
 import { autocompletion, closeBrackets } from "@codemirror/autocomplete";
-import { tags } from "@lezer/highlight";
-import { oneDark } from "@codemirror/theme-one-dark";
+import { classHighlighter } from "@lezer/highlight";
 import { useT } from "../i18n";
 import { javascript } from "@codemirror/lang-javascript";
 import { python } from "@codemirror/lang-python";
@@ -227,42 +226,9 @@ function detectInfra(name: string, content: string): InfraType | null {
 }
 
 // ── Editor theme + lang ──
-
-// VS Code Dark+ exact highlight style
-const vscodeDarkHighlight = HighlightStyle.define([
-  { tag: tags.keyword, color: "#569cd6" },                          // blue: const, let, if, return, function
-  { tag: [tags.controlKeyword, tags.moduleKeyword, tags.operatorKeyword], color: "#c586c0" }, // purple: import, export, from, as
-  { tag: tags.variableName, color: "#9cdcfe" },                     // light blue: variable names
-  { tag: [tags.function(tags.variableName), tags.function(tags.propertyName)], color: "#dcdcaa" }, // yellow: function names
-  { tag: tags.propertyName, color: "#9cdcfe" },                     // light blue: property access
-  { tag: [tags.typeName, tags.className, tags.namespace], color: "#4ec9b0" }, // teal: types, classes
-  { tag: [tags.string, tags.special(tags.string)], color: "#ce9178" },    // orange: strings
-  { tag: tags.number, color: "#b5cea8" },                           // green: numbers
-  { tag: tags.bool, color: "#569cd6" },                             // blue: true, false
-  { tag: tags.null, color: "#569cd6" },                             // blue: null, undefined
-  { tag: tags.regexp, color: "#d16969" },                           // red: regex
-  { tag: tags.operator, color: "#d4d4d4" },                         // white: operators
-  { tag: tags.punctuation, color: "#d4d4d4" },                      // white: brackets, commas
-  { tag: [tags.comment, tags.lineComment, tags.blockComment], color: "#6a9955", fontStyle: "italic" }, // green italic: comments
-  { tag: tags.meta, color: "#569cd6" },                             // blue: decorators, pragma
-  { tag: [tags.attributeName], color: "#9cdcfe" },                   // light blue: HTML attributes
-  { tag: [tags.attributeValue], color: "#ce9178" },                  // orange: HTML attribute values
-  { tag: tags.tagName, color: "#569cd6" },                           // blue: HTML tags
-  { tag: tags.angleBracket, color: "#808080" },                      // gray: < >
-  { tag: tags.self, color: "#569cd6" },                              // blue: this, self
-  { tag: tags.definition(tags.variableName), color: "#9cdcfe" },        // light blue: definitions
-  { tag: tags.definition(tags.propertyName), color: "#dcdcaa" },        // yellow: method definitions
-  { tag: tags.heading, color: "#569cd6", fontWeight: "bold" },       // blue bold: markdown headings
-  { tag: tags.emphasis, fontStyle: "italic" },                       // italic: markdown *text*
-  { tag: tags.strong, fontWeight: "bold" },                          // bold: markdown **text**
-  { tag: tags.link, color: "#3794ff", textDecoration: "underline" }, // blue underline: links
-  { tag: tags.url, color: "#3794ff" },                               // blue: URLs
-  { tag: tags.atom, color: "#569cd6" },                              // blue: atoms
-  { tag: tags.labelName, color: "#dcdcaa" },                         // yellow: labels
-  { tag: tags.inserted, color: "#b5cea8" },                          // green: diff inserted
-  { tag: tags.deleted, color: "#ce9178" },                           // orange: diff deleted
-  { tag: tags.invalid, color: "#f44747" },                           // red: invalid
-]);
+// Syntax colors are defined as static CSS in global.css (.tok-keyword, .tok-string, etc.)
+// using classHighlighter which assigns fixed class names instead of CodeMirror's
+// dynamic StyleModule system that breaks in WebView2 production builds.
 
 const novaTheme = EditorView.theme({
   "&": {
@@ -553,8 +519,9 @@ export function EditorPanel() {
     bracketMatching(), closeBrackets(), autocompletion(), foldGutter(), indentOnInput(),
     history(), highlightSelectionMatches(),
     keymap.of([...defaultKeymap, ...historyKeymap, ...searchKeymap, indentWithTab]),
-    // oneDark provides a known-working theme+highlight combo, then novaTheme overrides appearance
-    oneDark,
+    // classHighlighter assigns fixed CSS classes (.tok-keyword, .tok-string, etc.)
+    // instead of CodeMirror's dynamic StyleModule which breaks in WebView2 production builds
+    syntaxHighlighting(classHighlighter),
     novaTheme,
     EditorView.lineWrapping,
   ], []);
@@ -570,8 +537,6 @@ export function EditorPanel() {
       extensions: [
         ...baseExtensions,
         langCompartment.current.of(getLang(ext, file.name)),
-        // VS Code Dark+ colors on top of oneDark base
-        syntaxHighlighting(vscodeDarkHighlight),
         EditorView.updateListener.of((update) => {
           if (update.docChanged) {
             contentRef.current = update.state.doc.toString();

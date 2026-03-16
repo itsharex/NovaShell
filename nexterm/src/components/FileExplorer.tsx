@@ -167,8 +167,10 @@ export function FileExplorer() {
       const store = useAppStore.getState();
       store.setPendingEditorFile({ path: file.path, name: file.name, content, source: "local" });
       store.setSidebarTab("editor");
-    } catch {}
-  }, []);
+    } catch (e) {
+      setPreviewFile({ name: file.name, content: `Cannot open: ${e}`, extension: file.extension });
+    }
+  }, [setPreviewFile]);
 
   const goUp = useCallback(() => {
     const parent = rootPath.replace(/[/\\][^/\\]*$/, "");

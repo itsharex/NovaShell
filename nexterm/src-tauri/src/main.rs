@@ -252,11 +252,24 @@ fn read_file_preview(path: String) -> Result<String, String> {
     let file_path = std::path::Path::new(&path);
     let metadata = std::fs::metadata(file_path).map_err(|e| e.to_string())?;
 
-    if metadata.len() > 1_048_576 {
-        return Err("File too large for preview (>1MB)".to_string());
+    if metadata.len() > 5_242_880 {
+        return Err("File too large for editor (>5MB)".to_string());
     }
 
-    std::fs::read_to_string(file_path).map_err(|e| e.to_string())
+    // Try UTF-8 first, then fallback to lossy conversion for non-UTF-8 encoded files
+    match std::fs::read_to_string(file_path) {
+        Ok(content) => Ok(content),
+        Err(_) => {
+            // Likely non-UTF-8 encoding or binary — try lossy conversion
+            let bytes = std::fs::read(file_path).map_err(|e| e.to_string())?;
+            // Check if file appears to be binary (has null bytes in first 8KB)
+            let check_len = std::cmp::min(bytes.len(), 8192);
+            if bytes[..check_len].contains(&0) {
+                return Err("Binary file — cannot display in editor".to_string());
+            }
+            Ok(String::from_utf8_lossy(&bytes).into_owned())
+        }
+    }
 }
 
 #[tauri::command]

@@ -821,7 +821,9 @@ function SFTPExplorer({
         sshPassword: conn?.sessionPassword || null, sshPrivateKey: conn?.privateKey || null,
       });
       store.setSidebarTab("editor");
-    } catch {}
+    } catch (e) {
+      setRemoteError(`Cannot open ${entry.name}: ${e}`);
+    }
   };
 
   // Toggle selection

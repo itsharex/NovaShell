@@ -20,6 +20,18 @@ import { css } from "@codemirror/lang-css";
 import { yaml } from "@codemirror/lang-yaml";
 import { markdown } from "@codemirror/lang-markdown";
 import { sql } from "@codemirror/lang-sql";
+import { rust } from "@codemirror/lang-rust";
+import { cpp } from "@codemirror/lang-cpp";
+import { java } from "@codemirror/lang-java";
+import { php } from "@codemirror/lang-php";
+import { xml } from "@codemirror/lang-xml";
+import { go } from "@codemirror/lang-go";
+import { sass } from "@codemirror/lang-sass";
+import { StreamLanguage } from "@codemirror/language";
+import { shell } from "@codemirror/legacy-modes/mode/shell";
+import { dockerFile } from "@codemirror/legacy-modes/mode/dockerfile";
+import { toml } from "@codemirror/legacy-modes/mode/toml";
+import { powerShell } from "@codemirror/legacy-modes/mode/powershell";
 import { useAppStore } from "../store/appStore";
 
 let invokeCache: typeof import("@tauri-apps/api/core").invoke | null = null;
@@ -216,40 +228,99 @@ function detectInfra(name: string, content: string): InfraType | null {
 // ── Editor theme + lang ──
 
 const novaTheme = EditorView.theme({
-  "&": { backgroundColor: "var(--bg-primary)", color: "#d4d4d4", fontSize: "13px", fontFamily: "'JetBrains Mono', 'Fira Code', 'Cascadia Code', 'Consolas', monospace", height: "100%" },
-  ".cm-scroller": { overflow: "auto", lineHeight: "1.6" },
-  ".cm-content": { caretColor: "#528bff", padding: "4px 0" },
-  ".cm-cursor": { borderLeftColor: "#528bff", borderLeftWidth: "2px" },
-  ".cm-activeLine": { backgroundColor: "rgba(255,255,255,0.04)" },
-  ".cm-activeLineGutter": { backgroundColor: "rgba(255,255,255,0.06)", color: "#c6c6c6" },
-  ".cm-gutters": { backgroundColor: "var(--bg-secondary)", color: "rgba(180,180,180,0.4)", border: "none", fontSize: "11px", minWidth: "40px" },
-  ".cm-lineNumbers .cm-gutterElement": { padding: "0 12px 0 8px", minWidth: "40px", textAlign: "right" },
-  ".cm-selectionBackground": { backgroundColor: "rgba(88,166,255,0.25) !important" },
-  "&.cm-focused .cm-selectionBackground": { backgroundColor: "rgba(88,166,255,0.35) !important" },
-  ".cm-matchingBracket": { backgroundColor: "rgba(88,166,255,0.3)", outline: "1px solid rgba(88,166,255,0.5)", color: "#fff !important" },
+  "&": {
+    backgroundColor: "#1e1e1e",
+    color: "#d4d4d4",
+    fontSize: "13px",
+    fontFamily: "'JetBrains Mono', 'Fira Code', 'Cascadia Code', 'Consolas', monospace",
+    height: "100%",
+  },
+  ".cm-scroller": { overflow: "auto", lineHeight: "1.65" },
+  ".cm-content": { caretColor: "#aeafad", padding: "4px 0" },
+  ".cm-cursor": { borderLeftColor: "#aeafad", borderLeftWidth: "2px" },
+  // Active line — subtle but visible like VS Code
+  ".cm-activeLine": { backgroundColor: "rgba(255,255,255,0.07)" },
+  ".cm-activeLineGutter": { backgroundColor: "rgba(255,255,255,0.07)", color: "#c6c6c6" },
+  // Gutter (line numbers) — VS Code style: subtle, separated
+  ".cm-gutters": {
+    backgroundColor: "#1e1e1e",
+    color: "#858585",
+    border: "none",
+    borderRight: "1px solid #2d2d2d",
+    fontSize: "12px",
+    minWidth: "48px",
+  },
+  ".cm-lineNumbers .cm-gutterElement": {
+    padding: "0 16px 0 12px",
+    minWidth: "48px",
+    textAlign: "right",
+  },
+  // Selection
+  ".cm-selectionBackground": { backgroundColor: "rgba(38,79,120,0.6) !important" },
+  "&.cm-focused .cm-selectionBackground": { backgroundColor: "rgba(38,79,120,0.8) !important" },
+  // Bracket matching — VS Code yellow outline
+  ".cm-matchingBracket": {
+    backgroundColor: "rgba(0,0,0,0)",
+    outline: "1px solid #888",
+    color: "inherit !important",
+  },
+  // Fold gutter
   ".cm-foldGutter": { padding: "0 4px" },
-  ".cm-foldGutter .cm-gutterElement": { color: "rgba(180,180,180,0.3)", transition: "color 0.15s" },
-  ".cm-foldGutter .cm-gutterElement:hover": { color: "rgba(180,180,180,0.8)" },
-  ".cm-tooltip": { backgroundColor: "var(--bg-tertiary)", border: "1px solid var(--border-subtle)", color: "var(--text-primary)", borderRadius: "4px", boxShadow: "0 2px 8px rgba(0,0,0,0.3)" },
-  ".cm-tooltip-autocomplete": { "& > ul > li[aria-selected]": { backgroundColor: "rgba(88,166,255,0.15)" } },
-  ".cm-searchMatch": { backgroundColor: "rgba(255,213,0,0.2)", outline: "1px solid rgba(255,213,0,0.4)" },
-  ".cm-searchMatch-selected": { backgroundColor: "rgba(255,213,0,0.4)" },
-  ".cm-selectionMatch": { backgroundColor: "rgba(88,166,255,0.12)" },
+  ".cm-foldGutter .cm-gutterElement": { color: "#858585", transition: "color 0.15s", cursor: "pointer" },
+  ".cm-foldGutter .cm-gutterElement:hover": { color: "#d4d4d4" },
+  // Tooltips & autocomplete — VS Code suggest widget style
+  ".cm-tooltip": {
+    backgroundColor: "#252526",
+    border: "1px solid #454545",
+    color: "#d4d4d4",
+    borderRadius: "3px",
+    boxShadow: "0 2px 8px rgba(0,0,0,0.5)",
+  },
+  ".cm-tooltip-autocomplete": {
+    "& > ul": { fontFamily: "'JetBrains Mono', 'Fira Code', monospace", fontSize: "12px" },
+    "& > ul > li[aria-selected]": { backgroundColor: "#04395e", color: "#fff" },
+  },
+  // Search match
+  ".cm-searchMatch": { backgroundColor: "rgba(234,92,0,0.33)", outline: "1px solid rgba(234,92,0,0.5)" },
+  ".cm-searchMatch-selected": { backgroundColor: "rgba(234,92,0,0.55)" },
+  ".cm-selectionMatch": { backgroundColor: "rgba(173,214,255,0.15)" },
+  // Indentation guides (subtle)
+  ".cm-line": { position: "relative" },
 }, { dark: true });
 
-function getLang(ext: string) {
-  switch (ext.toLowerCase()) {
+function getLang(ext: string, filename?: string) {
+  const lower = ext.toLowerCase();
+  const nameLower = (filename || "").toLowerCase();
+  switch (lower) {
     case "js": case "jsx": case "mjs": case "cjs": return javascript();
-    case "ts": case "tsx": return javascript({ typescript: true, jsx: ext.includes("x") });
-    case "py": return python();
-    case "json": return json();
-    case "html": case "htm": return html();
-    case "css": case "scss": case "less": return css();
+    case "ts": case "tsx": return javascript({ typescript: true, jsx: lower.includes("x") });
+    case "py": case "pyw": case "pyi": return python();
+    case "json": case "jsonc": case "json5": return json();
+    case "html": case "htm": case "svelte": case "vue": return html();
+    case "css": return css();
+    case "scss": case "sass": return sass();
+    case "less": return css();
     case "yml": case "yaml": return yaml();
-    case "md": case "mdx": return markdown();
-    case "sql": return sql();
-    default: return [];
+    case "md": case "mdx": case "markdown": return markdown();
+    case "sql": case "mysql": case "pgsql": return sql();
+    case "rs": return rust();
+    case "go": return go();
+    case "c": case "h": case "cpp": case "cxx": case "cc": case "hpp": case "hxx": return cpp();
+    case "java": case "kt": case "kts": case "groovy": case "gradle": return java();
+    case "php": case "phtml": return php();
+    case "xml": case "xsl": case "xslt": case "xsd": case "svg": case "plist": case "csproj": case "sln": return xml();
+    case "sh": case "bash": case "zsh": case "fish": case "ksh": return StreamLanguage.define(shell);
+    case "ps1": case "psm1": case "psd1": return StreamLanguage.define(powerShell);
+    case "toml": return StreamLanguage.define(toml);
+    default: break;
   }
+  // Match by filename patterns
+  if (nameLower === "dockerfile" || nameLower.startsWith("dockerfile.")) return StreamLanguage.define(dockerFile);
+  if (nameLower === "makefile" || nameLower === "gnumakefile") return StreamLanguage.define(shell);
+  if (nameLower === ".gitignore" || nameLower === ".dockerignore" || nameLower === ".env" || nameLower.endsWith(".env.local")) return StreamLanguage.define(shell);
+  if (nameLower.endsWith(".conf") || nameLower.endsWith(".cfg") || nameLower.endsWith(".ini")) return StreamLanguage.define(shell);
+  if (nameLower.endsWith(".log")) return StreamLanguage.define(shell);
+  return [];
 }
 
 const btnS: React.CSSProperties = {
@@ -357,7 +428,9 @@ export function EditorPanel() {
         setInfra(detectInfra(entry.name, content));
         stopLiveLogs();
         setBrowserOpen(false);
-      } catch {}
+      } catch (e) {
+        setActionOutput({ title: `Cannot open ${entry.name}`, content: String(e) });
+      }
     }
   }, [browserMode, loadBrowserDir]);
 
@@ -423,7 +496,9 @@ export function EditorPanel() {
       setShowAnalysis(false);
       setInfra(detectInfra(entry.name, content));
       stopLiveLogs();
-    } catch {}
+    } catch (e) {
+      setActionOutput({ title: `Cannot open ${entry.name}`, content: String(e) });
+    }
   }, []);
 
   const filterEntries = useCallback((files: FileEntry[], filter: string) =>
@@ -463,7 +538,7 @@ export function EditorPanel() {
       doc: file.content,
       extensions: [
         ...baseExtensions,
-        langCompartment.current.of(getLang(ext)),
+        langCompartment.current.of(getLang(ext, file.name)),
         EditorView.updateListener.of((update) => {
           if (update.docChanged) {
             contentRef.current = update.state.doc.toString();
@@ -801,12 +876,26 @@ export function EditorPanel() {
             {folderTreeVisible ? <PanelLeftClose size={11} /> : <PanelLeftOpen size={11} />}
           </button>
         )}
-        <FileText size={11} style={{ color: "var(--accent-primary)", flexShrink: 0 }} />
-        <span style={{ fontSize: 11, fontWeight: 600, color: "var(--text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 120 }}>
+        <FileCode size={11} style={{ color: "var(--accent-primary)", flexShrink: 0 }} />
+        <span style={{ fontSize: 11, fontWeight: 600, color: "var(--text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 140 }}>
           {file.name}{file.modified ? " *" : ""}
         </span>
+        {/* Path breadcrumb */}
+        {file.path && (() => {
+          const parts = file.path.replace(/\\/g, "/").split("/");
+          const dirParts = parts.slice(Math.max(0, parts.length - 4), -1);
+          return dirParts.length > 0 ? (
+            <span style={{ fontSize: 9, color: "var(--text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 160 }}>
+              {dirParts.join(" / ")}
+            </span>
+          ) : null;
+        })()}
         {file.source === "sftp" && <span style={{ fontSize: 7, padding: "1px 3px", borderRadius: 2, background: "rgba(36,150,237,0.15)", color: "#2496ED" }}>SFTP</span>}
         {infra && <span style={{ fontSize: 7, padding: "1px 3px", borderRadius: 2, background: "rgba(16,185,129,0.1)", color: "#10B981", display: "flex", alignItems: "center", gap: 2 }}>{infra.icon} {infra.label}</span>}
+        {/* Language indicator */}
+        <span style={{ fontSize: 7, padding: "1px 4px", borderRadius: 2, background: "var(--bg-active)", color: "var(--text-muted)" }}>
+          {(file.name.split(".").pop() || "txt").toUpperCase()}
+        </span>
         <div style={{ marginLeft: "auto", display: "flex", gap: 2, alignItems: "center" }}>
           <button onClick={() => openFileBrowser("file")} title="Open File"
             style={{ ...btnS, padding: "2px 5px", background: "var(--bg-active)", color: "var(--text-secondary)" }}>

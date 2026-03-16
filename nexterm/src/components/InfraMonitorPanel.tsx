@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, memo } from "react";
 import {
   Play,
   Square,
@@ -41,7 +41,7 @@ async function getTauriEvent() {
 }
 
 // ──── SVG Sparkline (zero dependencies) ────
-function SparklineSVG({
+const SparklineSVG = memo(function SparklineSVG({
   data,
   width = 120,
   height = 20,
@@ -67,10 +67,10 @@ function SparklineSVG({
       <polyline points={points} fill="none" stroke={color} strokeWidth="1.5" />
     </svg>
   );
-}
+});
 
 // ──── Metric Bar ────
-function MetricBar({
+const MetricBar = memo(function MetricBar({
   value,
   label,
   warningThreshold = 80,
@@ -115,7 +115,7 @@ function MetricBar({
       </span>
     </div>
   );
-}
+});
 
 // ──── Health Score ────
 function healthScore(m: ServerMetrics): number {
@@ -1261,7 +1261,7 @@ function parseDiskScanOutput(output: string, connectionId: string): DiskAnalysis
 }
 
 // ──── Donut Chart (SVG) ────
-function DonutChart({ usedPercent, size = 56, color }: { usedPercent: number; size?: number; color: string }) {
+const DonutChart = memo(function DonutChart({ usedPercent, size = 56, color }: { usedPercent: number; size?: number; color: string }) {
   const r = (size - 8) / 2;
   const circ = 2 * Math.PI * r;
   const offset = circ * (1 - usedPercent / 100);
@@ -1285,7 +1285,7 @@ function DonutChart({ usedPercent, size = 56, color }: { usedPercent: number; si
       </text>
     </svg>
   );
-}
+});
 
 function formatSize(mb: number): string {
   if (mb < 1) return `${(mb * 1024).toFixed(0)} KB`;

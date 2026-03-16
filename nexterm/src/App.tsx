@@ -78,14 +78,14 @@ function App() {
             style={{ width: sidebarOpen ? sidebarWidth : 0, position: "relative" }}
           >
             {sidebarOpen && (
-              <>
-                <div
-                  className="sidebar-resize-handle"
-                  onMouseDown={startResize}
-                />
-                <Sidebar />
-              </>
+              <div
+                className="sidebar-resize-handle"
+                onMouseDown={startResize}
+              />
             )}
+            <div style={{ display: sidebarOpen ? "flex" : "none", width: "100%", height: "100%", flexDirection: "column" }}>
+              <Sidebar />
+            </div>
           </div>
         </div>
         <MemoizedStatusBar />

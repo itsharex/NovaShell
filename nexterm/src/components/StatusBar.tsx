@@ -25,9 +25,13 @@ export function StatusBar() {
   const addTab = useAppStore((s) => s.addTab);
   const hackingMode = useAppStore((s) => s.hackingMode);
   const hackingAlertCount = useAppStore((s) => s.hackingAlerts.length);
-  const navigationStacks = useAppStore((s) => s.navigationStacks);
+  const activeNavStack = useAppStore((s) => s.navigationStacks[s.activeTabId]);
   const sshConnections = useAppStore((s) => s.sshConnections);
-  const infraAlertCount = useAppStore((s) => s.infraAlerts.filter((a) => !a.acknowledged).length);
+  const infraAlertCount = useAppStore((s) => {
+    let count = 0;
+    for (const a of s.infraAlerts) { if (!a.acknowledged) count++; }
+    return count;
+  });
   const language = useAppStore((s) => s.language);
   const setLanguage = useAppStore((s) => s.setLanguage);
   const t = useT();
@@ -137,7 +141,7 @@ export function StatusBar() {
           </div>
         )}
         {(() => {
-          const stack = navigationStacks[activeTabId];
+          const stack = activeNavStack;
           if (stack && stack.length > 0) {
             const current = stack[stack.length - 1];
             const conn = current.connectionId

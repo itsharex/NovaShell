@@ -39,10 +39,12 @@ import { AIPanel } from "./AIPanel";
 import { FileExplorer } from "./FileExplorer";
 import { SessionDocPanel } from "./SessionDocPanel";
 
-// Lazy-load heavy panels — deferred until user selects the tab
+// EditorPanel loaded directly — CodeMirror's CSS injection breaks with lazy loading in production builds
+import { EditorPanel } from "./EditorPanel";
+
+// Lazy-load other heavy panels — deferred until user selects the tab
 const SSHPanel = lazy(() => import("./SSHPanel").then(m => ({ default: m.SSHPanel })));
 const SFTPPanel = lazy(() => import("./SFTPPanel").then(m => ({ default: m.SFTPPanel })));
-const EditorPanel = lazy(() => import("./EditorPanel").then(m => ({ default: m.EditorPanel })));
 const InfraMonitorPanel = lazy(() => import("./InfraMonitorPanel").then(m => ({ default: m.InfraMonitorPanel })));
 const HackingPanel = lazy(() => import("./HackingPanel").then(m => ({ default: m.HackingPanel })));
 const ServerMapPanel = lazy(() => import("./ServerMapPanel").then(m => ({ default: m.ServerMapPanel })));
@@ -105,7 +107,7 @@ export function Sidebar() {
         {sidebarTab === "ssh" && <Suspense fallback={<LazyFallback />}><SSHPanel /></Suspense>}
         {sidebarTab === "sftp" && <Suspense fallback={<LazyFallback />}><SFTPPanel /></Suspense>}
         {sidebarTab === "servermap" && <Suspense fallback={<LazyFallback />}><ServerMapPanel /></Suspense>}
-        {sidebarTab === "editor" && <Suspense fallback={<LazyFallback />}><EditorPanel /></Suspense>}
+        {sidebarTab === "editor" && <EditorPanel />}
         {sidebarTab === "debug" && <DebugPanel />}
         {sidebarTab === "ai" && <AIPanel />}
         {sidebarTab === "docs" && <SessionDocPanel />}

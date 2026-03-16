@@ -1,6 +1,7 @@
 import { useState, useCallback } from "react";
 import { Brain, Send, Loader2, AlertTriangle, Copy, Trash2 } from "lucide-react";
 import { useAppStore } from "../../store/appStore";
+import { useT } from "../../i18n";
 
 let tauriCoreCache: typeof import("@tauri-apps/api/core") | null = null;
 async function getTauriCore() {
@@ -9,10 +10,10 @@ async function getTauriCore() {
 }
 
 const SECURITY_MODES = [
-  { id: "analyze", label: "Analyze", prompt: "You are a security analyst. Analyze the following security context and identify risks, vulnerabilities, and attack vectors. Be specific with your findings." },
-  { id: "escalation", label: "Priv Esc", prompt: "You are a penetration tester specializing in privilege escalation. Based on the context, suggest specific privilege escalation paths. Include the exact commands to run. Only suggest techniques for authorized pentesting." },
-  { id: "audit", label: "Audit", prompt: "You are a security auditor. Review the system configuration and services described. Generate a comprehensive security audit report with remediation steps. Prioritize findings by risk level." },
-  { id: "fix", label: "Harden", prompt: "You are a system hardening expert. Based on the security findings, generate specific shell commands and configuration changes to fix each vulnerability. Provide copy-paste ready commands." },
+  { id: "analyze", labelKey: "hacking.analyze", prompt: "You are a security analyst. Analyze the following security context and identify risks, vulnerabilities, and attack vectors. Be specific with your findings." },
+  { id: "escalation", labelKey: "hacking.privEsc", prompt: "You are a penetration tester specializing in privilege escalation. Based on the context, suggest specific privilege escalation paths. Include the exact commands to run. Only suggest techniques for authorized pentesting." },
+  { id: "audit", labelKey: "hacking.audit", prompt: "You are a security auditor. Review the system configuration and services described. Generate a comprehensive security audit report with remediation steps. Prioritize findings by risk level." },
+  { id: "fix", labelKey: "hacking.harden", prompt: "You are a system hardening expert. Based on the security findings, generate specific shell commands and configuration changes to fix each vulnerability. Provide copy-paste ready commands." },
 ] as const;
 
 interface ChatEntry {
@@ -23,6 +24,7 @@ interface ChatEntry {
 }
 
 export function AiSecView() {
+  const t = useT();
   const reconResults = useAppStore((s) => s.hackingReconResults);
   const addHackingLog = useAppStore((s) => s.addHackingLog);
 
@@ -117,7 +119,7 @@ export function AiSecView() {
 
       addHackingLog({
         level: "info",
-        message: `AI Security analysis (${mode.label}): ${userMsg.slice(0, 60)}...`,
+        message: `AI Security analysis (${t(mode.labelKey)}): ${userMsg.slice(0, 60)}...`,
         source: "AI Security",
         category: "ai",
       });
@@ -135,10 +137,10 @@ export function AiSecView() {
   }, [query, selectedModel, loading, secMode, addHackingLog, reconResults]);
 
   const quickActions = [
-    { label: "Analyze my environment", query: "Analyze this environment for security risks. What are the main attack vectors?" },
-    { label: "Suggest hardening", query: "What specific hardening steps should I take for this system? Provide exact commands." },
-    { label: "Check open ports", query: "Analyze the open ports. Which ones are most dangerous and why? How should I secure them?" },
-    { label: "Privilege escalation paths", query: "Based on this environment, what privilege escalation techniques might work? List specific methods." },
+    { labelKey: "hacking.analyzeEnv", query: "Analyze this environment for security risks. What are the main attack vectors?" },
+    { labelKey: "hacking.suggestHardening", query: "What specific hardening steps should I take for this system? Provide exact commands." },
+    { labelKey: "hacking.checkPorts", query: "Analyze the open ports. Which ones are most dangerous and why? How should I secure them?" },
+    { labelKey: "hacking.privEscPaths", query: "Based on this environment, what privilege escalation techniques might work? List specific methods." },
   ];
 
   return (
@@ -147,11 +149,11 @@ export function AiSecView() {
       <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
         <Brain size={12} style={{ color: "var(--accent-purple)" }} />
         <span style={{ fontSize: 11, fontWeight: 700, color: "var(--text-primary)", flex: 1 }}>
-          AI Security Copilot
+          {t("hacking.aiSecCopilot")}
         </span>
         {ollamaOnline === false && (
           <span style={{ fontSize: 9, color: "#ff0040", display: "flex", alignItems: "center", gap: 3 }}>
-            <AlertTriangle size={9} /> Ollama offline
+            <AlertTriangle size={9} /> {t("hacking.ollamaOffline")}
           </span>
         )}
       </div>
@@ -172,7 +174,7 @@ export function AiSecView() {
             outline: "none",
           }}
         >
-          {models.length === 0 && <option value="">No models</option>}
+          {models.length === 0 && <option value="">{t("hacking.noModels")}</option>}
           {models.map((m) => (
             <option key={m.name} value={m.name}>{m.name}</option>
           ))}
@@ -198,7 +200,7 @@ export function AiSecView() {
               cursor: "pointer",
             }}
           >
-            {mode.label}
+            {t(mode.labelKey)}
           </button>
         ))}
       </div>
@@ -206,7 +208,7 @@ export function AiSecView() {
       {/* Quick actions */}
       {chat.length === 0 && (
         <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-          <span style={{ fontSize: 9, color: "var(--text-muted)" }}>Quick actions:</span>
+          <span style={{ fontSize: 9, color: "var(--text-muted)" }}>{t("hacking.quickActions")}</span>
           {quickActions.map((action, i) => (
             <button
               key={i}
@@ -222,7 +224,7 @@ export function AiSecView() {
                 textAlign: "left",
               }}
             >
-              {action.label}
+              {t(action.labelKey)}
             </button>
           ))}
         </div>
@@ -249,7 +251,7 @@ export function AiSecView() {
               alignItems: "center",
               gap: 4,
             }}>
-              {entry.role === "user" ? "You" : "AI Security"}
+              {entry.role === "user" ? t("common.you") : t("hacking.aiSecurity")}
               {entry.role === "assistant" && (
                 <button
                   onClick={() => navigator.clipboard.writeText(entry.content).catch(() => {})}
@@ -274,7 +276,7 @@ export function AiSecView() {
         {loading && (
           <div style={{ display: "flex", alignItems: "center", gap: 6, padding: 8, color: "var(--text-muted)", fontSize: 10 }}>
             <Loader2 size={12} className="animate-pulse" />
-            <span>Analyzing...</span>
+            <span>{t("common.analyzing")}</span>
           </div>
         )}
       </div>
@@ -294,7 +296,7 @@ export function AiSecView() {
               display: "flex",
               alignItems: "center",
             }}
-            title="Clear chat"
+            title={t("ai.clearChat")}
           >
             <Trash2 size={10} />
           </button>
@@ -304,7 +306,7 @@ export function AiSecView() {
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && sendMessage()}
-          placeholder={`Ask about security (${SECURITY_MODES.find((m) => m.id === secMode)?.label} mode)...`}
+          placeholder={t("hacking.askSecurity")}
           style={{
             flex: 1,
             background: "var(--bg-primary)",

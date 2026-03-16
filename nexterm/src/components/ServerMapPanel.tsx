@@ -6,6 +6,7 @@ import {
   Lock, AlertTriangle, Copy, Terminal, Eye, Settings, Zap,
 } from "lucide-react";
 import { useAppStore } from "../store/appStore";
+import { useT } from "../i18n";
 import type { SSHConnection } from "../store/appStore";
 
 let tauriCoreCache: typeof import("@tauri-apps/api/core") | null = null;
@@ -176,6 +177,7 @@ function ProgressBar({ value, color, label }: { value: number; color: string; la
 // ── Main Component ──
 
 export function ServerMapPanel() {
+  const t = useT();
   const { sshConnections } = useAppStore();
   const [scans, setScans] = useState<Map<string, ServerScan>>(new Map());
   const [scanning, setScanning] = useState<string | null>(null);
@@ -340,10 +342,10 @@ export function ServerMapPanel() {
       return;
     }
     setActionLoading(true);
-    setActionOutput({ title: action.label, content: "Loading..." });
+    setActionOutput({ title: action.label, content: t("common.loading") });
     try {
       const creds = await getCredentials(conn);
-      if (!creds) { setActionOutput({ title: "Error", content: "No credentials" }); setActionLoading(false); return; }
+      if (!creds) { setActionOutput({ title: "Error", content: t("servermap.noCredentials") }); setActionLoading(false); return; }
       const { invoke } = await getTauriCore();
       const output = await invoke<string>("ssh_exec", {
         host: conn.host, port: conn.port, username: conn.username,
@@ -376,17 +378,17 @@ export function ServerMapPanel() {
     <div style={{ display: "flex", flexDirection: "column", height: "100%", gap: 0 }}>
       {/* Header */}
       <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6, flexShrink: 0 }}>
-        <span className="sidebar-section-title" style={{ margin: 0 }}>Server Map</span>
+        <span className="sidebar-section-title" style={{ margin: 0 }}>{t("servermap.title")}</span>
         <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 4 }}>
-          {copiedCmd && <span style={{ fontSize: 8, color: "var(--accent-secondary)" }}>Copied!</span>}
+          {copiedCmd && <span style={{ fontSize: 8, color: "var(--accent-secondary)" }}>{t("servermap.copied")}</span>}
           {autoRefresh && <span style={{ fontSize: 8, color: "var(--accent-primary)" }}>{countdown}s</span>}
           <button onClick={() => setMultiExecOpen(!multiExecOpen)} title="Multi-server command"
             style={{ ...btnS, padding: "3px 8px", background: multiExecOpen ? "var(--accent-secondary)" : "var(--bg-tertiary)", color: multiExecOpen ? "white" : "var(--text-secondary)" }}>
-            <Terminal size={9} /> Multi
+            <Terminal size={9} /> {t("servermap.multi")}
           </button>
           <button onClick={() => setAutoRefresh(!autoRefresh)} title={autoRefresh ? "Stop auto-refresh" : "Auto-refresh 30s"}
             style={{ ...btnS, padding: "3px 8px", background: autoRefresh ? "var(--accent-primary)" : "var(--bg-tertiary)", color: autoRefresh ? "white" : "var(--text-secondary)" }}>
-            <Timer size={9} /> {autoRefresh ? "Live" : "Auto"}
+            <Timer size={9} /> {autoRefresh ? t("servermap.live") : t("servermap.auto")}
           </button>
         </div>
       </div>
@@ -400,7 +402,7 @@ export function ServerMapPanel() {
               <Terminal size={10} style={{ position: "absolute", left: 6, top: 7, color: "var(--text-muted)" }} />
               <input value={multiCmd} onChange={(e) => setMultiCmd(e.target.value)}
                 onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) runMultiExec(); }}
-                placeholder="Command to run on all selected servers..."
+                placeholder={t("servermap.multiServerCmd")}
                 style={{ width: "100%", padding: "5px 8px 5px 22px", background: "var(--bg-secondary)", border: "1px solid var(--border-subtle)", borderRadius: "var(--radius-sm)", color: "var(--text-primary)", fontSize: 11, fontFamily: "'JetBrains Mono', monospace", outline: "none" }}
               />
             </div>
@@ -426,10 +428,10 @@ export function ServerMapPanel() {
           {/* Server selection */}
           <div style={{ display: "flex", gap: 3, flexWrap: "wrap", alignItems: "center" }}>
             <button onClick={selectAllServers} style={{ ...btnS, padding: "2px 6px", background: "var(--bg-active)", color: "var(--accent-primary)", fontSize: 8 }}>
-              Select all
+              {t("common.selectAll")}
             </button>
             <button onClick={() => setMultiSelected(new Set())} style={{ ...btnS, padding: "2px 6px", background: "var(--bg-active)", color: "var(--text-muted)", fontSize: 8 }}>
-              None
+              {t("common.none")}
             </button>
             <span style={{ width: 1, height: 12, background: "var(--border-subtle)" }} />
             {sshConnections.map((conn) => (
@@ -473,7 +475,7 @@ export function ServerMapPanel() {
         <div style={{ position: "relative", marginBottom: 6, flexShrink: 0 }}>
           <Search size={10} style={{ position: "absolute", left: 8, top: 7, color: "var(--text-muted)" }} />
           <input value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search services across all servers..."
+            placeholder={t("servermap.searchServices")}
             style={{ width: "100%", padding: "5px 8px 5px 24px", background: "var(--bg-tertiary)", border: "1px solid var(--border-subtle)", borderRadius: "var(--radius-sm)", color: "var(--text-primary)", fontSize: 10, fontFamily: "inherit", outline: "none" }}
           />
         </div>
@@ -482,15 +484,15 @@ export function ServerMapPanel() {
       {/* Password prompt */}
       {passwordPrompt && (
         <div style={{ padding: 10, background: "var(--bg-tertiary)", borderRadius: "var(--radius-sm)", marginBottom: 8, border: "1px solid var(--accent-primary)", flexShrink: 0 }}>
-          <div style={{ fontSize: 11, color: "var(--text-secondary)", marginBottom: 6 }}>Password for {passwordPrompt.conn.name}</div>
+          <div style={{ fontSize: 11, color: "var(--text-secondary)", marginBottom: 6 }}>{t("servermap.passwordFor", { name: passwordPrompt.conn.name })}</div>
           <input type="password" value={passwordPrompt.password}
             onChange={(e) => setPasswordPrompt({ ...passwordPrompt, password: e.target.value })}
             onKeyDown={(e) => { if (e.key === "Enter") submitPassword(); }}
-            placeholder="Password..." autoFocus
+            placeholder={t("servermap.passwordPlaceholder")} autoFocus
             style={{ width: "100%", padding: "6px 8px", background: "var(--bg-secondary)", border: "1px solid var(--border-subtle)", borderRadius: "var(--radius-sm)", color: "var(--text-primary)", fontSize: 11, fontFamily: "inherit", outline: "none", marginBottom: 6 }}
           />
           <div style={{ display: "flex", gap: 6 }}>
-            <button onClick={submitPassword} style={{ ...btnS, flex: 1, justifyContent: "center", background: "var(--accent-primary)", color: "white", padding: "6px" }}><Play size={10} /> Scan</button>
+            <button onClick={submitPassword} style={{ ...btnS, flex: 1, justifyContent: "center", background: "var(--accent-primary)", color: "white", padding: "6px" }}><Play size={10} /> {t("common.scan")}</button>
             <button onClick={() => setPasswordPrompt(null)} style={{ ...btnS, background: "var(--bg-active)", color: "var(--text-secondary)", padding: "6px" }}><X size={10} /></button>
           </div>
         </div>
@@ -505,7 +507,7 @@ export function ServerMapPanel() {
               {actionOutput.title}
             </span>
             <button onClick={() => navigator.clipboard.writeText(actionOutput.content)} title="Copy output" style={{ ...btnS, background: "var(--bg-tertiary)", color: "var(--text-secondary)", padding: "4px 8px" }}><Copy size={10} /></button>
-            <button onClick={() => setActionOutput(null)} style={{ ...btnS, background: "var(--bg-tertiary)", color: "var(--text-secondary)", padding: "4px 8px" }}><X size={12} /> Close</button>
+            <button onClick={() => setActionOutput(null)} style={{ ...btnS, background: "var(--bg-tertiary)", color: "var(--text-secondary)", padding: "4px 8px" }}><X size={12} /> {t("common.close")}</button>
           </div>
           <pre style={{
             flex: 1, overflow: "auto", background: "var(--bg-primary)", borderRadius: "var(--radius-sm)",
@@ -522,8 +524,8 @@ export function ServerMapPanel() {
         {sshConnections.length === 0 ? (
           <div style={{ textAlign: "center", color: "var(--text-muted)", padding: 24, fontSize: 12 }}>
             <Server size={24} style={{ margin: "0 auto 8px", opacity: 0.5 }} />
-            <div>No SSH connections configured.</div>
-            <div style={{ marginTop: 4 }}>Add connections in the SSH tab first.</div>
+            <div>{t("servermap.noSshConnections")}</div>
+            <div style={{ marginTop: 4 }}>{t("servermap.addFirst")}</div>
           </div>
         ) : (
           sshConnections.map((conn) => {
@@ -560,7 +562,7 @@ export function ServerMapPanel() {
                   </div>
                   {scan && (isExpanded ? <ChevronDown size={12} style={{ color: "var(--text-muted)" }} /> : <ChevronRight size={12} style={{ color: "var(--text-muted)" }} />)}
                   {scan && (
-                    <button onClick={(e) => { e.stopPropagation(); runSecurityAudit(conn); }} title="Security Audit"
+                    <button onClick={(e) => { e.stopPropagation(); runSecurityAudit(conn); }} title={t("servermap.securityAudit")}
                       style={{ ...btnS, background: "rgba(139,92,246,0.1)", color: "#8B5CF6", padding: "4px 6px" }}>
                       <Lock size={9} />
                     </button>
@@ -568,7 +570,7 @@ export function ServerMapPanel() {
                   <button onClick={(e) => { e.stopPropagation(); scanServer(conn); }} disabled={isScanning}
                     style={{ ...btnS, background: "var(--accent-primary)", color: "white", opacity: isScanning ? 0.5 : 1, padding: "4px 8px" }}>
                     {isScanning ? <Loader2 size={10} style={{ animation: "spin 1s linear infinite" }} /> : <RefreshCw size={10} />}
-                    {scan ? "Rescan" : "Scan"}
+                    {scan ? t("infra.rescan") : t("common.scan")}
                   </button>
                 </div>
 
@@ -602,7 +604,7 @@ export function ServerMapPanel() {
                       const svcs = groups[kind];
                       if (svcs.length === 0) return null;
                       const isGroupOpen = expandedGroups.has(kind);
-                      const label = kind === "docker" ? "Docker Containers" : kind === "systemd" ? "Systemd Services" : "Listening Ports";
+                      const label = kind === "docker" ? t("servermap.dockerContainers") : kind === "systemd" ? t("servermap.systemdServices") : t("servermap.listeningPorts");
                       const runningCount = svcs.filter((s) => statusColor(s.status) === "#10B981").length;
                       const badgeColor = kind === "docker" ? "#2496ED" : kind === "systemd" ? "#10B981" : "#8B5CF6";
 
@@ -671,7 +673,7 @@ export function ServerMapPanel() {
                     {/* Top processes */}
                     {scan.quickStats && scan.quickStats.top_processes.length > 0 && (
                       <div style={{ marginTop: 3, padding: "3px 6px", fontSize: 8, color: "var(--text-muted)" }}>
-                        <span style={{ fontWeight: 600 }}>Top processes: </span>
+                        <span style={{ fontWeight: 600 }}>{t("servermap.topProcesses")} </span>
                         {scan.quickStats.top_processes.map((p, i) => <span key={i} style={{ fontFamily: "'JetBrains Mono', monospace" }}>{p}{i < scan.quickStats!.top_processes.length - 1 ? " | " : ""}</span>)}
                       </div>
                     )}

@@ -22,6 +22,7 @@ import {
   FolderOpen,
 } from "lucide-react";
 import { useAppStore } from "../store/appStore";
+import { useT } from "../i18n";
 import type { SSHConnection } from "../store/appStore";
 
 let tauriCoreCache: typeof import("@tauri-apps/api/core") | null = null;
@@ -103,6 +104,7 @@ function formatPermissions(perm: number): string {
 
 export function SFTPPanel() {
   const { sshConnections } = useAppStore();
+  const t = useT();
   const [view, setView] = useState<SFTPView>("connections");
   const [sftpSessionId, setSftpSessionId] = useState<string | null>(null);
   const [connectedName, setConnectedName] = useState("");
@@ -195,7 +197,7 @@ export function SFTPPanel() {
   return (
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-        <span className="sidebar-section-title" style={{ margin: 0 }}>SFTP File Transfer</span>
+        <span className="sidebar-section-title" style={{ margin: 0 }}>{t("sftp.title")}</span>
       </div>
 
       {connectError && (
@@ -220,10 +222,10 @@ export function SFTPPanel() {
           marginBottom: 12,
           border: "1px solid var(--accent-primary)",
         }}>
-          <label style={labelStyle}>Password for {passwordPrompt.conn.name}</label>
+          <label style={labelStyle}>{t("sftp.passwordFor", { name: passwordPrompt.conn.name })}</label>
           <input
             type="password"
-            placeholder="Password..."
+            placeholder={t("sftp.passwordPlaceholder")}
             value={passwordPrompt.password}
             onChange={(e) => setPasswordPrompt({ ...passwordPrompt, password: e.target.value })}
             onKeyDown={(e) => { if (e.key === "Enter") submitPassword(); }}
@@ -240,15 +242,15 @@ export function SFTPPanel() {
                   onChange={() => setPasswordPrompt({ ...passwordPrompt, saveMode: mode })}
                   style={{ accentColor: "var(--accent-primary)" }}
                 />
-                {mode === "keychain" && <><ShieldCheck size={11} /> Save in system keychain</>}
-                {mode === "session" && <><Shield size={11} /> Remember for this session</>}
-                {mode === "none" && <>Don't save password</>}
+                {mode === "keychain" && <><ShieldCheck size={11} /> {t("ssh.saveKeychainPersistent")}</>}
+                {mode === "session" && <><Shield size={11} /> {t("ssh.rememberSessionOnly")}</>}
+                {mode === "none" && <>{t("ssh.dontSavePassword")}</>}
               </label>
             ))}
           </div>
           <div style={{ display: "flex", gap: 6 }}>
             <button onClick={submitPassword} style={{ ...btnStyle, flex: 1, justifyContent: "center", background: "var(--accent-primary)", color: "white" }}>
-              <Play size={12} /> Connect
+              <Play size={12} /> {t("common.connect")}
             </button>
             <button onClick={() => setPasswordPrompt(null)} style={{ ...btnStyle, background: "var(--bg-active)", color: "var(--text-secondary)" }}>
               <X size={12} />
@@ -260,15 +262,15 @@ export function SFTPPanel() {
       {connecting && (
         <div style={{ textAlign: "center", padding: 20, color: "var(--text-muted)", fontSize: 12 }}>
           <Loader2 size={20} style={{ margin: "0 auto 8px", animation: "spin 1s linear infinite" }} />
-          Connecting via SFTP...
+          {t("sftp.connectingSftp")}
         </div>
       )}
 
       {sshConnections.length === 0 ? (
         <div style={{ textAlign: "center", color: "var(--text-muted)", padding: 24, fontSize: 12 }}>
           <Server size={24} style={{ margin: "0 auto 8px", opacity: 0.5 }} />
-          <div>No SSH connections configured.</div>
-          <div style={{ marginTop: 4 }}>Add connections in the SSH tab first.</div>
+          <div>{t("sftp.noSshConnections")}</div>
+          <div style={{ marginTop: 4 }}>{t("sftp.addConnectionsFirst")}</div>
         </div>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
@@ -321,6 +323,8 @@ function SFTPExplorer({
   connName: string;
   onDisconnect: () => void;
 }) {
+  const t = useT();
+
   // Remote panel
   const [remotePath, setRemotePath] = useState("");
   const [remoteFiles, setRemoteFiles] = useState<RemoteFileEntry[]>([]);
@@ -868,7 +872,7 @@ function SFTPExplorer({
       {/* Header */}
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8, flexShrink: 0 }}>
         <button onClick={onDisconnect} style={{ ...btnStyle, background: "var(--bg-tertiary)", color: "var(--text-secondary)", padding: "4px 8px" }}>
-          <X size={12} /> Back
+          <X size={12} /> {t("common.back")}
         </button>
         <span style={{ fontSize: 12, fontWeight: 600, color: "var(--text-primary)", flex: 1 }}>{connName}</span>
         <span style={{ width: 8, height: 8, borderRadius: "50%", background: "var(--accent-secondary)" }} />
@@ -883,7 +887,7 @@ function SFTPExplorer({
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
             <span style={{ fontSize: 12, fontWeight: 600, color: "var(--text-primary)", flex: 1 }}>{previewName}</span>
             <button onClick={() => setPreviewContent(null)} style={{ ...btnStyle, background: "var(--bg-tertiary)", color: "var(--text-secondary)", padding: "4px 8px" }}>
-              <X size={12} /> Close
+              <X size={12} /> {t("common.close")}
             </button>
           </div>
           <pre style={{
@@ -920,7 +924,7 @@ function SFTPExplorer({
                 onClick={() => openLocalFolder(transferStatus.replace("DOWNLOADED:", ""))}
                 style={{ ...btnStyle, background: "var(--accent-secondary)", color: "white", padding: "2px 8px", fontSize: 9, flexShrink: 0 }}
               >
-                <FolderOpen size={10} /> Open
+                <FolderOpen size={10} /> {t("common.open")}
               </button>
               <button onClick={() => setTransferStatus(null)} style={{ background: "none", border: "none", color: "currentColor", cursor: "pointer", padding: 1 }}>
                 <X size={10} />
@@ -947,7 +951,7 @@ function SFTPExplorer({
           }}
           title="Upload selected local files to remote"
         >
-          <Upload size={12} /> Upload ({selectedLocal.size})
+          <Upload size={12} /> {t("common.upload")} ({selectedLocal.size})
         </button>
         <button
           onClick={handleDownload}
@@ -960,7 +964,7 @@ function SFTPExplorer({
           }}
           title="Download selected remote files to local"
         >
-          <Download size={12} /> Download ({selectedRemote.size})
+          <Download size={12} /> {t("common.download")} ({selectedRemote.size})
         </button>
       </div>
 
@@ -982,7 +986,7 @@ function SFTPExplorer({
             display: "flex", alignItems: "center", gap: 4, padding: "4px 6px",
             background: "var(--bg-tertiary)", borderBottom: "1px solid var(--border-subtle)", flexShrink: 0,
           }}>
-            <span style={{ fontSize: 9, fontWeight: 700, color: "var(--accent-primary)", textTransform: "uppercase", letterSpacing: 1 }}>Local</span>
+            <span style={{ fontSize: 9, fontWeight: 700, color: "var(--accent-primary)", textTransform: "uppercase", letterSpacing: 1 }}>{t("sftp.local")}</span>
             <button onClick={localGoUp} style={{ background: "none", border: "none", color: "var(--text-secondary)", cursor: "pointer", padding: 2 }} title="Go up">
               <ArrowLeft size={11} />
             </button>

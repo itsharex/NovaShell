@@ -16,6 +16,7 @@ import {
 import { useAppStore } from "../store/appStore";
 import type { AiMode } from "../store/appStore";
 import { escapeHtml, renderMarkdown } from "../utils/markdown";
+import { useT } from "../i18n";
 
 const MODEL = "deepseek-coder:6.7b";
 
@@ -38,6 +39,7 @@ async function getInvoke() {
 type OllamaStatus = "checking" | "online" | "offline" | "pulling";
 
 export function AIPanel() {
+  const t = useT();
   const aiMessages = useAppStore((s) => s.aiMessages);
   const aiLoading = useAppStore((s) => s.aiLoading);
   const addAiMessage = useAppStore((s) => s.addAiMessage);
@@ -62,7 +64,7 @@ export function AIPanel() {
       const hasModel = models.some((m) => m.name.startsWith("deepseek-coder"));
       if (!hasModel) {
         setOllamaStatus("pulling");
-        setPullProgress("Downloading DeepSeek Coder...");
+        setPullProgress(t("ai.downloadingModel"));
         try {
           await invoke("ai_pull_model", { model: MODEL });
           setOllamaStatus("online");
@@ -130,10 +132,10 @@ export function AIPanel() {
   };
 
   const modes: { id: AiMode; icon: typeof Terminal; label: string; placeholder: string }[] = [
-    { id: "chat", icon: MessageSquare, label: "Chat", placeholder: "Ask anything about terminal/shell..." },
-    { id: "explain", icon: Terminal, label: "Explain", placeholder: "Paste a command to explain..." },
-    { id: "generate", icon: Wand2, label: "Generate", placeholder: "Describe what you want to do..." },
-    { id: "fix", icon: AlertTriangle, label: "Fix", placeholder: "Paste the error output..." },
+    { id: "chat", icon: MessageSquare, label: t("ai.chat"), placeholder: t("ai.askAnything") },
+    { id: "explain", icon: Terminal, label: t("ai.explain"), placeholder: t("ai.pasteCommand") },
+    { id: "generate", icon: Wand2, label: t("ai.generate"), placeholder: t("ai.describeTask") },
+    { id: "fix", icon: AlertTriangle, label: t("ai.fix"), placeholder: t("ai.errorPlaceholder") },
   ];
 
   const currentMode = modes.find((m) => m.id === mode)!;
@@ -144,13 +146,13 @@ export function AIPanel() {
       <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 16, height: "100%" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <Sparkles size={18} style={{ color: "var(--accent-purple)" }} />
-          <span style={{ fontWeight: 600, fontSize: 14, color: "var(--text-primary)" }}>AI Assistant</span>
+          <span style={{ fontWeight: 600, fontSize: 14, color: "var(--text-primary)" }}>{t("ai.title")}</span>
         </div>
 
         {ollamaStatus === "checking" && (
           <div style={{ display: "flex", alignItems: "center", gap: 8, padding: 16, color: "var(--text-muted)" }}>
             <Loader2 size={16} style={{ animation: "spin 1s linear infinite" }} />
-            <span style={{ fontSize: 12 }}>Checking Ollama...</span>
+            <span style={{ fontSize: 12 }}>{t("ai.checkingOllama")}</span>
           </div>
         )}
 
@@ -160,7 +162,7 @@ export function AIPanel() {
               <Loader2 size={14} style={{ color: "var(--accent-warning)", animation: "spin 1s linear infinite" }} />
               <span style={{ fontSize: 12, color: "var(--accent-warning)", fontWeight: 500 }}>{pullProgress}</span>
             </div>
-            <div style={{ fontSize: 11, color: "var(--text-muted)" }}>This may take a few minutes on first run...</div>
+            <div style={{ fontSize: 11, color: "var(--text-muted)" }}>{t("ai.firstRunNote")}</div>
           </div>
         )}
 
@@ -168,15 +170,15 @@ export function AIPanel() {
           <div style={{ background: "var(--bg-tertiary)", borderRadius: "var(--radius-md)", padding: 16, border: "1px solid var(--border-color)" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
               <AlertCircle size={14} style={{ color: "var(--accent-error)" }} />
-              <span style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)" }}>Ollama Required</span>
+              <span style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)" }}>{t("ai.ollamaRequired")}</span>
             </div>
             <p style={{ fontSize: 12, color: "var(--text-secondary)", lineHeight: 1.6, margin: "0 0 12px" }}>
-              NovaShell AI uses <strong>Ollama</strong> to run AI models locally — free, private, no API keys needed.
+              {t("ai.ollamaDescription")}
             </p>
             <div style={{ fontSize: 12, color: "var(--text-secondary)", lineHeight: 1.8, marginBottom: 12 }}>
-              <div>1. Install Ollama (one-time setup)</div>
-              <div>2. Start Ollama</div>
-              <div>3. Models download automatically</div>
+              <div>{t("ai.step1")}</div>
+              <div>{t("ai.step2")}</div>
+              <div>{t("ai.step3")}</div>
             </div>
             <div style={{ display: "flex", gap: 8 }}>
               <button
@@ -190,13 +192,13 @@ export function AIPanel() {
                   border: "none", borderRadius: "var(--radius-sm)", cursor: "pointer", fontSize: 12, fontWeight: 500,
                 }}
               >
-                Download Ollama
+                {t("ai.downloadOllama")}
               </button>
               <button onClick={checkOllama} style={{
                 padding: "8px 12px", background: "var(--bg-active)", color: "var(--text-secondary)",
                 border: "1px solid var(--border-color)", borderRadius: "var(--radius-sm)", cursor: "pointer", fontSize: 12,
               }}>
-                Retry
+                {t("common.retry")}
               </button>
             </div>
             {pullProgress && (
@@ -216,11 +218,11 @@ export function AIPanel() {
         borderBottom: "1px solid var(--border-color)", flexShrink: 0,
       }}>
         <Sparkles size={16} style={{ color: "var(--accent-purple)" }} />
-        <span style={{ fontWeight: 600, fontSize: 13, color: "var(--text-primary)", flex: 1 }}>AI Assistant</span>
-        <span title="Ollama connected" style={{ display: "flex" }}>
+        <span style={{ fontWeight: 600, fontSize: 13, color: "var(--text-primary)", flex: 1 }}>{t("ai.title")}</span>
+        <span title={t("ai.ollamaConnected")} style={{ display: "flex" }}>
           <CheckCircle size={12} style={{ color: "var(--accent-secondary)" }} />
         </span>
-        <button onClick={clearAiMessages} title="Clear chat" style={iconBtnStyle}>
+        <button onClick={clearAiMessages} title={t("ai.clearChat")} style={iconBtnStyle}>
           <Trash2 size={12} />
         </button>
       </div>
@@ -295,7 +297,7 @@ export function AIPanel() {
                     }}
                   >
                     {copiedId === msg.id ? <Check size={10} /> : <Copy size={10} />}
-                    {copiedId === msg.id ? "Copied!" : "Copy command"}
+                    {copiedId === msg.id ? t("common.copied") : t("ai.copyCommand")}
                   </button>
                 )}
               </div>
@@ -310,7 +312,7 @@ export function AIPanel() {
             border: "1px solid var(--border-subtle)", alignSelf: "flex-start",
           }}>
             <Loader2 size={14} style={{ color: "var(--accent-purple)", animation: "spin 1s linear infinite" }} />
-            <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>Thinking...</span>
+            <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>{t("common.thinking")}</span>
           </div>
         )}
       </div>
@@ -352,7 +354,7 @@ export function AIPanel() {
           </button>
         </div>
         <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 4, textAlign: "center" }}>
-          DeepSeek Coder — Local via Ollama
+          {t("ai.localViaOllama")}
         </div>
       </div>
     </div>

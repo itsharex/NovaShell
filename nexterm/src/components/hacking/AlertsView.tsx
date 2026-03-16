@@ -1,7 +1,9 @@
 import { AlertTriangle, Shield, Info, Trash2, X } from "lucide-react";
 import { useAppStore } from "../../store/appStore";
+import { useT } from "../../i18n";
 
 export function AlertsView() {
+  const t = useT();
   const alerts = useAppStore((s) => s.hackingAlerts);
   const clearHackingAlerts = useAppStore((s) => s.clearHackingAlerts);
   const dismissHackingAlert = useAppStore((s) => s.dismissHackingAlert);
@@ -31,7 +33,7 @@ export function AlertsView() {
       <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
         <AlertTriangle size={12} style={{ color: "#ffaf00" }} />
         <span style={{ fontSize: 11, fontWeight: 700, color: "var(--text-primary)", flex: 1 }}>
-          Security Alerts
+          {t("hacking.securityAlerts")}
         </span>
         {alerts.length > 0 && (
           <button
@@ -50,7 +52,7 @@ export function AlertsView() {
             }}
           >
             <Trash2 size={9} />
-            Clear All
+            {t("hacking.clearAll")}
           </button>
         )}
       </div>
@@ -72,7 +74,7 @@ export function AlertsView() {
               fontWeight: 700,
             }}>
               <AlertTriangle size={9} />
-              {criticalCount} Critical
+              {criticalCount} {t("servermap.critical")}
             </div>
           )}
           {warningCount > 0 && (
@@ -89,7 +91,7 @@ export function AlertsView() {
               fontWeight: 700,
             }}>
               <Shield size={9} />
-              {warningCount} Warning
+              {warningCount} {t("common.warning")}
             </div>
           )}
         </div>
@@ -170,8 +172,8 @@ export function AlertsView() {
             color: "var(--text-muted)",
           }}>
             <Shield size={28} style={{ opacity: 0.3 }} />
-            <span style={{ fontSize: 11 }}>No alerts</span>
-            <span style={{ fontSize: 9, opacity: 0.6 }}>Run a recon scan to detect security issues</span>
+            <span style={{ fontSize: 11 }}>{t("hacking.noAlerts")}</span>
+            <span style={{ fontSize: 9, opacity: 0.6 }}>{t("hacking.runReconHint")}</span>
           </div>
         )}
       </div>

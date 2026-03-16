@@ -12,6 +12,7 @@ import {
   X,
 } from "lucide-react";
 import { useAppStore } from "../store/appStore";
+import { useT } from "../i18n";
 
 interface FileEntry {
   name: string;
@@ -62,6 +63,7 @@ function formatSize(bytes: number): string {
 export function FileExplorer() {
   const previewFile = useAppStore((s) => s.previewFile);
   const setPreviewFile = useAppStore((s) => s.setPreviewFile);
+  const t = useT();
 
   const [rootPath, setRootPath] = useState<string>("");
   const [rootFiles, setRootFiles] = useState<FileEntry[]>([]);
@@ -156,7 +158,7 @@ export function FileExplorer() {
       store.setPendingEditorFile({ path: file.path, name: file.name, content, source: "local" });
       store.setSidebarTab("editor");
     } catch {
-      setPreviewFile({ name: file.name, content: "(Cannot preview this file)", extension: file.extension });
+      setPreviewFile({ name: file.name, content: t("editor.cannotOpen", { name: "" }), extension: file.extension });
     }
   }, [setPreviewFile]);
 
@@ -201,7 +203,7 @@ export function FileExplorer() {
             store.setPendingEditorFile({ path: rootPath + (rootPath.includes("\\") ? "\\" : "/") + previewFile.name, name: previewFile.name, content: previewFile.content, source: "local" });
             store.setSidebarTab("editor");
           }} style={{ padding: "2px 6px", border: "none", borderRadius: "var(--radius-sm)", background: "var(--accent-primary)", color: "white", fontSize: 9, cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", gap: 3 }}>
-            Edit
+            {t("common.edit")}
           </button>
           <span style={{ fontSize: 10, color: getExtColor(previewFile.extension), fontWeight: 600, textTransform: "uppercase" }}>
             {previewFile.extension}
@@ -235,10 +237,10 @@ export function FileExplorer() {
         display: "flex", alignItems: "center", gap: 6, padding: "10px 12px",
         borderBottom: "1px solid var(--border-color)", flexShrink: 0,
       }}>
-        <span style={{ fontWeight: 600, fontSize: 13, color: "var(--text-primary)", flex: 1 }}>Explorer</span>
-        <button onClick={goHome} title="Home" style={iconBtnStyle}><Home size={13} /></button>
-        <button onClick={goUp} title="Go up" style={iconBtnStyle}><ArrowLeft size={13} /></button>
-        <button onClick={() => loadDirectory(rootPath)} title="Refresh" style={iconBtnStyle}><RefreshCw size={13} /></button>
+        <span style={{ fontWeight: 600, fontSize: 13, color: "var(--text-primary)", flex: 1 }}>{t("explorer.title")}</span>
+        <button onClick={goHome} title={t("common.home")} style={iconBtnStyle}><Home size={13} /></button>
+        <button onClick={goUp} title={t("explorer.goUp")} style={iconBtnStyle}><ArrowLeft size={13} /></button>
+        <button onClick={() => loadDirectory(rootPath)} title={t("common.refresh")} style={iconBtnStyle}><RefreshCw size={13} /></button>
       </div>
 
       {/* Breadcrumb */}
@@ -290,7 +292,7 @@ export function FileExplorer() {
             type="text"
             value={filter}
             onChange={(e) => setFilter(e.target.value)}
-            placeholder="Filter files..."
+            placeholder={t("editor.filterPlaceholder")}
             style={{
               width: "100%", padding: "5px 28px 5px 28px", background: "var(--bg-tertiary)",
               border: "1px solid var(--border-subtle)", borderRadius: "var(--radius-sm)",
@@ -308,7 +310,7 @@ export function FileExplorer() {
       {/* Tree */}
       <div style={{ flex: 1, overflowY: "auto", padding: "4px 0" }}>
         {rootLoading ? (
-          <div style={{ textAlign: "center", color: "var(--text-muted)", padding: 20, fontSize: 12 }}>Loading...</div>
+          <div style={{ textAlign: "center", color: "var(--text-muted)", padding: 20, fontSize: 12 }}>{t("common.loading")}</div>
         ) : (
           filterFiles(rootFiles).map((file) => (
             <TreeItem

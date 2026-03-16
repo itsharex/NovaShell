@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { Search, ChevronUp, ChevronDown, X } from "lucide-react";
+import { useT } from "../i18n";
 
 interface SearchOverlayProps {
   onSearch: (query: string, direction: "next" | "prev") => void;
@@ -9,6 +10,7 @@ interface SearchOverlayProps {
 export function SearchOverlay({ onSearch, onClose }: SearchOverlayProps) {
   const [query, setQuery] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
+  const t = useT();
 
   useEffect(() => {
     inputRef.current?.focus();
@@ -37,7 +39,7 @@ export function SearchOverlay({ onSearch, onClose }: SearchOverlayProps) {
         ref={inputRef}
         type="text"
         className="search-input"
-        placeholder="Search in terminal..."
+        placeholder={t("searchOverlay.placeholder")}
         value={query}
         onChange={(e) => {
           setQuery(e.target.value);
@@ -54,8 +56,8 @@ export function SearchOverlay({ onSearch, onClose }: SearchOverlayProps) {
           padding: 2,
           display: "flex",
         }}
-        title="Previous (Shift+Enter)"
-        aria-label="Previous match"
+        title={t("searchOverlay.previous")}
+        aria-label={t("searchOverlay.previousMatch")}
       >
         <ChevronUp size={14} />
       </button>
@@ -69,8 +71,8 @@ export function SearchOverlay({ onSearch, onClose }: SearchOverlayProps) {
           padding: 2,
           display: "flex",
         }}
-        title="Next (Enter)"
-        aria-label="Next match"
+        title={t("searchOverlay.next")}
+        aria-label={t("searchOverlay.nextMatch")}
       >
         <ChevronDown size={14} />
       </button>
@@ -84,8 +86,8 @@ export function SearchOverlay({ onSearch, onClose }: SearchOverlayProps) {
           padding: 2,
           display: "flex",
         }}
-        title="Close (Esc)"
-        aria-label="Close search"
+        title={t("searchOverlay.closeEsc")}
+        aria-label={t("searchOverlay.closeSearch")}
       >
         <X size={14} />
       </button>

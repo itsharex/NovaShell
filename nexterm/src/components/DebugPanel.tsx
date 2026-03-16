@@ -26,6 +26,7 @@ import { useAppStore } from "../store/appStore";
 import type { LogLevel, DebugLogEntry } from "../store/appStore";
 import { AnalysisView } from "./debug/AnalysisView";
 import { PerformanceView } from "./debug/PerformanceView";
+import { useT } from "../i18n";
 
 let tauriCoreCache: typeof import("@tauri-apps/api/core") | null = null;
 async function getTauriCore() {
@@ -50,6 +51,7 @@ const levelConfig: Record<LogLevel, { color: string; bg: string; icon: typeof Al
 };
 
 export function DebugPanel() {
+  const t = useT();
   const [subTab, setSubTab] = useState<"logs" | "analysis" | "performance">("logs");
   const debugLogs = useAppStore((s) => s.debugLogs);
   const clearDebugLogs = useAppStore((s) => s.clearDebugLogs);
@@ -225,9 +227,9 @@ export function DebugPanel() {
       {/* === Debug Copilot Sub-tabs === */}
       <div style={{ display: "flex", gap: 2, marginBottom: 8 }}>
         {([
-          { id: "logs" as const, icon: Bug, label: "Logs" },
-          { id: "analysis" as const, icon: Shield, label: "Analysis" },
-          { id: "performance" as const, icon: Activity, label: "Perf" },
+          { id: "logs" as const, icon: Bug, label: t("debug.logs") },
+          { id: "analysis" as const, icon: Shield, label: t("debug.analysis") },
+          { id: "performance" as const, icon: Activity, label: t("debug.perf") },
         ]).map((tab) => {
           const Icon = tab.icon;
           const active = subTab === tab.id;
@@ -289,7 +291,7 @@ export function DebugPanel() {
       {subTab === "logs" && <>
       {/* Header */}
       <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
-        <span className="sidebar-section-title" style={{ margin: 0, flex: 1 }}>Debug Console</span>
+        <span className="sidebar-section-title" style={{ margin: 0, flex: 1 }}>{t("debug.title")}</span>
         <button
           onClick={toggleDebugPersist}
           style={{
@@ -305,7 +307,7 @@ export function DebugPanel() {
             alignItems: "center",
             gap: 3,
           }}
-          title={debugPersist ? "Logs saved to disk" : "Logs not saved to disk"}
+          title={debugPersist ? t("debug.logsSavedToDisk") : t("debug.logsNotSaved")}
         >
           <HardDrive size={9} />
         </button>
@@ -322,7 +324,7 @@ export function DebugPanel() {
             fontFamily: "inherit",
           }}
         >
-          {debugEnabled ? "ON" : "OFF"}
+          {debugEnabled ? t("debug.on") : t("debug.off")}
         </button>
       </div>
 
@@ -346,7 +348,7 @@ export function DebugPanel() {
             gap: 4,
           }}
         >
-          <Bug size={11} /> Live
+          <Bug size={11} /> {t("debug.live")}
         </button>
         <button
           onClick={() => { setView("history"); loadSessions(); }}
@@ -366,7 +368,7 @@ export function DebugPanel() {
             gap: 4,
           }}
         >
-          <Clock size={11} /> History
+          <Clock size={11} /> {t("debug.historyTab")}
         </button>
       </div>
 
@@ -375,7 +377,7 @@ export function DebugPanel() {
         <div style={{ flex: 1, overflowY: "auto", minHeight: 0 }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
             <span style={{ fontSize: 11, color: "var(--text-secondary)" }}>
-              {loadingSessions ? "Loading..." : `${sessions.length} saved sessions`}
+              {loadingSessions ? t("common.loading") : `${sessions.length} saved sessions`}
             </span>
             <button
               onClick={cleanupOldLogs}
@@ -388,7 +390,7 @@ export function DebugPanel() {
                 fontSize: 10,
                 fontFamily: "inherit",
               }}
-              title="Delete logs older than 7 days"
+              title={t("debug.deleteOld")}
             >
               <Trash2 size={11} />
             </button>
@@ -396,8 +398,8 @@ export function DebugPanel() {
           {sessions.length === 0 && !loadingSessions ? (
             <div style={{ textAlign: "center", color: "var(--text-muted)", padding: 24, fontSize: 12 }}>
               <FolderOpen size={24} style={{ margin: "0 auto 8px", opacity: 0.4, display: "block" }} />
-              <div>No saved log sessions.</div>
-              <div style={{ marginTop: 4, fontSize: 10 }}>Enable disk persistence to save logs.</div>
+              <div>{t("debug.noSavedSessions")}</div>
+              <div style={{ marginTop: 4, fontSize: 10 }}>{t("debug.enablePersistence")}</div>
             </div>
           ) : (
             sessions.map((session) => (
@@ -504,7 +506,7 @@ export function DebugPanel() {
           <Search size={11} style={{ position: "absolute", left: 7, top: 7, color: "var(--text-muted)" }} />
           <input
             type="text"
-            placeholder="Filter logs..."
+            placeholder={t("debug.filterPlaceholder")}
             value={searchFilter}
             onChange={(e) => setSearchFilter(e.target.value)}
             style={{
@@ -547,7 +549,7 @@ export function DebugPanel() {
             display: "flex",
             alignItems: "center",
           }}
-          title={paused ? "Resume" : "Pause"}
+          title={paused ? t("debug.resume") : t("debug.pause")}
         >
           {paused ? <Play size={11} /> : <Pause size={11} />}
         </button>
@@ -563,7 +565,7 @@ export function DebugPanel() {
             display: "flex",
             alignItems: "center",
           }}
-          title="Export logs"
+          title={t("debug.exportLogs")}
         >
           <Download size={11} />
         </button>
@@ -579,7 +581,7 @@ export function DebugPanel() {
             display: "flex",
             alignItems: "center",
           }}
-          title="Clear logs"
+          title={t("debug.clearLogs")}
         >
           <Trash2 size={11} />
         </button>
@@ -594,7 +596,7 @@ export function DebugPanel() {
           marginBottom: 8,
           border: "1px solid var(--border-subtle)",
         }}>
-          <div style={{ fontSize: 10, color: "var(--text-muted)", marginBottom: 4 }}>Filter by source:</div>
+          <div style={{ fontSize: 10, color: "var(--text-muted)", marginBottom: 4 }}>{t("debug.filterBySource")}</div>
           <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
             <button
               onClick={() => setSourceFilter(null)}
@@ -609,7 +611,7 @@ export function DebugPanel() {
                 fontFamily: "inherit",
               }}
             >
-              All
+              {t("common.all")}
             </button>
             {sources.map((src) => (
               <button
@@ -642,7 +644,7 @@ export function DebugPanel() {
         marginBottom: 6,
         padding: "0 2px",
       }}>
-        <span>{filteredLogs.length} entries{paused ? " (paused)" : ""}</span>
+        <span>{filteredLogs.length} entries{paused ? ` (${t("debug.paused")})` : ""}</span>
         <span>{displayLogs.length} total</span>
       </div>
 
@@ -666,8 +668,8 @@ export function DebugPanel() {
           }}>
             <Bug size={24} style={{ margin: "0 auto 8px", opacity: 0.4, display: "block" }} />
             {debugEnabled
-              ? "No logs captured yet. Run commands in the terminal."
-              : "Debug logging is disabled. Click ON to enable."}
+              ? t("debug.noLogs")
+              : t("debug.noLogs")}
           </div>
         ) : (
           filteredLogs.map((log) => {
@@ -774,6 +776,7 @@ function HistorySessionView({
   onBack: () => void;
   formatTime: (ts: number) => string;
 }) {
+  const t = useT();
   const [filter, setFilter] = useState("");
 
   const filtered = session.entries.filter((log) => {
@@ -808,7 +811,7 @@ function HistorySessionView({
         <Search size={11} style={{ position: "absolute", left: 7, top: 7, color: "var(--text-muted)" }} />
         <input
           type="text"
-          placeholder="Search session..."
+          placeholder={t("debug.searchSession")}
           value={filter}
           onChange={(e) => setFilter(e.target.value)}
           style={{

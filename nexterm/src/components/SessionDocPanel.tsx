@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { useAppStore } from "../store/appStore";
 import { renderMarkdown } from "../utils/markdown";
+import { useT } from "../i18n";
 
 interface SessionDocInfo {
   filename: string;
@@ -36,6 +37,7 @@ async function getInvoke() {
 type OllamaStatus = "checking" | "online" | "offline" | "pulling";
 
 export function SessionDocPanel() {
+  const t = useT();
   const history = useAppStore((s) => s.history);
   const debugLogs = useAppStore((s) => s.debugLogs);
   const sessionStartTime = useAppStore((s) => s.sessionStartTime);
@@ -254,7 +256,7 @@ export function SessionDocPanel() {
   };
 
   const formatDate = (ts: number) => {
-    if (!ts) return "Unknown";
+    if (!ts) return t("docs.unknown");
     return new Date(ts * 1000).toLocaleString();
   };
 
@@ -271,9 +273,9 @@ export function SessionDocPanel() {
           <span style={{ fontSize: 12, fontWeight: 600, color: "var(--text-primary)", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
             {viewingDoc.filename}
           </span>
-          <button onClick={exportPdf} title="Export PDF" style={iconBtnStyle}><Download size={13} /></button>
-          <button onClick={exportMarkdown} title="Export Markdown" style={iconBtnStyle}><FileDown size={13} /></button>
-          <button onClick={() => deleteDoc(viewingDoc.filename)} title="Delete" style={iconBtnStyle}><Trash2 size={13} /></button>
+          <button onClick={exportPdf} title={t("docs.exportPdf")} style={iconBtnStyle}><Download size={13} /></button>
+          <button onClick={exportMarkdown} title={t("docs.exportMarkdown")} style={iconBtnStyle}><FileDown size={13} /></button>
+          <button onClick={() => deleteDoc(viewingDoc.filename)} title={t("common.delete")} style={iconBtnStyle}><Trash2 size={13} /></button>
         </div>
         <div style={{
           flex: 1, overflow: "auto", padding: 16, fontSize: 12, lineHeight: 1.7,
@@ -294,8 +296,8 @@ export function SessionDocPanel() {
         borderBottom: "1px solid var(--border-color)", flexShrink: 0,
       }}>
         <FileText size={16} style={{ color: "var(--accent-purple)" }} />
-        <span style={{ fontWeight: 600, fontSize: 13, color: "var(--text-primary)", flex: 1 }}>Session Docs</span>
-        <button onClick={loadDocs} title="Refresh" style={iconBtnStyle}><RefreshCw size={13} /></button>
+        <span style={{ fontWeight: 600, fontSize: 13, color: "var(--text-primary)", flex: 1 }}>{t("docs.title")}</span>
+        <button onClick={loadDocs} title={t("common.refresh")} style={iconBtnStyle}><RefreshCw size={13} /></button>
       </div>
 
       {/* Ollama Status */}
@@ -306,13 +308,13 @@ export function SessionDocPanel() {
         {ollamaStatus === "checking" && (
           <>
             <Loader2 size={12} style={{ color: "var(--text-muted)", animation: "spin 1s linear infinite" }} />
-            <span style={{ fontSize: 11, color: "var(--text-muted)" }}>Checking Ollama...</span>
+            <span style={{ fontSize: 11, color: "var(--text-muted)" }}>{t("docs.checkingOllama")}</span>
           </>
         )}
         {ollamaStatus === "online" && (
           <>
             <CheckCircle size={12} style={{ color: "var(--accent-secondary)" }} />
-            <span style={{ fontSize: 11, color: "var(--accent-secondary)" }}>Ollama ready (Llama 3.2)</span>
+            <span style={{ fontSize: 11, color: "var(--accent-secondary)" }}>{t("docs.ollamaReady")}</span>
           </>
         )}
         {ollamaStatus === "pulling" && (
@@ -325,10 +327,10 @@ export function SessionDocPanel() {
           <div style={{ display: "flex", flexDirection: "column", gap: 6, width: "100%" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
               <AlertCircle size={12} style={{ color: "var(--accent-error)" }} />
-              <span style={{ fontSize: 11, color: "var(--accent-error)" }}>Ollama not detected</span>
+              <span style={{ fontSize: 11, color: "var(--accent-error)" }}>{t("docs.ollamaNotDetected")}</span>
             </div>
             <div style={{ fontSize: 11, color: "var(--text-muted)", lineHeight: 1.5 }}>
-              Install <strong>Ollama</strong> to enable AI session documentation.
+              {t("docs.installOllama")}
             </div>
             <div style={{ display: "flex", gap: 6 }}>
               <button
@@ -342,13 +344,13 @@ export function SessionDocPanel() {
                   border: "none", borderRadius: "var(--radius-sm)", fontSize: 11, cursor: "pointer",
                 }}
               >
-                Download Ollama
+                {t("ai.downloadOllama")}
               </button>
               <button onClick={checkOllama} style={{
                 padding: "4px 10px", background: "var(--bg-tertiary)", color: "var(--text-secondary)",
                 border: "1px solid var(--border-color)", borderRadius: "var(--radius-sm)", fontSize: 11, cursor: "pointer",
               }}>
-                Retry
+                {t("common.retry")}
               </button>
             </div>
           </div>
@@ -372,13 +374,13 @@ export function SessionDocPanel() {
               }}
             >
               {templateName ? <FileCheck size={12} /> : <Upload size={12} />}
-              {templateName ? templateName : "Upload reference PDF"}
+              {templateName ? templateName : t("docs.uploadPdf")}
             </button>
             {templateName && (
               <button
                 onClick={() => { setTemplateStructure(null); setTemplateName(null); }}
                 style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", padding: 2 }}
-                title="Remove template"
+                title={t("docs.removeTemplate")}
               >
                 <Trash2 size={11} />
               </button>
@@ -398,18 +400,18 @@ export function SessionDocPanel() {
             {generating ? (
               <>
                 <Loader2 size={14} style={{ animation: "spin 1s linear infinite" }} />
-                Generating documentation...
+                {t("docs.generatingDoc")}
               </>
             ) : (
               <>
                 <Sparkles size={14} />
-                Document Current Session
+                {t("docs.documentSession")}
               </>
             )}
           </button>
           {history.length === 0 && (
             <div style={{ fontSize: 10, color: "var(--text-muted)", textAlign: "center", marginTop: 6 }}>
-              Run some commands first
+              {t("docs.runCommandsFirst")}
             </div>
           )}
           {error && (
@@ -437,9 +439,9 @@ export function SessionDocPanel() {
       <div style={{ flex: 1, overflowY: "auto", padding: "8px 0" }}>
         {docs.length === 0 ? (
           <div style={{ textAlign: "center", padding: 20, color: "var(--text-muted)", fontSize: 12, lineHeight: 1.6 }}>
-            No documentation yet.
+            {t("docs.noDocs")}
             <br />
-            Generate your first session doc above.
+            {t("docs.generateFirst")}
           </div>
         ) : (
           docs.map((doc) => (

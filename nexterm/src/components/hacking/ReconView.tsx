@@ -14,6 +14,7 @@ import {
   Download,
 } from "lucide-react";
 import { useAppStore } from "../../store/appStore";
+import { useT } from "../../i18n";
 import type { EnvironmentInfo, PortInfo, ReconResult } from "../../store/appStore";
 
 let tauriCoreCache: typeof import("@tauri-apps/api/core") | null = null;
@@ -40,6 +41,7 @@ interface BackendPortResult {
 }
 
 export function ReconView() {
+  const t = useT();
   const reconResults = useAppStore((s) => s.hackingReconResults);
   const setReconResults = useAppStore((s) => s.setHackingReconResults);
   const addHackingLog = useAppStore((s) => s.addHackingLog);
@@ -203,14 +205,14 @@ export function ReconView() {
       }}>
         <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
           <Radar size={12} style={{ color: "var(--accent-primary)" }} />
-          <span style={{ fontSize: 11, fontWeight: 700, color: "var(--text-primary)" }}>Smart Recon</span>
+          <span style={{ fontSize: 11, fontWeight: 700, color: "var(--text-primary)" }}>{t("hacking.smartRecon")}</span>
         </div>
         <div style={{ display: "flex", gap: 6 }}>
           <input
             type="text"
             value={scanTarget}
             onChange={(e) => setScanTarget(e.target.value)}
-            placeholder="Target IP (default: localhost)"
+            placeholder={t("hacking.targetPlaceholder")}
             style={{
               flex: 1,
               background: "var(--bg-primary)",
@@ -241,7 +243,7 @@ export function ReconView() {
             }}
           >
             <RefreshCw size={10} className={scanning ? "animate-pulse" : ""} />
-            {scanning ? "Scanning..." : "Scan"}
+            {scanning ? t("common.scanning") : t("common.scan")}
           </button>
         </div>
         <div style={{ display: "flex", gap: 6, marginTop: 4 }}>
@@ -249,7 +251,7 @@ export function ReconView() {
             type="text"
             value={customPorts}
             onChange={(e) => setCustomPorts(e.target.value)}
-            placeholder="Custom ports: 80,443,8000-8100 (empty = common)"
+            placeholder={t("hacking.customPorts")}
             style={{
               flex: 1,
               background: "var(--bg-primary)",
@@ -302,10 +304,10 @@ export function ReconView() {
                 cursor: "pointer",
                 whiteSpace: "nowrap",
               }}
-              title="Export security report to Downloads"
+              title={t("hacking.exportReport")}
             >
               <Download size={9} />
-              Report
+              {t("hacking.report")}
             </button>
           )}
         </div>
@@ -321,7 +323,7 @@ export function ReconView() {
         }}>
           <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
             <Server size={12} style={{ color: "var(--accent-secondary)" }} />
-            <span style={{ fontSize: 11, fontWeight: 600, color: "var(--text-primary)" }}>Environment</span>
+            <span style={{ fontSize: 11, fontWeight: 600, color: "var(--text-primary)" }}>{t("hacking.environment")}</span>
             <span style={{
               fontSize: 9,
               padding: "1px 6px",
@@ -335,11 +337,11 @@ export function ReconView() {
             </span>
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 4, fontSize: 10 }}>
-            <span style={{ color: "var(--text-muted)" }}>Host:</span>
+            <span style={{ color: "var(--text-muted)" }}>{t("hacking.hostLabel")}</span>
             <span style={{ color: "var(--text-primary)", fontFamily: "monospace" }}>{reconResults.environment.hostname}</span>
-            <span style={{ color: "var(--text-muted)" }}>IP:</span>
+            <span style={{ color: "var(--text-muted)" }}>{t("hacking.ipLabel")}</span>
             <span style={{ color: "var(--text-primary)", fontFamily: "monospace" }}>{reconResults.environment.ip}</span>
-            <span style={{ color: "var(--text-muted)" }}>OS:</span>
+            <span style={{ color: "var(--text-muted)" }}>{t("hacking.osLabel")}</span>
             <span style={{ color: "var(--text-primary)", fontFamily: "monospace", fontSize: 9, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
               {reconResults.environment.os}
             </span>
@@ -378,11 +380,11 @@ export function ReconView() {
           >
             {showMap ? <ChevronDown size={10} /> : <ChevronRight size={10} />}
             <Globe size={11} style={{ color: "var(--accent-secondary)" }} />
-            <span style={{ fontSize: 11, fontWeight: 600, color: "var(--text-primary)", flex: 1 }}>Network Map</span>
+            <span style={{ fontSize: 11, fontWeight: 600, color: "var(--text-primary)", flex: 1 }}>{t("hacking.networkMap")}</span>
             <button
               onClick={(e) => { e.stopPropagation(); copyToClipboard(networkMap); }}
               style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", padding: 2 }}
-              title="Copy map"
+              title={t("hacking.copyMap")}
             >
               <Copy size={10} />
             </button>
@@ -433,7 +435,7 @@ export function ReconView() {
             {showPorts ? <ChevronDown size={10} /> : <ChevronRight size={10} />}
             <Wifi size={11} style={{ color: "var(--accent-primary)" }} />
             <span style={{ fontSize: 11, fontWeight: 600, color: "var(--text-primary)", flex: 1 }}>
-              Open Ports ({reconResults.openPorts.filter((p) => p.state === "open").length})
+              {t("hacking.openPorts")} ({reconResults.openPorts.filter((p) => p.state === "open").length})
             </span>
           </div>
           {showPorts && (
@@ -450,10 +452,10 @@ export function ReconView() {
                 position: "sticky",
                 top: 0,
               }}>
-                <span style={{ width: 50 }}>PORT</span>
-                <span style={{ flex: 1 }}>SERVICE</span>
-                <span style={{ width: 50 }}>STATE</span>
-                <span style={{ width: 55, textAlign: "right" }}>RISK</span>
+                <span style={{ width: 50 }}>{t("hacking.port")}</span>
+                <span style={{ flex: 1 }}>{t("hacking.service")}</span>
+                <span style={{ width: 50 }}>{t("hacking.state")}</span>
+                <span style={{ width: 55, textAlign: "right" }}>{t("hacking.risk")}</span>
               </div>
               {reconResults.openPorts.map((port, idx) => (
                 <div
@@ -508,8 +510,8 @@ export function ReconView() {
           color: "var(--text-muted)",
         }}>
           <Shield size={28} style={{ opacity: 0.3 }} />
-          <span style={{ fontSize: 11 }}>Click "Scan" to start reconnaissance</span>
-          <span style={{ fontSize: 9, opacity: 0.6 }}>Detects environment, scans ports, grabs banners</span>
+          <span style={{ fontSize: 11 }}>{t("hacking.scanHint")}</span>
+          <span style={{ fontSize: 9, opacity: 0.6 }}>{t("hacking.scanDesc")}</span>
         </div>
       )}
     </div>

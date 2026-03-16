@@ -15,6 +15,7 @@ import {
   XCircle,
 } from "lucide-react";
 import { useAppStore } from "../../store/appStore";
+import { useT } from "../../i18n";
 import {
   scanLogsForIssues,
   collectUnmatchedErrors,
@@ -50,6 +51,7 @@ Response format (strict JSON):
 {"cause":"Brief explanation of what caused this error","fix":"Step-by-step fix instructions (2-3 sentences max)","command":"optional terminal command to fix it","severity":"error|warning|critical"}`;
 
 export function AnalysisView() {
+  const t = useT();
   const debugLogs = useAppStore((s) => s.debugLogs);
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   const [copiedId, setCopiedId] = useState<string | null>(null);
@@ -208,10 +210,10 @@ export function AnalysisView() {
       <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
         <Shield size={13} style={{ color: "var(--accent-primary)" }} />
         <span style={{ fontSize: 12, fontWeight: 700, color: "var(--text-primary)", flex: 1 }}>
-          Debug Copilot
+          {t("debugCopilot.title")}
         </span>
         <span style={{ fontSize: 10, color: "var(--text-muted)" }}>
-          {debugLogs.length} scanned
+          {debugLogs.length} {t("debugCopilot.scanned")}
         </span>
       </div>
 
@@ -232,8 +234,8 @@ export function AnalysisView() {
           <>
             <ShieldCheck size={16} style={{ color: "var(--accent-secondary)", flexShrink: 0 }} />
             <div>
-              <div style={{ fontSize: 11, fontWeight: 600, color: "var(--accent-secondary)" }}>All Clear</div>
-              <div style={{ fontSize: 10, color: "var(--text-muted)" }}>No issues detected</div>
+              <div style={{ fontSize: 11, fontWeight: 600, color: "var(--accent-secondary)" }}>{t("debugCopilot.allClear")}</div>
+              <div style={{ fontSize: 10, color: "var(--text-muted)" }}>{t("debugCopilot.noIssues")}</div>
             </div>
           </>
         ) : (
@@ -241,15 +243,15 @@ export function AnalysisView() {
             <AlertCircle size={16} style={{ color: "var(--accent-error)", flexShrink: 0 }} />
             <div style={{ flex: 1 }}>
               <div style={{ fontSize: 11, fontWeight: 600, color: "var(--text-primary)" }}>
-                {issues.length + unmatchedErrors.length} issue{issues.length + unmatchedErrors.length !== 1 ? "s" : ""} detected
+                {issues.length + unmatchedErrors.length} {t("debugCopilot.issuesDetected")}
               </div>
               <div style={{ display: "flex", gap: 6, fontSize: 10, color: "var(--text-muted)", marginTop: 2, flexWrap: "wrap" }}>
-                {criticalCount > 0 && <span style={{ color: "#ff4444" }}>{criticalCount} critical</span>}
-                {errorCount > 0 && <span style={{ color: "#ff7b72" }}>{errorCount} errors</span>}
-                {warningCount > 0 && <span style={{ color: "#d29922" }}>{warningCount} warnings</span>}
+                {criticalCount > 0 && <span style={{ color: "#ff4444" }}>{criticalCount} {t("debugCopilot.critical")}</span>}
+                {errorCount > 0 && <span style={{ color: "#ff7b72" }}>{errorCount} {t("debugCopilot.errors")}</span>}
+                {warningCount > 0 && <span style={{ color: "#d29922" }}>{warningCount} {t("debugCopilot.warnings")}</span>}
                 {unmatchedErrors.length > 0 && (
                   <span style={{ color: "var(--accent-purple, #bc8cff)" }}>
-                    {unmatchedErrors.length} for AI
+                    {unmatchedErrors.length} {t("debugCopilot.forAi")}
                   </span>
                 )}
               </div>
@@ -274,7 +276,7 @@ export function AnalysisView() {
               fontFamily: "inherit",
             }}
           >
-            All
+            {t("common.all")}
           </button>
           {Array.from(categories.entries()).map(([cat, count]) => {
             const cfg = CATEGORY_CONFIG[cat];
@@ -328,7 +330,7 @@ export function AnalysisView() {
           <>
             {unmatchedErrors.length > 0 && (
               <div style={{ fontSize: 9, fontWeight: 700, color: "var(--text-muted)", marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.5px" }}>
-                Pattern Matched ({filteredIssues.length})
+                {t("debugCopilot.patternMatched")} ({filteredIssues.length})
               </div>
             )}
             {filteredIssues.map((issue) => (
@@ -358,7 +360,7 @@ export function AnalysisView() {
             }}>
               <Brain size={12} style={{ color: "#bc8cff" }} />
               <span style={{ fontSize: 9, fontWeight: 700, color: "#bc8cff", textTransform: "uppercase", letterSpacing: "0.5px", flex: 1 }}>
-                AI Analysis ({unmatchedErrors.length} unmatched)
+                {t("debugCopilot.aiAnalysis")} ({unmatchedErrors.length} unmatched)
               </span>
               <button
                 onClick={() => { checkOllama(); analyzeAllWithAI(); }}
@@ -379,9 +381,9 @@ export function AnalysisView() {
                 }}
               >
                 {aiLoading.size > 0 ? (
-                  <><Loader2 size={9} className="animate-pulse" /> Analyzing...</>
+                  <><Loader2 size={9} className="animate-pulse" /> {t("common.analyzing")}</>
                 ) : (
-                  <><Sparkles size={9} /> Analyze All</>
+                  <><Sparkles size={9} /> {t("debugCopilot.analyzeAll")}</>
                 )}
               </button>
             </div>
@@ -396,7 +398,7 @@ export function AnalysisView() {
                 fontSize: 9,
                 color: "var(--text-muted)",
               }}>
-                <span>Model:</span>
+                <span>{t("debugCopilot.model")}</span>
                 <select
                   value={selectedModel}
                   onChange={(e) => setSelectedModel(e.target.value)}
@@ -434,9 +436,9 @@ export function AnalysisView() {
               }}>
                 <XCircle size={12} style={{ color: "#d29922", flexShrink: 0 }} />
                 <div>
-                  <div style={{ fontWeight: 600 }}>Ollama not running</div>
+                  <div style={{ fontWeight: 600 }}>{t("debugCopilot.ollamaNotRunning")}</div>
                   <div style={{ fontSize: 9, color: "var(--text-muted)", marginTop: 2 }}>
-                    Start Ollama to enable AI analysis. Install from ollama.com
+                    {t("debugCopilot.startOllama")}
                   </div>
                 </div>
               </div>
@@ -485,6 +487,7 @@ function IssueCard({
   severityIcon: (s: string) => React.ReactNode;
   formatTime: (ts: number) => string;
 }) {
+  const t = useT();
   const catCfg = CATEGORY_CONFIG[issue.pattern.category];
   const sevCfg = SEVERITY_CONFIG[issue.pattern.severity];
 
@@ -525,7 +528,7 @@ function IssueCard({
             padding: "6px 8px", borderRadius: "var(--radius-sm)",
             background: "rgba(63,185,80,0.08)", border: "1px solid rgba(63,185,80,0.2)", marginBottom: 6,
           }}>
-            <div style={{ fontSize: 9, fontWeight: 700, color: "var(--accent-secondary)", marginBottom: 3 }}>SUGGESTED FIX</div>
+            <div style={{ fontSize: 9, fontWeight: 700, color: "var(--accent-secondary)", marginBottom: 3 }}>{t("debugCopilot.suggestedFix")}</div>
             <div style={{ color: "var(--text-primary)", lineHeight: 1.4 }}>{issue.pattern.suggestion}</div>
           </div>
           {issue.pattern.fixCommand && (
@@ -543,8 +546,8 @@ function IssueCard({
             {issue.sampleMessage.slice(0, 200)}
           </div>
           <div style={{ display: "flex", gap: 12, marginTop: 6, fontSize: 9, color: "var(--text-muted)" }}>
-            <span>First: {formatTime(issue.firstSeen)}</span>
-            <span>Last: {formatTime(issue.lastSeen)}</span>
+            <span>{t("debugCopilot.first")} {formatTime(issue.firstSeen)}</span>
+            <span>{t("debugCopilot.last")} {formatTime(issue.lastSeen)}</span>
             <span>{issue.count}x</span>
           </div>
         </div>
@@ -580,6 +583,7 @@ function UnmatchedCard({
   ollamaOnline: boolean;
   formatTime: (ts: number) => string;
 }) {
+  const t = useT();
   const hasAiResult = !!aiResult;
   const borderColor = hasAiResult ? "#bc8cff" : "var(--border-subtle)";
 
@@ -645,7 +649,7 @@ function UnmatchedCard({
                 background: "rgba(188,140,255,0.06)", border: "1px solid rgba(188,140,255,0.15)", marginBottom: 6,
               }}>
                 <div style={{ fontSize: 9, fontWeight: 700, color: "#bc8cff", marginBottom: 3, display: "flex", alignItems: "center", gap: 4 }}>
-                  <Brain size={9} /> ROOT CAUSE
+                  <Brain size={9} /> {t("debugCopilot.rootCause")}
                 </div>
                 <div style={{ color: "var(--text-primary)", lineHeight: 1.4 }}>{aiResult.cause}</div>
               </div>
@@ -656,7 +660,7 @@ function UnmatchedCard({
                 background: "rgba(63,185,80,0.08)", border: "1px solid rgba(63,185,80,0.2)", marginBottom: 6,
               }}>
                 <div style={{ fontSize: 9, fontWeight: 700, color: "var(--accent-secondary)", marginBottom: 3, display: "flex", alignItems: "center", gap: 4 }}>
-                  <Sparkles size={9} /> AI FIX
+                  <Sparkles size={9} /> {t("debugCopilot.aiFix")}
                 </div>
                 <div style={{ color: "var(--text-primary)", lineHeight: 1.4 }}>{aiResult.fix}</div>
               </div>
@@ -706,7 +710,7 @@ function UnmatchedCard({
               }}
             >
               <Sparkles size={11} />
-              {ollamaOnline ? "Analyze with AI" : "Ollama offline"}
+              {ollamaOnline ? t("debugCopilot.analyzeWithAi") : t("hacking.ollamaOffline")}
             </button>
           )}
 
@@ -717,13 +721,13 @@ function UnmatchedCard({
               padding: "8px 0", fontSize: 10, color: "#bc8cff",
             }}>
               <Loader2 size={12} className="animate-pulse" />
-              AI is analyzing...
+              {t("debugCopilot.aiAnalyzing")}
             </div>
           )}
 
           <div style={{ display: "flex", gap: 12, marginTop: 6, fontSize: 9, color: "var(--text-muted)" }}>
-            <span>First: {formatTime(error.firstSeen)}</span>
-            <span>Last: {formatTime(error.lastSeen)}</span>
+            <span>{t("debugCopilot.first")} {formatTime(error.firstSeen)}</span>
+            <span>{t("debugCopilot.last")} {formatTime(error.lastSeen)}</span>
             <span>{error.count}x</span>
           </div>
         </div>
@@ -739,6 +743,7 @@ function FixCommandBlock({ command, onCopy, copied }: {
   onCopy: () => void;
   copied: boolean;
 }) {
+  const t = useT();
   return (
     <div style={{
       display: "flex", alignItems: "center", gap: 6,
@@ -763,7 +768,7 @@ function FixCommandBlock({ command, onCopy, copied }: {
         }}
       >
         <Copy size={9} />
-        {copied ? "Copied!" : "Copy"}
+        {copied ? t("common.copied") : t("common.copy")}
       </button>
     </div>
   );

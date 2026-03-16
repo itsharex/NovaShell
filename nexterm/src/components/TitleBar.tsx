@@ -2,11 +2,13 @@ import { useState } from "react";
 import { Minus, Square, X, Terminal, Maximize2, PanelRight, Focus, Shield } from "lucide-react";
 import { useAppStore } from "../store/appStore";
 import type { ThemeName } from "../store/appStore";
+import { useT } from "../i18n";
 
 export function TitleBar() {
   const { theme, setTheme, toggleSidebar, toggleFocusMode } = useAppStore();
   const hackingMode = useAppStore((s) => s.hackingMode);
   const toggleHackingMode = useAppStore((s) => s.toggleHackingMode);
+  const t = useT();
 
   const themes: { name: ThemeName; label: string }[] = [
     { name: "dark", label: "Dark" },
@@ -43,22 +45,22 @@ export function TitleBar() {
           <span>NovaShell</span>
         </div>
         <div className="theme-selector">
-          {themes.map((t) => (
+          {themes.map((th) => (
             <button
-              key={t.name}
-              className={`theme-dot ${t.name} ${theme === t.name ? "active" : ""}`}
-              onClick={() => setTheme(t.name)}
-              title={t.label}
+              key={th.name}
+              className={`theme-dot ${th.name} ${theme === th.name ? "active" : ""}`}
+              onClick={() => setTheme(th.name)}
+              title={th.label}
             />
           ))}
         </div>
       </div>
-      <div className="titlebar-center">Professional Terminal</div>
+      <div className="titlebar-center">{t("titlebar.professionalTerminal")}</div>
       <div className="titlebar-right">
         <button
           className="titlebar-btn"
           onClick={toggleHackingMode}
-          title={hackingMode ? "Disable Hacking Mode" : "Enable Hacking Mode"}
+          title={hackingMode ? t("titlebar.disableHacking") : t("titlebar.enableHacking")}
           style={hackingMode ? {
             color: "#00ff41",
             filter: "drop-shadow(0 0 4px rgba(0,255,65,0.6))",
@@ -66,10 +68,10 @@ export function TitleBar() {
         >
           <Shield size={14} />
         </button>
-        <button className="titlebar-btn" onClick={toggleFocusMode} title="Focus Mode">
+        <button className="titlebar-btn" onClick={toggleFocusMode} title={t("titlebar.focusMode")}>
           <Focus size={14} />
         </button>
-        <button className="titlebar-btn" onClick={toggleSidebar} title="Toggle Sidebar">
+        <button className="titlebar-btn" onClick={toggleSidebar} title={t("titlebar.toggleSidebar")}>
           <PanelRight size={14} />
         </button>
         <button className="titlebar-btn" onClick={handleMinimize}>

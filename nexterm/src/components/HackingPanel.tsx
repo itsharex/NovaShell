@@ -10,6 +10,7 @@ import {
   Wrench,
 } from "lucide-react";
 import { useAppStore } from "../store/appStore";
+import { useT } from "../i18n";
 import { ReconView } from "./hacking/ReconView";
 import { ExploitView } from "./hacking/ExploitView";
 import { AiSecView } from "./hacking/AiSecView";
@@ -19,16 +20,17 @@ import { ToolsView } from "./hacking/ToolsView";
 
 type HackingSubTab = "recon" | "exploit" | "tools" | "ai" | "alerts" | "history";
 
-const subTabs: { id: HackingSubTab; icon: typeof Radar; label: string }[] = [
-  { id: "recon", icon: Radar, label: "Recon" },
-  { id: "exploit", icon: Zap, label: "Exploit" },
-  { id: "tools", icon: Wrench, label: "Tools" },
-  { id: "ai", icon: Brain, label: "AI Sec" },
-  { id: "alerts", icon: AlertTriangle, label: "Alerts" },
-  { id: "history", icon: Clock, label: "History" },
+const subTabDefs: { id: HackingSubTab; icon: typeof Radar; labelKey: string }[] = [
+  { id: "recon", icon: Radar, labelKey: "hacking.recon" },
+  { id: "exploit", icon: Zap, labelKey: "hacking.exploit" },
+  { id: "tools", icon: Wrench, labelKey: "hacking.tools" },
+  { id: "ai", icon: Brain, labelKey: "hacking.aiSec" },
+  { id: "alerts", icon: AlertTriangle, labelKey: "hacking.alerts" },
+  { id: "history", icon: Clock, labelKey: "hacking.historyTab" },
 ];
 
 export function HackingPanel() {
+  const t = useT();
   const hackingMode = useAppStore((s) => s.hackingMode);
   const toggleHackingMode = useAppStore((s) => s.toggleHackingMode);
   const alertCount = useAppStore((s) => s.hackingAlerts.length);
@@ -59,7 +61,7 @@ export function HackingPanel() {
           color: hackingMode ? "#00ff41" : "var(--text-primary)",
           flex: 1,
         }}>
-          Hacking Mode
+          {t("hacking.title")}
         </span>
         <button
           onClick={toggleHackingMode}
@@ -79,7 +81,7 @@ export function HackingPanel() {
           }}
         >
           <Power size={10} />
-          {hackingMode ? "ACTIVE" : "OFF"}
+          {hackingMode ? t("hacking.active") : t("hacking.off")}
         </button>
       </div>
 
@@ -96,10 +98,10 @@ export function HackingPanel() {
         }}>
           <Shield size={40} style={{ color: "var(--text-muted)", opacity: 0.3 }} />
           <span style={{ fontSize: 12, color: "var(--text-muted)", textAlign: "center" }}>
-            Enable Hacking Mode to access security tools
+            {t("hacking.enableHint")}
           </span>
           <span style={{ fontSize: 10, color: "var(--text-muted)", opacity: 0.6, textAlign: "center" }}>
-            Recon - Exploit scripts - AI Security - Alerts
+            {t("hacking.enableDesc")}
           </span>
           <button
             onClick={toggleHackingMode}
@@ -115,7 +117,7 @@ export function HackingPanel() {
               marginTop: 8,
             }}
           >
-            Activate
+            {t("hacking.activate")}
           </button>
         </div>
       ) : (
@@ -129,7 +131,7 @@ export function HackingPanel() {
             borderBottom: "1px solid var(--border-subtle)",
             flexShrink: 0,
           }}>
-            {subTabs.map((tab) => (
+            {subTabDefs.map((tab) => (
               <button
                 key={tab.id}
                 onClick={() => setActiveSubTab(tab.id)}
@@ -149,7 +151,7 @@ export function HackingPanel() {
                 }}
               >
                 <tab.icon size={11} />
-                {tab.label}
+                {t(tab.labelKey)}
                 {tab.id === "alerts" && alertCount > 0 && (
                   <span style={{
                     background: "#ff0040",

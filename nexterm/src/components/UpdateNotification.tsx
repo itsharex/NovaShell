@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef, memo } from "react";
 import { Download, X, RefreshCw, CheckCircle, AlertCircle, Loader } from "lucide-react";
+import { useT } from "../i18n";
 
 type UpdateStatus =
   | { phase: "idle" }
@@ -28,6 +29,7 @@ export const UpdateNotification = memo(function UpdateNotification() {
   const [minimized, setMinimized] = useState(false);
   const dismissTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const updateInstalledRef = useRef(false);
+  const t = useT();
 
   const checkForUpdates = useCallback(async (silent = true) => {
     // Don't re-check if we already downloaded and installed an update
@@ -188,12 +190,12 @@ export const UpdateNotification = memo(function UpdateNotification() {
         {status.phase === "up-to-date" && <CheckCircle size={14} style={{ color: "var(--accent-secondary)" }} />}
 
         <span style={{ flex: 1, fontSize: 12, fontWeight: 600, color: "var(--text-primary)" }}>
-          {status.phase === "checking" && "Checking for updates..."}
+          {status.phase === "checking" && t("update.checkingUpdates")}
           {status.phase === "available" && `Update v${status.version}`}
-          {status.phase === "downloading" && "Downloading update..."}
-          {status.phase === "ready" && "Update ready!"}
-          {status.phase === "error" && "Update error"}
-          {status.phase === "up-to-date" && "Up to date"}
+          {status.phase === "downloading" && t("update.downloadingUpdate")}
+          {status.phase === "ready" && t("update.updateReady")}
+          {status.phase === "error" && t("update.updateError")}
+          {status.phase === "up-to-date" && t("update.upToDate")}
         </span>
 
         {status.phase !== "downloading" && status.phase !== "ready" && (
@@ -223,13 +225,13 @@ export const UpdateNotification = memo(function UpdateNotification() {
       <div style={{ padding: "10px 12px" }}>
         {status.phase === "checking" && (
           <p style={{ fontSize: 11, color: "var(--text-secondary)", margin: 0 }}>
-            Connecting to update server...
+            {t("update.connectingServer")}
           </p>
         )}
 
         {status.phase === "up-to-date" && (
           <p style={{ fontSize: 11, color: "var(--text-secondary)", margin: 0 }}>
-            You're running the latest version of NovaShell.
+            {t("update.latestVersion")}
           </p>
         )}
 
@@ -269,7 +271,7 @@ export const UpdateNotification = memo(function UpdateNotification() {
                 }}
               >
                 <Download size={12} />
-                Install Update
+                {t("update.installUpdate")}
               </button>
               <button
                 onClick={() => setDismissed(true)}
@@ -284,7 +286,7 @@ export const UpdateNotification = memo(function UpdateNotification() {
                   fontFamily: "inherit",
                 }}
               >
-                Later
+                {t("update.later")}
               </button>
             </div>
           </>
@@ -309,7 +311,7 @@ export const UpdateNotification = memo(function UpdateNotification() {
               }} />
             </div>
             <p style={{ fontSize: 10, color: "var(--text-muted)", margin: 0, textAlign: "center" }}>
-              {status.progress > 0 ? `${status.progress}%` : "Starting download..."}
+              {status.progress > 0 ? `${status.progress}%` : t("update.startingDownload")}
             </p>
           </>
         )}
@@ -339,7 +341,7 @@ export const UpdateNotification = memo(function UpdateNotification() {
               }}
             >
               <RefreshCw size={12} />
-              Restart Now
+              {t("update.restartNow")}
             </button>
           </>
         )}
@@ -375,7 +377,7 @@ export const UpdateNotification = memo(function UpdateNotification() {
               }}
             >
               <RefreshCw size={11} />
-              Retry
+              {t("common.retry")}
             </button>
           </>
         )}

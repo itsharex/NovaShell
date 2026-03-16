@@ -9,6 +9,7 @@ import {
   Clock,
 } from "lucide-react";
 import { useAppStore } from "../../store/appStore";
+import { useT } from "../../i18n";
 
 let tauriCoreCache: typeof import("@tauri-apps/api/core") | null = null;
 async function getTauriCore() {
@@ -52,6 +53,7 @@ function formatUptime(seconds: number): string {
 }
 
 export function PerformanceView() {
+  const t = useT();
   const systemStats = useAppStore((s) => s.systemStats);
   const metricsHistory = useAppStore((s) => s.metricsHistory);
   const sessionStartTime = useAppStore((s) => s.sessionStartTime);
@@ -114,7 +116,7 @@ export function PerformanceView() {
       <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
         <Activity size={13} style={{ color: "var(--accent-primary)" }} />
         <span style={{ fontSize: 12, fontWeight: 700, color: "var(--text-primary)", flex: 1 }}>
-          Performance Monitor
+          {t("perfMonitor.title")}
         </span>
       </div>
 
@@ -124,11 +126,11 @@ export function PerformanceView() {
         gap: 6,
         flexWrap: "wrap",
       }}>
-        <StatPill icon={<Clock size={9} />} label="Session" value={formatUptime(sessionDuration)} />
-        <StatPill icon={<Activity size={9} />} label="Cmds" value={String(commandCount)} />
+        <StatPill icon={<Clock size={9} />} label={t("perfMonitor.session")} value={formatUptime(sessionDuration)} />
+        <StatPill icon={<Activity size={9} />} label={t("perfMonitor.cmds")} value={String(commandCount)} />
         <StatPill
           icon={<Activity size={9} />}
-          label="Errors"
+          label={t("perfMonitor.errors")}
           value={String(errorCount)}
           color={errorCount > 0 ? "var(--accent-error)" : undefined}
         />
@@ -137,7 +139,7 @@ export function PerformanceView() {
       {/* CPU Chart */}
       <MetricCard
         icon={<Cpu size={12} />}
-        label="CPU Usage"
+        label={t("perfMonitor.cpuUsage")}
         value={systemStats ? `${systemStats.cpu.toFixed(1)}%` : "--"}
         color={systemStats ? cpuColor(systemStats.cpu) : "var(--text-muted)"}
         sparkData={metricsHistory.cpu}
@@ -148,7 +150,7 @@ export function PerformanceView() {
       {/* Memory Chart */}
       <MetricCard
         icon={<MemoryStick size={12} />}
-        label="Memory"
+        label={t("perfMonitor.memory")}
         value={systemStats ? `${systemStats.memoryPercent.toFixed(1)}%` : "--"}
         subtitle={systemStats ? `${formatBytes(systemStats.memoryUsed)} / ${formatBytes(systemStats.memoryTotal)}` : ""}
         color={systemStats ? memColor(systemStats.memoryPercent) : "var(--text-muted)"}
@@ -185,7 +187,7 @@ export function PerformanceView() {
             : <ChevronRight size={10} style={{ color: "var(--text-muted)" }} />
           }
           <span style={{ fontSize: 11, fontWeight: 600, color: "var(--text-primary)", flex: 1 }}>
-            Top Processes
+            {t("perfMonitor.topProcesses")}
           </span>
           <button
             onClick={(e) => {
@@ -201,7 +203,7 @@ export function PerformanceView() {
               display: "flex",
               alignItems: "center",
             }}
-            title="Refresh"
+            title={t("common.refresh")}
           >
             <RefreshCw size={10} className={processesLoading ? "animate-pulse" : ""} />
           </button>
@@ -220,9 +222,9 @@ export function PerformanceView() {
               fontSize: 8,
               fontFamily: "inherit",
             }}
-            title={autoRefresh ? "Auto-refresh ON (10s)" : "Auto-refresh OFF"}
+            title={autoRefresh ? t("perfMonitor.autoRefreshOn") : t("perfMonitor.autoRefreshOff")}
           >
-            AUTO
+            {t("perfMonitor.auto")}
           </button>
         </div>
 
@@ -241,15 +243,15 @@ export function PerformanceView() {
               position: "sticky",
               top: 0,
             }}>
-              <span style={{ flex: 2, minWidth: 0 }}>NAME</span>
-              <span style={{ width: 40, textAlign: "right" }}>PID</span>
-              <span style={{ width: 48, textAlign: "right" }}>CPU%</span>
-              <span style={{ width: 56, textAlign: "right" }}>MEM</span>
+              <span style={{ flex: 2, minWidth: 0 }}>{t("perfMonitor.nameCol")}</span>
+              <span style={{ width: 40, textAlign: "right" }}>{t("perfMonitor.pidCol")}</span>
+              <span style={{ width: 48, textAlign: "right" }}>{t("perfMonitor.cpuCol")}</span>
+              <span style={{ width: 56, textAlign: "right" }}>{t("perfMonitor.memCol")}</span>
             </div>
 
             {processes.length === 0 ? (
               <div style={{ padding: 16, textAlign: "center", fontSize: 10, color: "var(--text-muted)" }}>
-                {processesLoading ? "Loading..." : "No process data available"}
+                {processesLoading ? t("common.loading") : t("perfMonitor.noProcessData")}
               </div>
             ) : (
               processes.map((proc, idx) => (
@@ -351,6 +353,7 @@ function MetricCard({ icon, label, value, subtitle, color, sparkData, sparkMax, 
   sparkMax: number;
   sparkColor: string;
 }) {
+  const t = useT();
   const spark = sparkline(sparkData, sparkMax);
   const hasData = sparkData.length > 0;
 
@@ -400,9 +403,9 @@ function MetricCard({ icon, label, value, subtitle, color, sparkData, sparkMax, 
 
       {/* Min/Avg/Max */}
       <div style={{ display: "flex", justifyContent: "space-between", fontSize: 9, color: "var(--text-muted)" }}>
-        <span>min: {min}%</span>
-        <span>avg: {avg}%</span>
-        <span>max: {max}%</span>
+        <span>{t("perfMonitor.min")} {min}%</span>
+        <span>{t("perfMonitor.avg")} {avg}%</span>
+        <span>{t("perfMonitor.max")} {max}%</span>
       </div>
     </div>
   );

@@ -21,6 +21,7 @@ import { CanvasAddon } from "@xterm/addon-canvas";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import "@xterm/xterm/css/xterm.css";
 import { useAppStore } from "../store/appStore";
+import { useT } from "../i18n";
 import type { SSHConnection } from "../store/appStore";
 import { parseTerminalOutput } from "./DebugPanel";
 
@@ -110,6 +111,7 @@ const btnStyle: React.CSSProperties = {
 
 export function SSHPanel() {
   const { sshConnections, addSSHConnection, updateSSHConnection, removeSSHConnection, theme } = useAppStore();
+  const t = useT();
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
@@ -485,7 +487,7 @@ export function SSHPanel() {
             }}
             style={{ ...btnStyle, background: "var(--bg-tertiary)", color: "var(--text-secondary)", padding: "4px 8px" }}
           >
-            <X size={12} /> Back
+            <X size={12} /> {t("common.back")}
           </button>
           <span style={{ fontSize: 12, color: "var(--text-primary)", fontWeight: 600, flex: 1 }}>
             {activeConn?.name}
@@ -495,7 +497,7 @@ export function SSHPanel() {
             onClick={() => activeConn && handleDisconnect(activeConn)}
             style={{ ...btnStyle, background: "var(--accent-error)", color: "white", padding: "4px 8px" }}
           >
-            <Square size={12} /> Disconnect
+            <Square size={12} /> {t("common.disconnect")}
           </button>
         </div>
         <div
@@ -516,11 +518,11 @@ export function SSHPanel() {
   return (
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-        <span className="sidebar-section-title" style={{ margin: 0 }}>SSH Connections</span>
+        <span className="sidebar-section-title" style={{ margin: 0 }}>{t("ssh.connections")}</span>
         <button
           onClick={() => { resetForm(); setShowForm(!showForm); }}
           style={{ background: "none", border: "none", color: "var(--accent-primary)", cursor: "pointer", padding: 4 }}
-          aria-label="Add SSH connection"
+          aria-label={t("ssh.addConnection")}
         >
           <Plus size={14} />
         </button>
@@ -536,9 +538,9 @@ export function SSHPanel() {
           border: "1px solid var(--border-subtle)",
         }}>
           <div style={{ marginBottom: 8 }}>
-            <label style={labelStyle}>Connection Name</label>
+            <label style={labelStyle}>{t("ssh.connectionName")}</label>
             <input
-              placeholder="My Server"
+              placeholder={t("ssh.myServer")}
               value={formName}
               onChange={(e) => setFormName(e.target.value)}
               style={inputStyle}
@@ -547,7 +549,7 @@ export function SSHPanel() {
 
           <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
             <div style={{ flex: 1 }}>
-              <label style={labelStyle}>Host / IP</label>
+              <label style={labelStyle}>{t("ssh.hostIp")}</label>
               <input
                 placeholder="192.168.1.100"
                 value={formHost}
@@ -556,7 +558,7 @@ export function SSHPanel() {
               />
             </div>
             <div style={{ width: 80 }}>
-              <label style={labelStyle}>Port</label>
+              <label style={labelStyle}>{t("ssh.port")}</label>
               <input
                 type="number"
                 value={formPort}
@@ -582,7 +584,7 @@ export function SSHPanel() {
           </div>
 
           <div style={{ marginBottom: 8 }}>
-            <label style={labelStyle}>Username</label>
+            <label style={labelStyle}>{t("ssh.username")}</label>
             <input
               placeholder="root"
               value={formUser}
@@ -592,7 +594,7 @@ export function SSHPanel() {
           </div>
 
           <div style={{ marginBottom: 8 }}>
-            <label style={labelStyle}>Authentication</label>
+            <label style={labelStyle}>{t("ssh.authMethod")}</label>
             <div style={{ display: "flex", gap: 4 }}>
               <button
                 onClick={() => setFormAuthMode("password")}
@@ -604,7 +606,7 @@ export function SSHPanel() {
                   color: formAuthMode === "password" ? "white" : "var(--text-secondary)",
                 }}
               >
-                <Key size={12} /> Password
+                <Key size={12} /> {t("ssh.passwordAuth")}
               </button>
               <button
                 onClick={() => setFormAuthMode("key")}
@@ -616,17 +618,17 @@ export function SSHPanel() {
                   color: formAuthMode === "key" ? "white" : "var(--text-secondary)",
                 }}
               >
-                <Key size={12} /> Private Key
+                <Key size={12} /> {t("ssh.keyAuth")}
               </button>
             </div>
           </div>
 
           {formAuthMode === "password" ? (
             <div style={{ marginBottom: 8 }}>
-              <label style={labelStyle}>Password (not saved to disk)</label>
+              <label style={labelStyle}>{t("ssh.passwordNotSaved")}</label>
               <input
                 type="password"
-                placeholder="Enter password..."
+                placeholder={t("ssh.enterPasswordPlaceholder")}
                 value={formPassword}
                 onChange={(e) => setFormPassword(e.target.value)}
                 style={inputStyle}
@@ -634,7 +636,7 @@ export function SSHPanel() {
             </div>
           ) : (
             <div style={{ marginBottom: 8 }}>
-              <label style={labelStyle}>Private Key Content</label>
+              <label style={labelStyle}>{t("ssh.privateKeyContent")}</label>
               <textarea
                 placeholder="-----BEGIN OPENSSH PRIVATE KEY-----&#10;..."
                 value={formKey}
@@ -669,10 +671,10 @@ export function SSHPanel() {
                     fontSize: 11,
                   }}
                 >
-                  <Upload size={12} /> Load from file
+                  <Upload size={12} /> {t("ssh.loadKeyFile")}
                 </button>
                 <span style={{ fontSize: 10, color: "var(--text-muted)" }}>
-                  or paste key content above
+                  {t("ssh.orPasteKey")}
                 </span>
               </div>
             </div>
@@ -707,7 +709,7 @@ export function SSHPanel() {
               }}
             >
               {testing ? <Loader2 size={12} className="animate-pulse" /> : <TestTube size={12} />}
-              Test
+              {t("common.test")}
             </button>
             <button
               onClick={handleSave}
@@ -722,7 +724,7 @@ export function SSHPanel() {
               }}
             >
               <Check size={12} />
-              {editingId ? "Update" : "Save"}
+              {editingId ? t("common.update") : t("common.save")}
             </button>
             <button
               onClick={resetForm}
@@ -743,10 +745,10 @@ export function SSHPanel() {
           marginBottom: 12,
           border: "1px solid var(--accent-primary)",
         }}>
-          <label style={labelStyle}>Enter password for {sshConnections.find((c) => c.id === passwordPrompt.connId)?.name}</label>
+          <label style={labelStyle}>{t("ssh.enterPassword")} {sshConnections.find((c) => c.id === passwordPrompt.connId)?.name}</label>
           <input
             type="password"
-            placeholder="Password..."
+            placeholder={t("ssh.enterPasswordPlaceholder")}
             value={passwordPrompt.password}
             onChange={(e) => setPasswordPrompt({ ...passwordPrompt, password: e.target.value })}
             onKeyDown={async (e) => {
@@ -779,7 +781,7 @@ export function SSHPanel() {
                 style={{ accentColor: "var(--accent-primary)" }}
               />
               <ShieldCheck size={11} />
-              Save in system keychain (persistent)
+              {t("ssh.saveKeychainPersistent")}
             </label>
             <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: "var(--text-secondary)", cursor: "pointer" }}>
               <input
@@ -790,7 +792,7 @@ export function SSHPanel() {
                 style={{ accentColor: "var(--accent-primary)" }}
               />
               <Shield size={11} />
-              Remember for this session only
+              {t("ssh.rememberSessionOnly")}
             </label>
             <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: "var(--text-secondary)", cursor: "pointer" }}>
               <input
@@ -800,7 +802,7 @@ export function SSHPanel() {
                 onChange={() => setPasswordPrompt({ ...passwordPrompt, saveMode: "none" })}
                 style={{ accentColor: "var(--accent-primary)" }}
               />
-              Don't save password
+              {t("ssh.dontSavePassword")}
             </label>
           </div>
           <div style={{ display: "flex", gap: 6 }}>
@@ -822,7 +824,7 @@ export function SSHPanel() {
               }}
               style={{ ...btnStyle, flex: 1, justifyContent: "center", background: "var(--accent-primary)", color: "white" }}
             >
-              <Play size={12} /> Connect
+              <Play size={12} /> {t("common.connect")}
             </button>
             <button
               onClick={() => setPasswordPrompt(null)}
@@ -838,8 +840,8 @@ export function SSHPanel() {
       {sshConnections.length === 0 && !showForm ? (
         <div style={{ textAlign: "center", color: "var(--text-muted)", padding: 24, fontSize: 12 }}>
           <Server size={24} style={{ margin: "0 auto 8px", opacity: 0.5 }} />
-          <div>No SSH connections yet.</div>
-          <div style={{ marginTop: 4 }}>Click + to add one.</div>
+          <div>{t("ssh.noConnectionsYet")}</div>
+          <div style={{ marginTop: 4 }}>{t("ssh.clickToAdd")}</div>
         </div>
       ) : (
         sshConnections.map((conn) => (
@@ -857,7 +859,7 @@ export function SSHPanel() {
                 <div style={{ fontSize: 11, color: "var(--text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: 4 }}>
                   <span>{conn.username}@{conn.host}:{conn.port}</span>
                   {keychainIds.has(conn.id) && (
-                    <span title="Password saved in system keychain" style={{ display: "inline-flex", flexShrink: 0 }}>
+                    <span title={t("ssh.keychainSavedTitle")} style={{ display: "inline-flex", flexShrink: 0 }}>
                       <ShieldCheck size={10} style={{ color: "var(--accent-secondary)" }} />
                     </span>
                   )}
@@ -880,7 +882,7 @@ export function SSHPanel() {
                     }}
                     style={{ ...btnStyle, flex: 1, justifyContent: "center", background: "var(--accent-secondary)", color: "white", padding: "4px 8px" }}
                   >
-                    <Play size={12} /> Open Terminal
+                    <Play size={12} /> {t("ssh.openTerminal")}
                   </button>
                   <button
                     onClick={() => handleDisconnect(conn)}
@@ -894,14 +896,14 @@ export function SSHPanel() {
                   disabled
                   style={{ ...btnStyle, flex: 1, justifyContent: "center", background: "var(--bg-active)", color: "var(--text-muted)", padding: "4px 8px" }}
                 >
-                  <Loader2 size={12} className="animate-pulse" /> Connecting...
+                  <Loader2 size={12} className="animate-pulse" /> {t("common.connecting")}
                 </button>
               ) : (
                 <button
                   onClick={() => startConnect(conn)}
                   style={{ ...btnStyle, flex: 1, justifyContent: "center", background: "var(--accent-primary)", color: "white", padding: "4px 8px" }}
                 >
-                  <Play size={12} /> Connect
+                  <Play size={12} /> {t("common.connect")}
                 </button>
               )}
               <button

@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { Plus, X } from "lucide-react";
 import { useAppStore } from "../store/appStore";
+import { useT } from "../i18n";
 
 const shellIcons: Record<string, string> = {
   powershell: "PS",
@@ -28,6 +29,7 @@ export function TabBar() {
   const [menuPos, setMenuPos] = useState({ top: 0, left: 0 });
   const [availableShells, setAvailableShells] = useState<ShellInfo[]>([]);
   const btnRef = useRef<HTMLButtonElement>(null);
+  const t = useT();
 
   const dropdownRef = useRef<HTMLDivElement>(null);
 
@@ -103,7 +105,7 @@ export function TabBar() {
         ref={btnRef}
         className="tab-add"
         onClick={toggleMenu}
-        title="New Tab"
+        title={t("tabbar.newTab")}
       >
         <Plus size={14} />
       </button>

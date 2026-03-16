@@ -11,7 +11,8 @@ import { defaultKeymap, indentWithTab, history, historyKeymap } from "@codemirro
 import { syntaxHighlighting, bracketMatching, foldGutter, indentOnInput, HighlightStyle, StreamLanguage } from "@codemirror/language";
 import { searchKeymap, highlightSelectionMatches } from "@codemirror/search";
 import { autocompletion, closeBrackets } from "@codemirror/autocomplete";
-import { tags as t } from "@lezer/highlight";
+import { tags } from "@lezer/highlight";
+import { useT } from "../i18n";
 import { javascript } from "@codemirror/lang-javascript";
 import { python } from "@codemirror/lang-python";
 import { json } from "@codemirror/lang-json";
@@ -228,38 +229,38 @@ function detectInfra(name: string, content: string): InfraType | null {
 
 // VS Code Dark+ exact highlight style
 const vscodeDarkHighlight = HighlightStyle.define([
-  { tag: t.keyword, color: "#569cd6" },                          // blue: const, let, if, return, function
-  { tag: [t.controlKeyword, t.moduleKeyword, t.operatorKeyword], color: "#c586c0" }, // purple: import, export, from, as
-  { tag: t.variableName, color: "#9cdcfe" },                     // light blue: variable names
-  { tag: [t.function(t.variableName), t.function(t.propertyName)], color: "#dcdcaa" }, // yellow: function names
-  { tag: t.propertyName, color: "#9cdcfe" },                     // light blue: property access
-  { tag: [t.typeName, t.className, t.namespace], color: "#4ec9b0" }, // teal: types, classes
-  { tag: [t.string, t.special(t.string)], color: "#ce9178" },    // orange: strings
-  { tag: t.number, color: "#b5cea8" },                           // green: numbers
-  { tag: t.bool, color: "#569cd6" },                             // blue: true, false
-  { tag: t.null, color: "#569cd6" },                             // blue: null, undefined
-  { tag: t.regexp, color: "#d16969" },                           // red: regex
-  { tag: t.operator, color: "#d4d4d4" },                         // white: operators
-  { tag: t.punctuation, color: "#d4d4d4" },                      // white: brackets, commas
-  { tag: [t.comment, t.lineComment, t.blockComment], color: "#6a9955", fontStyle: "italic" }, // green italic: comments
-  { tag: t.meta, color: "#569cd6" },                             // blue: decorators, pragma
-  { tag: [t.attributeName], color: "#9cdcfe" },                   // light blue: HTML attributes
-  { tag: [t.attributeValue], color: "#ce9178" },                  // orange: HTML attribute values
-  { tag: t.tagName, color: "#569cd6" },                           // blue: HTML tags
-  { tag: t.angleBracket, color: "#808080" },                      // gray: < >
-  { tag: t.self, color: "#569cd6" },                              // blue: this, self
-  { tag: t.definition(t.variableName), color: "#9cdcfe" },        // light blue: definitions
-  { tag: t.definition(t.propertyName), color: "#dcdcaa" },        // yellow: method definitions
-  { tag: t.heading, color: "#569cd6", fontWeight: "bold" },       // blue bold: markdown headings
-  { tag: t.emphasis, fontStyle: "italic" },                       // italic: markdown *text*
-  { tag: t.strong, fontWeight: "bold" },                          // bold: markdown **text**
-  { tag: t.link, color: "#3794ff", textDecoration: "underline" }, // blue underline: links
-  { tag: t.url, color: "#3794ff" },                               // blue: URLs
-  { tag: t.atom, color: "#569cd6" },                              // blue: atoms
-  { tag: t.labelName, color: "#dcdcaa" },                         // yellow: labels
-  { tag: t.inserted, color: "#b5cea8" },                          // green: diff inserted
-  { tag: t.deleted, color: "#ce9178" },                           // orange: diff deleted
-  { tag: t.invalid, color: "#f44747" },                           // red: invalid
+  { tag: tags.keyword, color: "#569cd6" },                          // blue: const, let, if, return, function
+  { tag: [tags.controlKeyword, tags.moduleKeyword, tags.operatorKeyword], color: "#c586c0" }, // purple: import, export, from, as
+  { tag: tags.variableName, color: "#9cdcfe" },                     // light blue: variable names
+  { tag: [tags.function(tags.variableName), tags.function(tags.propertyName)], color: "#dcdcaa" }, // yellow: function names
+  { tag: tags.propertyName, color: "#9cdcfe" },                     // light blue: property access
+  { tag: [tags.typeName, tags.className, tags.namespace], color: "#4ec9b0" }, // teal: types, classes
+  { tag: [tags.string, tags.special(tags.string)], color: "#ce9178" },    // orange: strings
+  { tag: tags.number, color: "#b5cea8" },                           // green: numbers
+  { tag: tags.bool, color: "#569cd6" },                             // blue: true, false
+  { tag: tags.null, color: "#569cd6" },                             // blue: null, undefined
+  { tag: tags.regexp, color: "#d16969" },                           // red: regex
+  { tag: tags.operator, color: "#d4d4d4" },                         // white: operators
+  { tag: tags.punctuation, color: "#d4d4d4" },                      // white: brackets, commas
+  { tag: [tags.comment, tags.lineComment, tags.blockComment], color: "#6a9955", fontStyle: "italic" }, // green italic: comments
+  { tag: tags.meta, color: "#569cd6" },                             // blue: decorators, pragma
+  { tag: [tags.attributeName], color: "#9cdcfe" },                   // light blue: HTML attributes
+  { tag: [tags.attributeValue], color: "#ce9178" },                  // orange: HTML attribute values
+  { tag: tags.tagName, color: "#569cd6" },                           // blue: HTML tags
+  { tag: tags.angleBracket, color: "#808080" },                      // gray: < >
+  { tag: tags.self, color: "#569cd6" },                              // blue: this, self
+  { tag: tags.definition(tags.variableName), color: "#9cdcfe" },        // light blue: definitions
+  { tag: tags.definition(tags.propertyName), color: "#dcdcaa" },        // yellow: method definitions
+  { tag: tags.heading, color: "#569cd6", fontWeight: "bold" },       // blue bold: markdown headings
+  { tag: tags.emphasis, fontStyle: "italic" },                       // italic: markdown *text*
+  { tag: tags.strong, fontWeight: "bold" },                          // bold: markdown **text**
+  { tag: tags.link, color: "#3794ff", textDecoration: "underline" }, // blue underline: links
+  { tag: tags.url, color: "#3794ff" },                               // blue: URLs
+  { tag: tags.atom, color: "#569cd6" },                              // blue: atoms
+  { tag: tags.labelName, color: "#dcdcaa" },                         // yellow: labels
+  { tag: tags.inserted, color: "#b5cea8" },                          // green: diff inserted
+  { tag: tags.deleted, color: "#ce9178" },                           // orange: diff deleted
+  { tag: tags.invalid, color: "#f44747" },                           // red: invalid
 ]);
 
 const novaTheme = EditorView.theme({
@@ -358,6 +359,7 @@ const btnS: React.CSSProperties = {
 // ── Main Component ──
 
 export function EditorPanel() {
+  const t = useT();
   const [file, setFile] = useState<OpenFile | null>(null);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -609,7 +611,7 @@ export function EditorPanel() {
       setFile((prev) => prev ? { ...prev, modified: false, content: contentRef.current } : null);
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
-    } catch (e) { setActionOutput({ title: "Save failed", content: String(e) }); }
+    } catch (e) { setActionOutput({ title: t("editor.saveFailed"), content: String(e) }); }
     setSaving(false);
   }, [file]);
 
@@ -741,21 +743,21 @@ export function EditorPanel() {
         <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 8px", background: "var(--bg-tertiary)", borderBottom: "1px solid var(--border-subtle)", flexShrink: 0 }}>
           <FolderOpenDot size={13} style={{ color: "var(--accent-primary)", flexShrink: 0 }} />
           <span style={{ fontSize: 11, fontWeight: 600, color: "var(--text-primary)", flex: 1 }}>
-            {browserMode === "folder" ? "Open Folder" : "Open File"}
+            {browserMode === "folder" ? t("editor.openFolder") : t("editor.openFile")}
           </span>
           <button onClick={() => setBrowserOpen(false)} style={{ ...btnS, background: "none", color: "var(--text-muted)", padding: "2px" }}><X size={11} /></button>
         </div>
         {/* Navigation */}
         <div style={{ display: "flex", alignItems: "center", gap: 4, padding: "4px 8px", borderBottom: "1px solid var(--border-subtle)", flexShrink: 0 }}>
-          <button onClick={() => loadBrowserDir()} title="Home" style={{ ...btnS, background: "none", color: "var(--text-muted)", padding: "2px" }}><Home size={12} /></button>
-          <button onClick={browserGoUp} title="Up" style={{ ...btnS, background: "none", color: "var(--text-muted)", padding: "2px" }}><ArrowLeft size={12} /></button>
+          <button onClick={() => loadBrowserDir()} title={t("common.home")} style={{ ...btnS, background: "none", color: "var(--text-muted)", padding: "2px" }}><Home size={12} /></button>
+          <button onClick={browserGoUp} title={t("explorer.goUp")} style={{ ...btnS, background: "none", color: "var(--text-muted)", padding: "2px" }}><ArrowLeft size={12} /></button>
           <div style={{ flex: 1, fontSize: 10, color: "var(--text-secondary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
             {pathParts.length > 3 ? `.../${pathParts.slice(-2).join("/")}` : pathParts.join("/")}
           </div>
           {browserMode === "folder" && browserPath && (
             <button onClick={() => selectBrowserFile({ name: browserPath.split(/[/\\]/).pop() || "folder", path: browserPath, is_dir: true, size: 0, extension: "" })}
               style={{ ...btnS, padding: "2px 8px", background: "var(--accent-primary)", color: "white", fontSize: 10 }}>
-              Open this folder
+              {t("editor.openThisFolder")}
             </button>
           )}
         </div>
@@ -763,7 +765,7 @@ export function EditorPanel() {
         <div style={{ padding: "4px 8px", flexShrink: 0 }}>
           <div style={{ position: "relative" }}>
             <Search size={11} style={{ position: "absolute", left: 6, top: 6, color: "var(--text-muted)" }} />
-            <input type="text" value={browserFilter} onChange={(e) => setBrowserFilter(e.target.value)} placeholder="Filter..."
+            <input type="text" value={browserFilter} onChange={(e) => setBrowserFilter(e.target.value)} placeholder={t("editor.filterPlaceholder")}
               style={{ width: "100%", padding: "4px 24px 4px 24px", background: "var(--bg-tertiary)", border: "1px solid var(--border-subtle)", borderRadius: "var(--radius-sm)", color: "var(--text-primary)", fontSize: 10, outline: "none" }} />
             {browserFilter && <button onClick={() => setBrowserFilter("")} style={{ position: "absolute", right: 4, top: 4, background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", display: "flex", padding: 1 }}><X size={10} /></button>}
           </div>
@@ -771,9 +773,9 @@ export function EditorPanel() {
         {/* File list */}
         <div style={{ flex: 1, overflowY: "auto", padding: "2px 0" }}>
           {browserLoading ? (
-            <div style={{ textAlign: "center", color: "var(--text-muted)", padding: 20, fontSize: 11 }}>Loading...</div>
+            <div style={{ textAlign: "center", color: "var(--text-muted)", padding: 20, fontSize: 11 }}>{t("common.loading")}</div>
           ) : filtered.length === 0 ? (
-            <div style={{ textAlign: "center", color: "var(--text-muted)", padding: 20, fontSize: 11 }}>Empty</div>
+            <div style={{ textAlign: "center", color: "var(--text-muted)", padding: 20, fontSize: 11 }}>{t("explorer.empty")}</div>
           ) : (
             filtered.map((entry) => (
               <div key={entry.path} onClick={() => selectBrowserFile(entry)}
@@ -843,15 +845,15 @@ export function EditorPanel() {
           </span>
           <button onClick={async () => {
             try { const invoke = await getInvoke(); const entries = await invoke<FileEntry[]>("list_directory", { path: folderRoot }); setFolderFiles(entries); } catch {}
-          }} style={{ ...btnS, background: "none", color: "var(--text-muted)", padding: "1px" }} title="Refresh"><RefreshCw size={9} /></button>
+          }} style={{ ...btnS, background: "none", color: "var(--text-muted)", padding: "1px" }} title={t("common.refresh")}><RefreshCw size={9} /></button>
           <button onClick={() => { setFolderRoot(null); setFolderFiles([]); setFolderTree({ expanded: new Set(), children: new Map(), loading: new Set() }); }}
-            style={{ ...btnS, background: "none", color: "var(--text-muted)", padding: "1px" }} title="Close folder"><X size={9} /></button>
+            style={{ ...btnS, background: "none", color: "var(--text-muted)", padding: "1px" }} title={t("editor.closeFolder")}><X size={9} /></button>
         </div>
         {/* Search */}
         <div style={{ padding: "3px 4px", flexShrink: 0 }}>
           <div style={{ position: "relative" }}>
             <Search size={9} style={{ position: "absolute", left: 5, top: 5, color: "var(--text-muted)" }} />
-            <input type="text" value={folderFilter} onChange={(e) => setFolderFilter(e.target.value)} placeholder="Filter..."
+            <input type="text" value={folderFilter} onChange={(e) => setFolderFilter(e.target.value)} placeholder={t("editor.filterPlaceholder")}
               style={{ width: "100%", padding: "3px 18px 3px 20px", background: "var(--bg-tertiary)", border: "1px solid var(--border-subtle)", borderRadius: "var(--radius-sm)", color: "var(--text-primary)", fontSize: 9, outline: "none" }} />
             {folderFilter && <button onClick={() => setFolderFilter("")} style={{ position: "absolute", right: 3, top: 3, background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", display: "flex", padding: 1 }}><X size={8} /></button>}
           </div>
@@ -873,24 +875,24 @@ export function EditorPanel() {
             {renderFolderPanel()}
             <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", color: "var(--text-muted)", fontSize: 12, gap: 8 }}>
               <FileText size={28} style={{ opacity: 0.3 }} />
-              <div style={{ fontSize: 11 }}>Select a file from the tree</div>
+              <div style={{ fontSize: 11 }}>{t("editor.selectFile")}</div>
             </div>
           </div>
         ) : (
           <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", color: "var(--text-muted)", fontSize: 12, gap: 12 }}>
             <FileText size={32} style={{ opacity: 0.3 }} />
-            <div>No file open</div>
+            <div>{t("editor.noFileOpen")}</div>
             <div style={{ display: "flex", gap: 6, marginTop: 4 }}>
               <button onClick={() => openFileBrowser("file")}
                 style={{ ...btnS, padding: "5px 12px", fontSize: 10, background: "var(--accent-primary)", color: "white", borderRadius: "var(--radius-md)", gap: 5 }}>
-                <File size={12} /> Open File
+                <File size={12} /> {t("editor.openFile")}
               </button>
               <button onClick={() => openFileBrowser("folder")}
                 style={{ ...btnS, padding: "5px 12px", fontSize: 10, background: "var(--bg-active)", color: "var(--text-primary)", borderRadius: "var(--radius-md)", gap: 5 }}>
-                <FolderOpenDot size={12} /> Open Folder
+                <FolderOpenDot size={12} /> {t("editor.openFolder")}
               </button>
             </div>
-            <div style={{ fontSize: 9, color: "var(--text-muted)", marginTop: 2 }}>or open files from Explorer / SFTP panel</div>
+            <div style={{ fontSize: 9, color: "var(--text-muted)", marginTop: 2 }}>{t("editor.openFromExplorer")}</div>
           </div>
         )}
       </div>
@@ -903,7 +905,7 @@ export function EditorPanel() {
       {/* Header */}
       <div style={{ display: "flex", alignItems: "center", gap: 4, padding: "4px 6px", background: "var(--bg-tertiary)", borderBottom: "1px solid var(--border-subtle)", flexShrink: 0, flexWrap: "wrap" }}>
         {folderRoot && (
-          <button onClick={() => setFolderTreeVisible(!folderTreeVisible)} title={folderTreeVisible ? "Hide tree" : "Show tree"}
+          <button onClick={() => setFolderTreeVisible(!folderTreeVisible)} title={folderTreeVisible ? t("editor.hideTree") : t("editor.showTree")}
             style={{ ...btnS, background: "none", color: "var(--text-muted)", padding: "2px" }}>
             {folderTreeVisible ? <PanelLeftClose size={11} /> : <PanelLeftOpen size={11} />}
           </button>
@@ -929,11 +931,11 @@ export function EditorPanel() {
           {(file.name.split(".").pop() || "txt").toUpperCase()}
         </span>
         <div style={{ marginLeft: "auto", display: "flex", gap: 2, alignItems: "center" }}>
-          <button onClick={() => openFileBrowser("file")} title="Open File"
+          <button onClick={() => openFileBrowser("file")} title={t("editor.openFile")}
             style={{ ...btnS, padding: "2px 5px", background: "var(--bg-active)", color: "var(--text-secondary)" }}>
             <File size={8} />
           </button>
-          <button onClick={() => openFileBrowser("folder")} title="Open Folder"
+          <button onClick={() => openFileBrowser("folder")} title={t("editor.openFolder")}
             style={{ ...btnS, padding: "2px 5px", background: "var(--bg-active)", color: "var(--text-secondary)" }}>
             <FolderOpenDot size={8} />
           </button>
@@ -945,7 +947,7 @@ export function EditorPanel() {
             </button>
           )}
           <button onClick={() => analyzeContent(contentRef.current, file.name)} disabled={aiLoading}
-            style={{ ...btnS, padding: "2px 5px", background: "var(--bg-active)", color: "var(--text-secondary)" }} title="AI Analyze">
+            style={{ ...btnS, padding: "2px 5px", background: "var(--bg-active)", color: "var(--text-secondary)" }} title={t("editor.aiAnalyze")}>
             <Sparkles size={8} />
           </button>
           <button onClick={saveFile} disabled={saving || !file.modified}
@@ -969,7 +971,7 @@ export function EditorPanel() {
           {infra.logCommand && (
             <button onClick={liveLogsOpen ? stopLiveLogs : startLiveLogs}
               style={{ ...btnS, padding: "2px 6px", marginLeft: "auto", background: liveLogsOpen ? "rgba(239,68,68,0.1)" : "rgba(16,185,129,0.1)", color: liveLogsOpen ? "#EF4444" : "#10B981" }}>
-              <ScrollText size={8} /> {liveLogsOpen ? "Stop Logs" : "Live Logs"}
+              <ScrollText size={8} /> {liveLogsOpen ? t("editor.stopLogs") : t("editor.liveLogs")}
             </button>
           )}
         </div>
@@ -1013,8 +1015,8 @@ export function EditorPanel() {
           <div style={{ width: "40%", maxWidth: 280, borderLeft: "1px solid var(--border-subtle)", display: "flex", flexDirection: "column", minWidth: 140 }}>
             <div style={{ padding: "3px 6px", background: "var(--bg-tertiary)", fontSize: 9, fontWeight: 600, color: "#10B981", display: "flex", alignItems: "center", gap: 4, flexShrink: 0, borderBottom: "1px solid var(--border-subtle)" }}>
               <span style={{ width: 5, height: 5, borderRadius: "50%", background: "#10B981", animation: "pulse 2s infinite" }} />
-              Live Logs
-              <span style={{ fontSize: 7, color: "var(--text-muted)", marginLeft: "auto" }}>{liveLogLines.length} lines</span>
+              {t("editor.liveLogs")}
+              <span style={{ fontSize: 7, color: "var(--text-muted)", marginLeft: "auto" }}>{liveLogLines.length} {t("editor.lines")}</span>
             </div>
             <div ref={logContainerRef} style={{ flex: 1, overflowY: "auto", padding: "4px 6px", fontSize: 9, fontFamily: "'JetBrains Mono', monospace", color: "var(--text-primary)", lineHeight: 1.4 }} className="hacking-log-container">
               {liveLogLines.map((line, i) => (

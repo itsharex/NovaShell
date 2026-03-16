@@ -1,6 +1,7 @@
 import { useState, useCallback } from "react";
 import { Clock, Download, Trash2, Lock, Unlock, Eye, EyeOff } from "lucide-react";
 import { useAppStore } from "../../store/appStore";
+import { useT } from "../../i18n";
 
 let tauriCoreCache: typeof import("@tauri-apps/api/core") | null = null;
 async function getTauriCore() {
@@ -9,6 +10,7 @@ async function getTauriCore() {
 }
 
 export function HistoryView() {
+  const t = useT();
   const hackingLogs = useAppStore((s) => s.hackingLogs);
   const clearHackingLogs = useAppStore((s) => s.clearHackingLogs);
 
@@ -86,7 +88,7 @@ export function HistoryView() {
       <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
         <Clock size={12} style={{ color: "var(--text-secondary)" }} />
         <span style={{ fontSize: 11, fontWeight: 700, color: "var(--text-primary)", flex: 1 }}>
-          Session History
+          {t("hacking.sessionHistory")}
         </span>
         <span style={{ fontSize: 9, color: "var(--text-muted)" }}>
           {hackingLogs.length} entries
@@ -102,7 +104,7 @@ export function HistoryView() {
       }}>
         <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
           <Lock size={10} style={{ color: "var(--accent-warning)" }} />
-          <span style={{ fontSize: 9, color: "var(--text-muted)" }}>Encryption password</span>
+          <span style={{ fontSize: 9, color: "var(--text-muted)" }}>{t("hacking.encryptionPassword")}</span>
         </div>
         <div style={{ display: "flex", gap: 6 }}>
           <div style={{ flex: 1, position: "relative" }}>
@@ -110,7 +112,7 @@ export function HistoryView() {
               type={showPassword ? "text" : "password"}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              placeholder="Enter password to encrypt/decrypt"
+              placeholder={t("hacking.enterPasswordEncrypt")}
               style={{
                 width: "100%",
                 background: "var(--bg-primary)",
@@ -157,7 +159,7 @@ export function HistoryView() {
             }}
           >
             <Download size={10} />
-            Save
+            {t("common.save")}
           </button>
         </div>
       </div>
@@ -171,7 +173,7 @@ export function HistoryView() {
           padding: "6px 10px",
         }}>
           <span style={{ fontSize: 9, color: "var(--text-muted)", display: "block", marginBottom: 4 }}>
-            Saved sessions ({savedSessions.length}):
+            {t("hacking.savedSessions")} ({savedSessions.length}):
           </span>
           {savedSessions.map((session) => (
             <div
@@ -199,7 +201,7 @@ export function HistoryView() {
                   padding: 2,
                   fontSize: 9,
                 }}
-                title="Load"
+                title={t("hacking.load")}
               >
                 <Unlock size={10} />
               </button>
@@ -212,7 +214,7 @@ export function HistoryView() {
                   cursor: "pointer",
                   padding: 2,
                 }}
-                title="Delete"
+                title={t("common.delete")}
               >
                 <Trash2 size={10} />
               </button>
@@ -250,7 +252,7 @@ export function HistoryView() {
         gap: 6,
         justifyContent: "space-between",
       }}>
-        <span style={{ fontSize: 10, fontWeight: 600, color: "var(--text-primary)" }}>Current Session</span>
+        <span style={{ fontSize: 10, fontWeight: 600, color: "var(--text-primary)" }}>{t("hacking.currentSession")}</span>
         {hackingLogs.length > 0 && (
           <button
             onClick={clearHackingLogs}
@@ -268,7 +270,7 @@ export function HistoryView() {
             }}
           >
             <Trash2 size={9} />
-            Clear
+            {t("common.clear")}
           </button>
         )}
       </div>
@@ -311,7 +313,7 @@ export function HistoryView() {
         ))}
         {hackingLogs.length === 0 && (
           <div style={{ padding: 16, textAlign: "center", fontSize: 10, color: "var(--text-muted)" }}>
-            No hacking activity logged yet
+            {t("hacking.noActivityYet")}
           </div>
         )}
       </div>

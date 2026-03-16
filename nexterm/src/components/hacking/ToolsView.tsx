@@ -1,15 +1,17 @@
 import { useState } from "react";
 import { Hash, Code, Globe, Terminal, Copy, Check } from "lucide-react";
+import { useT } from "../../i18n";
 
 type ToolTab = "hash" | "encode" | "revshell";
 
-const toolTabs: { id: ToolTab; icon: typeof Hash; label: string }[] = [
-  { id: "hash", icon: Hash, label: "Hash" },
-  { id: "encode", icon: Code, label: "Encode" },
-  { id: "revshell", icon: Terminal, label: "RevShell" },
+const toolTabDefs: { id: ToolTab; icon: typeof Hash; labelKey: string }[] = [
+  { id: "hash", icon: Hash, labelKey: "hacking.hash" },
+  { id: "encode", icon: Code, labelKey: "hacking.encode" },
+  { id: "revshell", icon: Terminal, labelKey: "hacking.revShell" },
 ];
 
 function CopyButton({ text }: { text: string }) {
+  const t = useT();
   const [copied, setCopied] = useState(false);
   return (
     <button
@@ -25,7 +27,7 @@ function CopyButton({ text }: { text: string }) {
         cursor: "pointer",
         padding: 2,
       }}
-      title="Copy"
+      title={copied ? t("common.copied") : t("common.copy")}
     >
       {copied ? <Check size={10} /> : <Copy size={10} />}
     </button>
@@ -60,6 +62,7 @@ function ResultBox({ label, value }: { label: string; value: string }) {
 }
 
 function HashTool() {
+  const t = useT();
   const [input, setInput] = useState("");
   const [hashes, setHashes] = useState<{ md5: string; sha1: string; sha256: string }>({ md5: "", sha1: "", sha256: "" });
 
@@ -91,7 +94,7 @@ function HashTool() {
       <textarea
         value={input}
         onChange={(e) => setInput(e.target.value)}
-        placeholder="Enter text to hash..."
+        placeholder={t("hacking.enterTextHash")}
         style={{
           background: "var(--bg-primary)",
           border: "1px solid var(--border-subtle)",
@@ -120,7 +123,7 @@ function HashTool() {
         }}
       >
         <Hash size={10} style={{ marginRight: 4, verticalAlign: "middle" }} />
-        Compute Hashes
+        {t("hacking.computeHashes")}
       </button>
       <ResultBox label="MD5" value={hashes.md5} />
       <ResultBox label="SHA-1" value={hashes.sha1} />
@@ -130,6 +133,7 @@ function HashTool() {
 }
 
 function EncodeTool() {
+  const t = useT();
   const [input, setInput] = useState("");
   const [mode, setMode] = useState<"base64" | "url" | "hex">("base64");
 
@@ -192,7 +196,7 @@ function EncodeTool() {
       <textarea
         value={input}
         onChange={(e) => setInput(e.target.value)}
-        placeholder="Enter text to encode/decode..."
+        placeholder={t("hacking.enterTextEncode")}
         style={{
           background: "var(--bg-primary)",
           border: "1px solid var(--border-subtle)",
@@ -252,6 +256,7 @@ const REVSHELL_TEMPLATES = [
 ];
 
 function RevShellTool() {
+  const t = useT();
   const [ip, setIp] = useState("10.10.10.10");
   const [port, setPort] = useState("4444");
 
@@ -265,7 +270,7 @@ function RevShellTool() {
         fontSize: 9,
         color: "#ff6080",
       }}>
-        For authorized penetration testing only
+        {t("hacking.authorizedOnly")}
       </div>
       <div style={{ display: "flex", gap: 6 }}>
         <div style={{ flex: 1 }}>
@@ -308,8 +313,8 @@ function RevShellTool() {
         </div>
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-        {REVSHELL_TEMPLATES.map((t, i) => {
-          const cmd = t.cmd(ip, port);
+        {REVSHELL_TEMPLATES.map((tpl, i) => {
+          const cmd = tpl.cmd(ip, port);
           return (
             <div
               key={i}
@@ -322,7 +327,7 @@ function RevShellTool() {
             >
               <div style={{ display: "flex", alignItems: "center", gap: 4, marginBottom: 4 }}>
                 <span style={{ fontSize: 10, fontWeight: 700, color: "var(--accent-primary)", flex: 1 }}>
-                  {t.name}
+                  {tpl.name}
                 </span>
                 <CopyButton text={cmd} />
               </div>
@@ -348,16 +353,17 @@ function RevShellTool() {
 }
 
 export function ToolsView() {
+  const t = useT();
   const [activeTab, setActiveTab] = useState<ToolTab>("hash");
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
       {/* Tool tabs */}
       <div style={{ display: "flex", gap: 4 }}>
-        {toolTabs.map((t) => (
+        {toolTabDefs.map((tab) => (
           <button
-            key={t.id}
-            onClick={() => setActiveTab(t.id)}
+            key={tab.id}
+            onClick={() => setActiveTab(tab.id)}
             style={{
               flex: 1,
               display: "flex",
@@ -369,14 +375,14 @@ export function ToolsView() {
               fontWeight: 600,
               borderRadius: 8,
               border: "1px solid",
-              borderColor: activeTab === t.id ? "var(--accent-primary)" : "var(--border-subtle)",
-              background: activeTab === t.id ? "var(--accent-primary)" : "var(--bg-tertiary)",
-              color: activeTab === t.id ? "#000" : "var(--text-secondary)",
+              borderColor: activeTab === tab.id ? "var(--accent-primary)" : "var(--border-subtle)",
+              background: activeTab === tab.id ? "var(--accent-primary)" : "var(--bg-tertiary)",
+              color: activeTab === tab.id ? "#000" : "var(--text-secondary)",
               cursor: "pointer",
             }}
           >
-            <t.icon size={10} />
-            {t.label}
+            <tab.icon size={10} />
+            {t(tab.labelKey)}
           </button>
         ))}
       </div>

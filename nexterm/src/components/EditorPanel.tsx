@@ -551,7 +551,6 @@ export function EditorPanel() {
     lineNumbers(), highlightActiveLineGutter(), highlightActiveLine(), drawSelection(),
     bracketMatching(), closeBrackets(), autocompletion(), foldGutter(), indentOnInput(),
     history(), highlightSelectionMatches(),
-    syntaxHighlighting(vscodeDarkHighlight, { fallback: true }),
     keymap.of([...defaultKeymap, ...historyKeymap, ...searchKeymap, indentWithTab]),
     novaTheme, EditorView.lineWrapping,
   ], []);
@@ -567,6 +566,8 @@ export function EditorPanel() {
       extensions: [
         ...baseExtensions,
         langCompartment.current.of(getLang(ext, file.name)),
+        // Highlight style AFTER language so it colors the parsed tokens
+        syntaxHighlighting(vscodeDarkHighlight),
         EditorView.updateListener.of((update) => {
           if (update.docChanged) {
             contentRef.current = update.state.doc.toString();

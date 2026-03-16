@@ -12,6 +12,7 @@ import { syntaxHighlighting, defaultHighlightStyle, bracketMatching, foldGutter,
 import { searchKeymap, highlightSelectionMatches } from "@codemirror/search";
 import { autocompletion, closeBrackets } from "@codemirror/autocomplete";
 import { tags } from "@lezer/highlight";
+import { oneDark } from "@codemirror/theme-one-dark";
 import { useT } from "../i18n";
 import { javascript } from "@codemirror/lang-javascript";
 import { python } from "@codemirror/lang-python";
@@ -552,7 +553,10 @@ export function EditorPanel() {
     bracketMatching(), closeBrackets(), autocompletion(), foldGutter(), indentOnInput(),
     history(), highlightSelectionMatches(),
     keymap.of([...defaultKeymap, ...historyKeymap, ...searchKeymap, indentWithTab]),
-    novaTheme, EditorView.lineWrapping,
+    // oneDark provides a known-working theme+highlight combo, then novaTheme overrides appearance
+    oneDark,
+    novaTheme,
+    EditorView.lineWrapping,
   ], []);
 
   // CodeMirror instance
@@ -566,8 +570,7 @@ export function EditorPanel() {
       extensions: [
         ...baseExtensions,
         langCompartment.current.of(getLang(ext, file.name)),
-        // Default highlight as base, then VS Code Dark+ colors override
-        syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
+        // VS Code Dark+ colors on top of oneDark base
         syntaxHighlighting(vscodeDarkHighlight),
         EditorView.updateListener.of((update) => {
           if (update.docChanged) {

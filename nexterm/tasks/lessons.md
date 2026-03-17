@@ -43,3 +43,21 @@
 - ConPTY `reader.read()` blocks forever on Windows — joining the reader thread in Drop causes infinite hang (app freezes). Solution: detach the reader thread and let it exit naturally when the master PTY struct field is dropped after Drop returns.
 - PowerShell variables defined in a dot-sourced script are script-scoped by default. Functions defined as `function global:X` run in global scope, so they can't see script-scoped variables. Use `$global:varname` for variables that functions need.
 - PowerShell AllScope aliases (ls, dir) can't be removed with `Remove-Item alias:\ls -Force`. Functions take precedence over aliases, but only if the function is in scope. Use `function global:ls` to override.
+
+## Session - i18n Hacking Panel (2026-03-16)
+- When applying i18n to files with `.map((t, i) =>` callbacks, the `t` variable shadows the `useT()` hook's `t`. Rename the callback param (e.g., `tpl`, `tab`) to avoid conflicts.
+- The en.ts/es.ts locale files already had a `hacking` section with most keys pre-defined from a prior session. Always check existing locale sections before adding duplicates.
+- Sub-components (HashTool, EncodeTool, RevShellTool, CopyButton) inside the same file each need their own `const t = useT()` call since hooks must be called at the component level.
+- When changing object property names (e.g., `label` -> `labelKey`) in const arrays used by components, check all references including non-UI code (log messages, etc.) that used the old property name.
+
+## Session - Performance Round 3 (2026-03-16)
+- Vite `manualChunks` can't use bare package names for packages without a "." export in package.json (e.g., `@codemirror/legacy-modes` only exports subpaths). Use specific subpath imports or omit from manualChunks.
+- `React.lazy()` with named exports requires a `.then(m => ({ default: m.NamedExport }))` wrapper since lazy expects a default export.
+- When a `useCallback` reads store state only at init time (not reactively), use `useAppStore.getState()` inside the callback body instead of subscribing to the value and adding it to deps. This prevents unnecessary callback identity changes.
+- Canvas screenshot capture (compositing multiple canvas layers + blob + base64) on every command is a hidden performance killer — GPU readback is expensive and base64 strings consume memory. Only capture on demand.
+- `crypto.randomUUID()` is fast but not free — for high-frequency IDs like debug log entries, a simple incrementing counter is sufficient and zero-cost.
+
+## Session - SSH transport read fix (2026-03-17)
+- Calling `session.keepalive_send()` on every WouldBlock/TimedOut (every ~100ms) floods the server with keepalive packets and can cause it to drop the connection ("transport read" error). Use a time-based interval (15s).
+- `session.set_timeout()` is shared state between reader thread and write method — changing it in write() creates a race condition. Use retries with the existing timeout instead of temporarily increasing it.
+- OS-level TCP keepalive (via `socket2` crate) is essential alongside SSH-level keepalive to survive NAT/firewall idle timeouts that silently kill TCP connections.

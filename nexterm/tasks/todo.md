@@ -61,6 +61,18 @@
 - [x] Fix ls colors in PowerShell: $e variable was script-scoped, made it $global:e
 - [x] Fix Show-ColorDir: improved param handling, added dir/ll function overrides
 
+- [x] Apply i18n translations to HackingPanel and its 6 sub-components (ReconView, ExploitView, ToolsView, AiSecView, AlertsView, HistoryView)
+
+- [x] Performance Round 3: CodeMirror chunk splitting, React.lazy sidebar panels, screenshot removal, initTerminal theme dep fix
+  - Main bundle: 1,661KB -> 403KB (76% reduction)
+  - CodeMirror split into vendor-codemirror (377KB) + vendor-codemirror-langs (658KB), lazy-loaded
+  - 6 heavy sidebar panels lazy-loaded (SSHPanel, SFTPPanel, EditorPanel, InfraMonitor, Hacking, ServerMap)
+  - Removed per-command screenshot capture (canvas compositing + base64 on every Enter)
+  - Fixed initTerminal theme dependency causing unnecessary useCallback identity changes
+  - Optimized addDebugLog: counter ID instead of crypto.randomUUID()
+  - Optimized addHistory: skip slice when under 500 limit
+
 ## Pending
 - [ ] Code signing for Windows (requires certificate)
 - [ ] Code signing for macOS (requires Apple Developer account)
+- [ ] Future optimization: dynamic import() for CodeMirror language packs in getLang() (would require async refactor)

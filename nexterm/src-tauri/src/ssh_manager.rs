@@ -3,6 +3,7 @@ use std::io::Read;
 use std::net::TcpStream;
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
+use std::time::Instant;
 use tauri::Emitter;
 
 pub struct SshSession {
@@ -55,6 +56,13 @@ impl SshSession {
             .map_err(|e| format!("Failed to set TCP_NODELAY: {}", e))?;
         tcp.set_read_timeout(Some(std::time::Duration::from_secs(30)))
             .map_err(|e| format!("Failed to set read timeout: {}", e))?;
+
+        // Enable OS-level TCP keepalive to survive NAT/firewall idle timeouts
+        let socket = socket2::SockRef::from(&tcp);
+        let keepalive = socket2::TcpKeepalive::new()
+            .with_time(std::time::Duration::from_secs(15))
+            .with_interval(std::time::Duration::from_secs(5));
+        let _ = socket.set_tcp_keepalive(&keepalive);
 
         let mut session = Session::new()
             .map_err(|e| format!("Failed to create SSH session: {}", e))?;
@@ -132,6 +140,8 @@ impl SshSession {
             let mut buf = [0u8; 4096];
             let mut consecutive_errors: u32 = 0;
             let max_consecutive_errors: u32 = 50; // ~5 seconds of continuous errors
+            let mut last_keepalive = Instant::now();
+            let keepalive_interval = std::time::Duration::from_secs(15);
 
             loop {
                 if let Ok(r) = running_clone.lock() {
@@ -171,12 +181,27 @@ impl SshSession {
                         // No data available — this is normal with timeout-based reading
                         consecutive_errors = 0;
 
-                        // Send keepalive ping periodically
-                        if let Ok(session) = session_clone.lock() {
-                            let _ = session.keepalive_send();
+                        // Send keepalive ping at proper intervals (not every iteration)
+                        if last_keepalive.elapsed() >= keepalive_interval {
+                            if let Ok(session) = session_clone.lock() {
+                                let _ = session.keepalive_send();
+                            }
+                            last_keepalive = Instant::now();
                         }
 
                         std::thread::sleep(std::time::Duration::from_millis(10));
+                    }
+                    Err(ref e) if e.to_string().contains("transport read")
+                        || e.to_string().contains("EAGAIN") => {
+                        // Transient transport errors — recover instead of counting as fatal
+                        consecutive_errors += 1;
+                        if consecutive_errors >= max_consecutive_errors {
+                            let msg = format!("SSH connection lost: {}", e);
+                            let _ = app_handle.emit(&error_event, msg);
+                            break;
+                        }
+                        // Longer backoff for transport errors to let the connection recover
+                        std::thread::sleep(std::time::Duration::from_millis(200));
                     }
                     Err(e) => {
                         consecutive_errors += 1;
@@ -201,36 +226,55 @@ impl SshSession {
 
     pub fn write(&self, data: &[u8]) -> Result<(), String> {
         // Lock BOTH session and channel together to avoid race conditions
-        let session = self.session.lock()
+        // The reader thread also locks these, so this blocks until reader releases
+        let _session = self.session.lock()
             .map_err(|e| format!("Session lock error: {}", e))?;
         let mut channel = self.channel.lock()
             .map_err(|e| format!("Channel lock error: {}", e))?;
 
-        // Temporarily increase timeout for write operation
-        session.set_timeout(5000);
-
+        // Session timeout is 100ms; for small writes this is plenty.
+        // Retry if we get a transient timeout during write.
         use std::io::Write;
-        channel.write_all(data)
-            .map_err(|e| format!("SSH write error: {}", e))?;
+        let mut retries = 0;
+        loop {
+            match channel.write_all(data) {
+                Ok(()) => break,
+                Err(ref e) if (e.kind() == std::io::ErrorKind::WouldBlock
+                    || e.kind() == std::io::ErrorKind::TimedOut) && retries < 10 => {
+                    retries += 1;
+                    std::thread::sleep(std::time::Duration::from_millis(50));
+                }
+                Err(e) => return Err(format!("SSH write error: {}", e)),
+            }
+        }
         channel.flush()
             .map_err(|e| format!("SSH flush error: {}", e))?;
-
-        // Restore short timeout for reader
-        session.set_timeout(100);
 
         Ok(())
     }
 
     pub fn resize(&self, cols: u32, rows: u32) -> Result<(), String> {
-        let session = self.session.lock()
+        let _session = self.session.lock()
             .map_err(|e| format!("Session lock error: {}", e))?;
         let mut channel = self.channel.lock()
             .map_err(|e| format!("Channel lock error: {}", e))?;
 
-        session.set_timeout(5000);
-        channel.request_pty_size(cols, rows, None, None)
-            .map_err(|e| format!("SSH resize error: {}", e))?;
-        session.set_timeout(100);
+        let mut retries = 0;
+        loop {
+            match channel.request_pty_size(cols, rows, None, None) {
+                Ok(()) => break,
+                Err(ref e) if retries < 5 => {
+                    let err_str = e.to_string();
+                    if err_str.contains("EAGAIN") || err_str.contains("timeout") {
+                        retries += 1;
+                        std::thread::sleep(std::time::Duration::from_millis(100));
+                    } else {
+                        return Err(format!("SSH resize error: {}", e));
+                    }
+                }
+                Err(e) => return Err(format!("SSH resize error: {}", e)),
+            }
+        }
 
         Ok(())
     }

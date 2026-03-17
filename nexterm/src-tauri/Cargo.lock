@@ -2625,7 +2625,7 @@ checksum = "72ef4a56884ca558e5ddb05a1d1e7e1bfd9a68d9ed024c21704cc98872dae1bb"
 
 [[package]]
 name = "novaterm"
-version = "2.2.1"
+version = "2.2.2"
 dependencies = [
  "dirs 5.0.1",
  "keyring",
@@ -2633,6 +2633,7 @@ dependencies = [
  "reqwest 0.12.28",
  "serde",
  "serde_json",
+ "socket2 0.5.10",
  "ssh2",
  "sysinfo",
  "tauri",
@@ -4504,6 +4505,16 @@ checksum = "9f7916fc008ca5542385b89a3d3ce689953c143e9304a9bf8beec1de48994c0d"
 dependencies = [
  "libc",
  "winapi",
+]
+
+[[package]]
+name = "socket2"
+version = "0.5.10"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e22376abed350d73dd1cd119b57ffccad95b4e585a7cda43e286245ce23c0678"
+dependencies = [
+ "libc",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]

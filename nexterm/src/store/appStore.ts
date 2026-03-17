@@ -257,6 +257,7 @@ interface PersistedConfig {
   history?: HistoryEntry[];
   debugPersist?: boolean;
   language?: AppLanguage;
+  customExploits?: Array<{ id: string; name: string; description: string; category: string; risk: string; commands: string[] }>;
 }
 
 let configLoaded = false;
@@ -288,6 +289,7 @@ function scheduleSave() {
       history: s.history.slice(0, 200).map(({ screenshot, ...rest }) => rest), // persist last 200, strip screenshots
       debugPersist: s.debugPersist,
       language: s.language,
+      customExploits: s.customExploits.length > 0 ? s.customExploits : undefined,
     };
     import("@tauri-apps/api/core").then(({ invoke }) => {
       invoke("save_app_config", { data: JSON.stringify(config, null, 2) }).catch(() => {});
@@ -425,6 +427,10 @@ interface AppState {
   setHackingReconResults: (results: ReconResult | null) => void;
   hackingSnapshots: CommandSnapshot[];
   addHackingSnapshot: (snapshot: Omit<CommandSnapshot, "id" | "timestamp">) => void;
+  customExploits: Array<{ id: string; name: string; description: string; category: string; risk: string; commands: string[] }>;
+  addCustomExploit: (exploit: { name: string; description: string; category: string; risk: string; commands: string[] }) => void;
+  updateCustomExploit: (id: string, updates: Partial<{ name: string; description: string; category: string; risk: string; commands: string[] }>) => void;
+  removeCustomExploit: (id: string) => void;
   hackingAlerts: HackingAlert[];
   addHackingAlert: (alert: Omit<HackingAlert, "id" | "timestamp">) => void;
   clearHackingAlerts: () => void;
@@ -754,6 +760,25 @@ export const useAppStore = create<AppState>((set, get) => ({
       ...s.hackingSnapshots,
     ].slice(0, 100),
   })),
+  customExploits: [],
+  addCustomExploit: (exploit) => {
+    set((s) => ({
+      customExploits: [...s.customExploits, { ...exploit, id: crypto.randomUUID() }],
+    }));
+    scheduleSave();
+  },
+  updateCustomExploit: (id, updates) => {
+    set((s) => ({
+      customExploits: s.customExploits.map((e) => e.id === id ? { ...e, ...updates } : e),
+    }));
+    scheduleSave();
+  },
+  removeCustomExploit: (id) => {
+    set((s) => ({
+      customExploits: s.customExploits.filter((e) => e.id !== id),
+    }));
+    scheduleSave();
+  },
   hackingAlerts: [],
   addHackingAlert: (alert) => set((s) => {
     const newAlert: HackingAlert = {
@@ -974,6 +999,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     // debugEnabled is intentionally NOT restored — always starts ON
     if (config.debugPersist !== undefined) updates.debugPersist = config.debugPersist;
     if (config.language) updates.language = config.language;
+    if (config.customExploits && config.customExploits.length > 0) updates.customExploits = config.customExploits;
     if (config.sshConnections && config.sshConnections.length > 0) {
       updates.sshConnections = config.sshConnections.map((c) => ({
         ...c,

@@ -330,6 +330,7 @@ export function SSHPanel() {
         return false;
       }
       if ((e.ctrlKey || e.metaKey) && e.key === "v") {
+        e.preventDefault(); // Prevent browser native paste (avoids duplicate)
         navigator.clipboard.readText().then((text) => {
           if (text) getTauriCore().then(({ invoke }) => invoke("ssh_write", { sessionId: currentSessionId, data: text }));
         });

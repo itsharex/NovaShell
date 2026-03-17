@@ -512,6 +512,7 @@ export function TerminalPanel() {
         }
         // Ctrl+V = paste from clipboard
         if ((e.ctrlKey || e.metaKey) && e.key === "v") {
+          e.preventDefault(); // Prevent browser native paste (avoids duplicate)
           navigator.clipboard.readText().then((text) => {
             if (text) writeToLiveSession(text);
           });
@@ -527,6 +528,7 @@ export function TerminalPanel() {
         }
         // Ctrl+Shift+V = paste (alternative)
         if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === "V") {
+          e.preventDefault(); // Prevent browser native paste (avoids duplicate)
           navigator.clipboard.readText().then((text) => {
             if (text) writeToLiveSession(text);
           });

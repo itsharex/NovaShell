@@ -492,7 +492,7 @@ const btnStyle: React.CSSProperties = {
   alignItems: "center",
 };
 
-type InfraView = "overview" | "timeline" | "alerts" | "disk" | "settings";
+type InfraView = "overview" | "timeline" | "alerts" | "disk" | "compare" | "settings";
 
 export function InfraMonitorPanel() {
   const t = useT();
@@ -742,7 +742,7 @@ export function InfraMonitorPanel() {
 
       {/* Tab Selector — 5 tabs */}
       <div style={{ display: "flex", gap: 3 }}>
-        {(["overview", "timeline", "alerts", "disk", "settings"] as const).map((v) => (
+        {(["overview", "timeline", "alerts", "disk", "compare", "settings"] as const).map((v) => (
           <button
             key={v}
             onClick={() => setView(v)}
@@ -769,6 +769,11 @@ export function InfraMonitorPanel() {
               <span style={{ display: "inline-flex", alignItems: "center", gap: 3 }}>
                 <HardDrive size={10} />
                 {t("infra.disk")}
+              </span>
+            ) : v === "compare" ? (
+              <span style={{ display: "inline-flex", alignItems: "center", gap: 3 }}>
+                <ArrowUpDown size={10} />
+                Compare
               </span>
             ) : t(`infra.${v}`)}
             {v === "alerts" && unacknowledgedAlerts.length > 0 && (
@@ -833,6 +838,14 @@ export function InfraMonitorPanel() {
             diskAnalyses={diskAnalyses}
             onSetAnalysis={setDiskAnalysis}
             onTimelineEvent={addInfraTimelineEvent}
+          />
+        )}
+
+        {view === "compare" && (
+          <CompareView
+            connections={sshConnections}
+            infraMonitors={infraMonitors}
+            baselines={useAppStore((s) => s.performanceBaselines)}
           />
         )}
 
@@ -1731,6 +1744,114 @@ function DiskAnalyzerView({
           <pre style={{ fontSize: 10, fontFamily: "'JetBrains Mono', monospace", whiteSpace: "pre-wrap", color: "var(--text-secondary)", margin: 0 }}>
             {cmdOutput.text}
           </pre>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ──── Compare View (Cross-Server Correlation) ────
+function CompareView({
+  connections,
+  infraMonitors,
+  baselines,
+}: {
+  connections: SSHConnection[];
+  infraMonitors: Record<string, { metrics: ServerMetrics[]; status: string }>;
+  baselines: Record<string, { cpuAvg: number; memAvg: number; diskAvg: number; sampleCount: number }>;
+}) {
+  const t = useT();
+  const monitoredConns = connections.filter((c) => infraMonitors[c.id] && infraMonitors[c.id].metrics.length > 0);
+
+  if (monitoredConns.length === 0) {
+    return (
+      <div style={{ textAlign: "center", padding: 30, color: "var(--text-muted)", fontSize: 12 }}>
+        <Activity size={28} style={{ marginBottom: 8, opacity: 0.3 }} />
+        <div>Start monitoring servers to compare metrics.</div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+      {/* Header row */}
+      <div style={{ display: "flex", gap: 4, fontSize: 9, fontWeight: 600, color: "var(--text-muted)", padding: "0 4px" }}>
+        <span style={{ width: 80 }}>Server</span>
+        <span style={{ flex: 1, textAlign: "center" }}>CPU %</span>
+        <span style={{ flex: 1, textAlign: "center" }}>MEM %</span>
+        <span style={{ flex: 1, textAlign: "center" }}>DISK %</span>
+        <span style={{ flex: 1, textAlign: "center" }}>Load</span>
+        <span style={{ width: 40, textAlign: "center" }}>Score</span>
+      </div>
+
+      {/* Server rows */}
+      {monitoredConns.map((conn) => {
+        const data = infraMonitors[conn.id];
+        const m = data.metrics[data.metrics.length - 1];
+        const baseline = baselines[conn.id];
+        const score = healthScore(m);
+        const scoreCol = healthColor(score);
+
+        const cpuDelta = baseline ? m.cpu - baseline.cpuAvg : 0;
+        const memDelta = baseline ? m.memPercent - baseline.memAvg : 0;
+        const diskDelta = baseline ? m.diskPercent - baseline.diskAvg : 0;
+
+        const deltaColor = (d: number) => d > 15 ? "#ff7b72" : d > 5 ? "#d29922" : d < -5 ? "#3fb950" : "var(--text-muted)";
+        const deltaText = (d: number) => d > 0 ? `+${d.toFixed(0)}` : d.toFixed(0);
+
+        return (
+          <div key={conn.id} style={{
+            display: "flex", gap: 4, alignItems: "center", padding: "6px 4px",
+            background: "var(--bg-secondary)", borderRadius: "var(--radius-sm)",
+            borderLeft: `3px solid ${scoreCol}`,
+          }}>
+            <span style={{ width: 80, fontSize: 10, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              {conn.name}
+            </span>
+
+            {/* CPU */}
+            <div style={{ flex: 1, textAlign: "center" }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: m.cpu >= 90 ? "#ff7b72" : m.cpu >= 70 ? "#d29922" : "var(--text-primary)" }}>
+                {m.cpu.toFixed(0)}%
+              </div>
+              {baseline && <div style={{ fontSize: 8, color: deltaColor(cpuDelta) }}>{deltaText(cpuDelta)}</div>}
+              <SparklineSVG data={data.metrics.slice(-20).map((s) => s.cpu)} width={50} height={12} color={m.cpu >= 90 ? "#ff7b72" : "#3fb950"} />
+            </div>
+
+            {/* MEM */}
+            <div style={{ flex: 1, textAlign: "center" }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: m.memPercent >= 90 ? "#ff7b72" : m.memPercent >= 70 ? "#d29922" : "var(--text-primary)" }}>
+                {m.memPercent.toFixed(0)}%
+              </div>
+              {baseline && <div style={{ fontSize: 8, color: deltaColor(memDelta) }}>{deltaText(memDelta)}</div>}
+              <SparklineSVG data={data.metrics.slice(-20).map((s) => s.memPercent)} width={50} height={12} color="#58a6ff" />
+            </div>
+
+            {/* DISK */}
+            <div style={{ flex: 1, textAlign: "center" }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: m.diskPercent >= 90 ? "#ff7b72" : m.diskPercent >= 70 ? "#d29922" : "var(--text-primary)" }}>
+                {m.diskPercent.toFixed(0)}%
+              </div>
+              {baseline && <div style={{ fontSize: 8, color: deltaColor(diskDelta) }}>{deltaText(diskDelta)}</div>}
+            </div>
+
+            {/* Load */}
+            <div style={{ flex: 1, textAlign: "center", fontSize: 10, color: "var(--text-secondary)" }}>
+              {m.loadAvg[0].toFixed(1)}
+            </div>
+
+            {/* Score */}
+            <div style={{ width: 40, textAlign: "center" }}>
+              <span style={{ fontSize: 12, fontWeight: 700, color: scoreCol }}>{score}</span>
+            </div>
+          </div>
+        );
+      })}
+
+      {/* Baseline info */}
+      {Object.keys(baselines).length > 0 && (
+        <div style={{ fontSize: 8, color: "var(--text-muted)", textAlign: "right", marginTop: 4 }}>
+          Deltas shown vs baseline average ({Object.values(baselines)[0]?.sampleCount || 0} samples)
         </div>
       )}
     </div>

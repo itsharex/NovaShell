@@ -217,27 +217,79 @@ function SnippetsPanel() {
   const pendingDragId = useRef<string | null>(null);
   const dragStateRef = useRef({ isDragging: false, snippetId: null as string | null, overFolder: null as string | null });
 
+  // --- Variables support ---
+  const [newVarDefaults, setNewVarDefaults] = useState<Record<string, string>>({});
+  const [editVarDefaults, setEditVarDefaults] = useState<Record<string, string>>({});
+  const [runVarSnippetId, setRunVarSnippetId] = useState<string | null>(null);
+  const [runVarValues, setRunVarValues] = useState<Record<string, string>>({});
+
+  const detectVariables = (command: string): string[] => {
+    const vars: string[] = [];
+    const regex = /\{([A-Z_][A-Z0-9_]*)\}/g;
+    let match;
+    while ((match = regex.exec(command)) !== null) {
+      if (!vars.includes(match[1])) vars.push(match[1]);
+    }
+    return vars;
+  };
+
+  const handleRunWithVars = (snippet: typeof snippets[0]) => {
+    const vars = detectVariables(snippet.command);
+    if (vars.length === 0) {
+      executeSnippet && executeSnippet(snippet.command, snippet.runMode);
+      return;
+    }
+    // Pre-fill with saved defaults
+    const defaults: Record<string, string> = {};
+    for (const v of vars) {
+      const saved = snippet.variables?.find((sv) => sv.name === v);
+      defaults[v] = saved?.defaultValue || "";
+    }
+    setRunVarValues(defaults);
+    setRunVarSnippetId(snippet.id);
+  };
+
+  const executeWithVars = (snippet: typeof snippets[0]) => {
+    let cmd = snippet.command;
+    for (const [name, value] of Object.entries(runVarValues)) {
+      cmd = cmd.replace(new RegExp(`\\{${name}\\}`, "g"), value);
+    }
+    executeSnippet && executeSnippet(cmd, snippet.runMode);
+    setRunVarSnippetId(null);
+    setRunVarValues({});
+  };
+
   const handleAdd = () => {
     if (newName && newCmd) {
-      addSnippet({ name: newName, command: newCmd, runMode: newRunMode, folderId: addToFolder });
-      setNewName(""); setNewCmd(""); setNewRunMode("stop-on-error"); setAdding(false); setAddToFolder(undefined);
+      const vars = detectVariables(newCmd);
+      const variables = vars.map((v) => ({ name: v, defaultValue: newVarDefaults[v] || "" }));
+      addSnippet({ name: newName, command: newCmd, runMode: newRunMode, folderId: addToFolder, variables: variables.length > 0 ? variables : undefined });
+      setNewName(""); setNewCmd(""); setNewRunMode("stop-on-error"); setAdding(false); setAddToFolder(undefined); setNewVarDefaults({});
     }
   };
 
-  const startEdit = (snippet: { id: string; name: string; command: string; runMode?: "stop-on-error" | "run-all" }) => {
+  const startEdit = (snippet: typeof snippets[0]) => {
     setEditingId(snippet.id);
     setEditName(snippet.name);
     setEditCmd(snippet.command);
     setEditRunMode(snippet.runMode || "stop-on-error");
+    const defaults: Record<string, string> = {};
+    if (snippet.variables) {
+      for (const v of snippet.variables) defaults[v.name] = v.defaultValue;
+    }
+    setEditVarDefaults(defaults);
   };
 
   const saveEdit = () => {
     if (editingId && editName && editCmd) {
+      const vars = detectVariables(editCmd);
+      const variables = vars.map((v) => ({ name: v, defaultValue: editVarDefaults[v] || "" }));
       const { snippets: current } = useAppStore.getState();
       useAppStore.setState({
-        snippets: current.map((s) => s.id === editingId ? { ...s, name: editName, command: editCmd, runMode: editRunMode } : s),
+        snippets: current.map((s) => s.id === editingId ? { ...s, name: editName, command: editCmd, runMode: editRunMode, variables: variables.length > 0 ? variables : undefined } : s),
       });
       setEditingId(null);
+      setEditVarDefaults({});
     }
   };
 
@@ -351,6 +403,22 @@ function SnippetsPanel() {
               <button onClick={() => setEditRunMode("run-all")} style={{ flex: 1, padding: "4px", border: "none", borderRadius: "var(--radius-sm)", background: editRunMode === "run-all" ? "var(--accent-warning)" : "var(--bg-active)", color: editRunMode === "run-all" ? "white" : "var(--text-muted)", fontSize: 10, cursor: "pointer", fontFamily: "inherit" }}>Run all (;)</button>
             </div>
           )}
+          {detectVariables(editCmd).length > 0 && (
+            <div style={{ padding: "6px 8px", background: "var(--bg-primary)", borderRadius: "var(--radius-sm)", border: "1px solid var(--border-subtle)" }}>
+              <div style={{ fontSize: 10, color: "var(--text-muted)", marginBottom: 4, fontWeight: 600 }}>Variables detected</div>
+              {detectVariables(editCmd).map((v) => (
+                <div key={v} style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 3 }}>
+                  <span style={{ fontSize: 11, color: "var(--accent-primary)", fontFamily: "'JetBrains Mono', monospace", minWidth: 60 }}>{`{${v}}`}</span>
+                  <input
+                    placeholder="Default value"
+                    value={editVarDefaults[v] || ""}
+                    onChange={(e) => setEditVarDefaults((prev) => ({ ...prev, [v]: e.target.value }))}
+                    style={{ ...inputBase, padding: "3px 6px", fontSize: 11, flex: 1 }}
+                  />
+                </div>
+              ))}
+            </div>
+          )}
           <div style={{ display: "flex", gap: 4 }}>
             <button onClick={saveEdit} style={{ flex: 1, padding: "5px", background: "var(--accent-primary)", border: "none", borderRadius: "var(--radius-sm)", color: "white", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>Save</button>
             <button onClick={() => setEditingId(null)} style={{ padding: "5px 8px", background: "var(--bg-active)", border: "none", borderRadius: "var(--radius-sm)", color: "var(--text-secondary)", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>Cancel</button>
@@ -395,9 +463,32 @@ function SnippetsPanel() {
             )}
             <button onClick={() => startEdit(snippet)} style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", padding: 2, display: "flex" }} title="Edit"><Edit3 size={13} /></button>
             <button onClick={() => removeSnippet(snippet.id)} style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", padding: 2, display: "flex" }} title="Delete"><Trash2 size={13} /></button>
-            <button className="snippet-run" title={`Run${isMulti ? " sequence" : ""}: ${snippet.name}`} aria-label={`Run ${snippet.name}`} onClick={() => executeSnippet && executeSnippet(snippet.command, snippet.runMode)}><Play size={14} /></button>
+            <button className="snippet-run" title={`Run${isMulti ? " sequence" : ""}: ${snippet.name}`} aria-label={`Run ${snippet.name}`} onClick={() => handleRunWithVars(snippet)}><Play size={14} /></button>
           </div>
         </div>
+        {/* Variable prompt before execution */}
+        {runVarSnippetId === snippet.id && (
+          <div style={{ marginTop: 8, padding: "8px 10px", background: "var(--bg-primary)", borderRadius: "var(--radius-sm)", border: "1px solid var(--accent-primary)", display: "flex", flexDirection: "column", gap: 5 }}>
+            <div style={{ fontSize: 10, color: "var(--accent-primary)", fontWeight: 600 }}>Fill variables</div>
+            {detectVariables(snippet.command).map((v) => (
+              <div key={v} style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <span style={{ fontSize: 11, color: "var(--text-secondary)", fontFamily: "'JetBrains Mono', monospace", minWidth: 60 }}>{`{${v}}`}</span>
+                <input
+                  value={runVarValues[v] || ""}
+                  onChange={(e) => setRunVarValues((prev) => ({ ...prev, [v]: e.target.value }))}
+                  onKeyDown={(e) => e.key === "Enter" && executeWithVars(snippet)}
+                  placeholder={snippet.variables?.find((sv) => sv.name === v)?.defaultValue || "value"}
+                  autoFocus
+                  style={{ ...inputBase, padding: "3px 6px", fontSize: 11, flex: 1 }}
+                />
+              </div>
+            ))}
+            <div style={{ display: "flex", gap: 4 }}>
+              <button onClick={() => executeWithVars(snippet)} style={{ flex: 1, padding: "4px", background: "var(--accent-primary)", border: "none", borderRadius: "var(--radius-sm)", color: "white", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>Run</button>
+              <button onClick={() => { setRunVarSnippetId(null); setRunVarValues({}); }} style={{ padding: "4px 8px", background: "var(--bg-active)", border: "none", borderRadius: "var(--radius-sm)", color: "var(--text-secondary)", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>Cancel</button>
+            </div>
+          </div>
+        )}
         {isExpanded && isMulti && (
           <div style={{ marginTop: 8, padding: "6px 8px", background: "var(--bg-primary)", borderRadius: "var(--radius-sm)", border: "1px solid var(--border-subtle)" }}>
             {lines.map((line, i) => (
@@ -436,6 +527,22 @@ function SnippetsPanel() {
           <div style={{ display: "flex", gap: 4 }}>
             <button onClick={() => setNewRunMode("stop-on-error")} style={{ flex: 1, padding: "4px", border: "none", borderRadius: "var(--radius-sm)", background: newRunMode === "stop-on-error" ? "var(--accent-primary)" : "var(--bg-active)", color: newRunMode === "stop-on-error" ? "white" : "var(--text-muted)", fontSize: 10, cursor: "pointer", fontFamily: "inherit" }}>Stop on error (&&)</button>
             <button onClick={() => setNewRunMode("run-all")} style={{ flex: 1, padding: "4px", border: "none", borderRadius: "var(--radius-sm)", background: newRunMode === "run-all" ? "var(--accent-warning)" : "var(--bg-active)", color: newRunMode === "run-all" ? "white" : "var(--text-muted)", fontSize: 10, cursor: "pointer", fontFamily: "inherit" }}>Run all (;)</button>
+          </div>
+        )}
+        {detectVariables(newCmd).length > 0 && (
+          <div style={{ padding: "6px 8px", background: "var(--bg-primary)", borderRadius: "var(--radius-sm)", border: "1px solid var(--border-subtle)" }}>
+            <div style={{ fontSize: 10, color: "var(--text-muted)", marginBottom: 4, fontWeight: 600 }}>Variables detected</div>
+            {detectVariables(newCmd).map((v) => (
+              <div key={v} style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 3 }}>
+                <span style={{ fontSize: 11, color: "var(--accent-primary)", fontFamily: "'JetBrains Mono', monospace", minWidth: 60 }}>{`{${v}}`}</span>
+                <input
+                  placeholder="Default value"
+                  value={newVarDefaults[v] || ""}
+                  onChange={(e) => setNewVarDefaults((prev) => ({ ...prev, [v]: e.target.value }))}
+                  style={{ ...inputBase, padding: "3px 6px", fontSize: 11, flex: 1 }}
+                />
+              </div>
+            ))}
           </div>
         )}
         <button onClick={handleAdd} disabled={!newName || !newCmd} style={{ padding: "6px", background: !newName || !newCmd ? "var(--bg-active)" : "var(--accent-primary)", border: "none", borderRadius: "var(--radius-sm)", color: !newName || !newCmd ? "var(--text-muted)" : "white", fontSize: 12, cursor: !newName || !newCmd ? "default" : "pointer", fontFamily: "inherit" }}>Add Snippet</button>

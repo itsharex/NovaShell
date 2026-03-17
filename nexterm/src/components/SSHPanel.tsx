@@ -70,6 +70,14 @@ const themeColors: Record<string, Record<string, string>> = {
     brightBlack: "#448844", brightRed: "#ff6666", brightGreen: "#66ff66", brightYellow: "#ddff66",
     brightBlue: "#66ddff", brightMagenta: "#66ffdd", brightCyan: "#88ff88", brightWhite: "#ccffcc",
   },
+  hacking: {
+    background: "#050510", foreground: "#00ff41", cursor: "#00ff41", cursorAccent: "#050510",
+    selectionBackground: "rgba(0,255,65,0.3)", selectionForeground: "#ffffff",
+    black: "#0a0a1a", red: "#ff0040", green: "#00ff41", yellow: "#ffaf00",
+    blue: "#00d4ff", magenta: "#ff00ff", cyan: "#00ffff", white: "#b0ffb0",
+    brightBlack: "#333355", brightRed: "#ff3366", brightGreen: "#39ff14", brightYellow: "#ffd700",
+    brightBlue: "#00e5ff", brightMagenta: "#ff44ff", brightCyan: "#44ffff", brightWhite: "#e0ffe0",
+  },
 };
 
 interface SSHTerminalRef {

@@ -1082,9 +1082,10 @@ if (typeof window !== "undefined") {
         // WARNING: privateKey is persisted in plaintext — see scheduleSave() comment
         sshConnections: s.sshConnections.map(({ status, sessionId, errorMessage, sessionPassword, ...rest }) => rest),
         plugins: s.plugins,
-        history: s.history.slice(0, 200),
+        history: s.history.slice(0, 200).map(({ screenshot, ...rest }) => rest),
         debugPersist: s.debugPersist,
         language: s.language,
+        customExploits: s.customExploits.length > 0 ? s.customExploits : undefined,
       };
       // Use synchronous XHR-style approach via navigator.sendBeacon isn't available for Tauri
       // Fire and forget — the invoke will execute before the page unloads

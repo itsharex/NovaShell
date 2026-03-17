@@ -7,6 +7,7 @@ import { StatusBar } from "./components/StatusBar";
 import { UpdateNotification } from "./components/UpdateNotification";
 import { useAppStore } from "./store/appStore";
 import { AlertToast } from "./components/hacking/AlertToast";
+import { CommandPalette } from "./components/CommandPalette";
 import { I18nProvider } from "./i18n";
 
 const MemoizedTerminalPanel = memo(TerminalPanel);
@@ -22,11 +23,24 @@ function App() {
   const focusMode = useAppStore((s) => s.focusMode);
   const hackingMode = useAppStore((s) => s.hackingMode);
   const [sidebarWidth, setSidebarWidth] = useState(DEFAULT_SIDEBAR_WIDTH);
+  const [paletteOpen, setPaletteOpen] = useState(false);
   const isResizing = useRef(false);
 
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", theme);
   }, [theme]);
+
+  // Command Palette shortcut: Ctrl+K
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === "k") {
+        e.preventDefault();
+        setPaletteOpen((v) => !v);
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, []);
 
   const sidebarWrapperRef = useRef<HTMLDivElement>(null);
 
@@ -91,6 +105,7 @@ function App() {
         <MemoizedStatusBar />
         <UpdateNotification />
         {hackingMode && <AlertToast />}
+        {paletteOpen && <CommandPalette onClose={() => setPaletteOpen(false)} />}
       </div>
     </I18nProvider>
   );

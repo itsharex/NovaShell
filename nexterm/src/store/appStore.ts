@@ -258,6 +258,7 @@ interface PersistedConfig {
   debugPersist?: boolean;
   language?: AppLanguage;
   customExploits?: Array<{ id: string; name: string; description: string; category: string; risk: string; commands: string[] }>;
+  workspaces?: Array<{ id: string; name: string; tabCount: number; splitMode: string; sidebarTab: string }>;
 }
 
 let configLoaded = false;
@@ -290,6 +291,7 @@ function scheduleSave() {
       debugPersist: s.debugPersist,
       language: s.language,
       customExploits: s.customExploits.length > 0 ? s.customExploits : undefined,
+      workspaces: s.workspaces.length > 0 ? s.workspaces : undefined,
     };
     import("@tauri-apps/api/core").then(({ invoke }) => {
       invoke("save_app_config", { data: JSON.stringify(config, null, 2) }).catch(() => {});
@@ -427,6 +429,10 @@ interface AppState {
   setHackingReconResults: (results: ReconResult | null) => void;
   hackingSnapshots: CommandSnapshot[];
   addHackingSnapshot: (snapshot: Omit<CommandSnapshot, "id" | "timestamp">) => void;
+  workspaces: Array<{ id: string; name: string; tabCount: number; splitMode: string; sidebarTab: string }>;
+  saveWorkspace: (name: string) => void;
+  loadWorkspace: (id: string) => void;
+  removeWorkspace: (id: string) => void;
   customExploits: Array<{ id: string; name: string; description: string; category: string; risk: string; commands: string[] }>;
   addCustomExploit: (exploit: { name: string; description: string; category: string; risk: string; commands: string[] }) => void;
   updateCustomExploit: (id: string, updates: Partial<{ name: string; description: string; category: string; risk: string; commands: string[] }>) => void;
@@ -760,6 +766,33 @@ export const useAppStore = create<AppState>((set, get) => ({
       ...s.hackingSnapshots,
     ].slice(0, 100),
   })),
+  workspaces: [],
+  saveWorkspace: (name) => {
+    const s = get();
+    set((prev) => ({
+      workspaces: [...prev.workspaces, {
+        id: crypto.randomUUID(),
+        name,
+        tabCount: s.tabs.length,
+        splitMode: s.splitMode,
+        sidebarTab: s.sidebarTab,
+      }],
+    }));
+    scheduleSave();
+  },
+  loadWorkspace: (id) => {
+    const s = get();
+    const ws = s.workspaces.find((w) => w.id === id);
+    if (!ws) return;
+    // Restore split mode and sidebar tab
+    set({ splitMode: ws.splitMode as any, sidebarTab: ws.sidebarTab as any, sidebarOpen: true });
+    // Add tabs if needed
+    while (get().tabs.length < ws.tabCount) { get().addTab(); }
+  },
+  removeWorkspace: (id) => {
+    set((s) => ({ workspaces: s.workspaces.filter((w) => w.id !== id) }));
+    scheduleSave();
+  },
   customExploits: [],
   addCustomExploit: (exploit) => {
     set((s) => ({
@@ -1000,6 +1033,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (config.debugPersist !== undefined) updates.debugPersist = config.debugPersist;
     if (config.language) updates.language = config.language;
     if (config.customExploits && config.customExploits.length > 0) updates.customExploits = config.customExploits;
+    if (config.workspaces && config.workspaces.length > 0) updates.workspaces = config.workspaces;
     if (config.sshConnections && config.sshConnections.length > 0) {
       updates.sshConnections = config.sshConnections.map((c) => ({
         ...c,

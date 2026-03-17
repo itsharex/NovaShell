@@ -34,7 +34,15 @@ export function StatusBar() {
   });
   const language = useAppStore((s) => s.language);
   const setLanguage = useAppStore((s) => s.setLanguage);
+  const executeSnippet = useAppStore((s) => s.executeSnippet);
+  const infraAlerts = useAppStore((s) => s.infraAlerts);
+  const hackingAlertsList = useAppStore((s) => s.hackingAlerts);
   const t = useT();
+  const [quickConnectOpen, setQuickConnectOpen] = useState(false);
+  const [notifOpen, setNotifOpen] = useState(false);
+
+  // Unified notification count
+  const totalAlerts = infraAlertCount + hackingAlertCount;
 
   const [time, setTime] = useState(new Date());
 
@@ -218,6 +226,93 @@ export function StatusBar() {
         )}
       </div>
       <div className="statusbar-right">
+        {/* Notification Center */}
+        {totalAlerts > 0 && (
+          <div style={{ position: "relative" }}>
+            <button className="statusbar-btn" onClick={() => setNotifOpen(!notifOpen)} title="Notifications"
+              style={{ position: "relative", color: "#ff7b72" }}>
+              <span style={{ fontSize: 12 }}>&#128276;</span>
+              <span style={{
+                position: "absolute", top: 0, right: 0, width: 14, height: 14,
+                background: "#ff7b72", color: "#fff", borderRadius: "50%",
+                fontSize: 8, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center",
+              }}>{totalAlerts > 9 ? "9+" : totalAlerts}</span>
+            </button>
+            {notifOpen && (
+              <div style={{
+                position: "absolute", bottom: 28, right: 0, width: 300,
+                background: "var(--bg-secondary)", border: "1px solid var(--border-color)",
+                borderRadius: "var(--radius-md)", boxShadow: "0 -4px 16px rgba(0,0,0,0.4)",
+                maxHeight: 300, overflow: "auto", zIndex: 200,
+              }}>
+                <div style={{ padding: "8px 12px", borderBottom: "1px solid var(--border-subtle)", fontSize: 11, fontWeight: 600, color: "var(--text-primary)" }}>
+                  Notifications ({totalAlerts})
+                </div>
+                {infraAlerts.filter((a) => !a.acknowledged).slice(0, 10).map((a) => (
+                  <div key={a.id} style={{ padding: "6px 12px", borderBottom: "1px solid var(--border-subtle)", fontSize: 10 }}>
+                    <div style={{ color: a.severity === "critical" ? "#ff7b72" : "#d29922", fontWeight: 600 }}>
+                      {a.serverName}: {a.message}
+                    </div>
+                    <div style={{ color: "var(--text-muted)", fontSize: 9 }}>
+                      {new Date(a.timestamp).toLocaleTimeString()} — Infra {a.metric}
+                    </div>
+                  </div>
+                ))}
+                {hackingAlertsList.slice(0, 5).map((a) => (
+                  <div key={a.id} style={{ padding: "6px 12px", borderBottom: "1px solid var(--border-subtle)", fontSize: 10 }}>
+                    <div style={{ color: a.severity === "critical" ? "#ff7b72" : "#d29922", fontWeight: 600 }}>
+                      {a.title}
+                    </div>
+                    <div style={{ color: "var(--text-muted)", fontSize: 9 }}>
+                      {new Date(a.timestamp).toLocaleTimeString()} — Security
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+        {/* Quick Connect */}
+        {sshConnections.length > 0 && (
+          <div style={{ position: "relative" }}>
+            <button className="statusbar-btn" onClick={() => setQuickConnectOpen(!quickConnectOpen)} title="Quick Connect">
+              <Server size={12} />
+              <span style={{ fontSize: 10 }}>{sshConnections.filter((c) => c.status === "connected").length}/{sshConnections.length}</span>
+            </button>
+            {quickConnectOpen && (
+              <div style={{
+                position: "absolute", bottom: 28, right: 0, width: 220,
+                background: "var(--bg-secondary)", border: "1px solid var(--border-color)",
+                borderRadius: "var(--radius-md)", boxShadow: "0 -4px 16px rgba(0,0,0,0.4)",
+                padding: 4, zIndex: 200,
+              }}>
+                {sshConnections.map((conn) => (
+                  <button key={conn.id}
+                    onClick={() => {
+                      if (executeSnippet) executeSnippet(`cd ${conn.name}:~`);
+                      setQuickConnectOpen(false);
+                    }}
+                    style={{
+                      width: "100%", display: "flex", alignItems: "center", gap: 8,
+                      padding: "6px 10px", border: "none", background: "transparent",
+                      color: "var(--text-primary)", fontSize: 11, fontFamily: "inherit",
+                      cursor: "pointer", borderRadius: "var(--radius-sm)", textAlign: "left",
+                    }}
+                    onMouseEnter={(e) => (e.currentTarget.style.background = "var(--bg-hover)")}
+                    onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+                  >
+                    <span style={{
+                      width: 6, height: 6, borderRadius: "50%", flexShrink: 0,
+                      background: conn.status === "connected" ? "#3fb950" : conn.status === "connecting" ? "#d29922" : "#484f58",
+                    }} />
+                    <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{conn.name}</span>
+                    <span style={{ fontSize: 9, color: "var(--text-muted)" }}>{conn.host}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
         <button className="statusbar-btn" onClick={cycleSplit} title={`Split: ${splitMode}`}>
           <SplitIcon size={12} />
           <span style={{ textTransform: "capitalize" }}>{splitMode === "none" ? t("statusbar.noSplit") : splitMode === "vertical" ? t("statusbar.splitVertical") : t("statusbar.splitHorizontal")}</span>

@@ -3,7 +3,7 @@ import {
   Server, Loader2, RefreshCw, X, Play, Square, FileText, RotateCcw,
   Globe, Database, Shield, Container, Cpu, Wifi, ChevronDown, ChevronRight,
   Activity, HardDrive, MemoryStick, Timer, Layers, Search,
-  Lock, AlertTriangle, Copy, Terminal, Eye, Settings, Zap,
+  Lock, AlertTriangle, Copy, Terminal, Eye, Settings, Zap, Edit3, Save,
 } from "lucide-react";
 import { useAppStore } from "../store/appStore";
 import { useT } from "../i18n";
@@ -24,7 +24,7 @@ interface ServerScan {
 }
 
 // ── Smart Actions per service type ──
-type SmartAction = { label: string; icon: React.ReactNode; cmd: string; copyOnly?: boolean };
+type SmartAction = { label: string; icon: React.ReactNode; cmd: string; copyOnly?: boolean; editable?: boolean; saveCmdFn?: (content: string) => string };
 
 function getSmartActions(svc: DetectedService): SmartAction[] {
   const n = svc.name.toLowerCase();
@@ -49,12 +49,21 @@ function getSmartActions(svc: DetectedService): SmartAction[] {
       { label: "Status", icon: <Eye size={8} />, cmd: `systemctl status ${svc.name} --no-pager -l 2>&1` },
       { label: "Logs", icon: <FileText size={8} />, cmd: `journalctl -u ${svc.name} -n 100 --no-pager 2>&1` },
       { label: "Errors only", icon: <AlertTriangle size={8} />, cmd: `journalctl -u ${svc.name} -p err -n 30 --no-pager 2>&1` },
-      { label: "Config", icon: <Settings size={8} />, cmd: `systemctl cat ${svc.name} 2>&1` },
+      { label: "Config", icon: <Settings size={8} />, cmd: `systemctl cat ${svc.name} 2>&1`, editable: true, saveCmdFn: (content: string) => {
+        // systemctl cat shows the path in the first line (# /etc/systemd/system/xxx.service)
+        // We extract it and use tee to write back
+        const lines = content.split("\n");
+        const pathLine = lines.find(l => l.startsWith("# /"));
+        const path = pathLine ? pathLine.replace("# ", "").trim() : `/etc/systemd/system/${svc.name}.service`;
+        const cleanContent = lines.filter(l => !l.startsWith("# /")).join("\n");
+        return `cat > ${path} << 'NOVASHELL_EOF'\n${cleanContent}\nNOVASHELL_EOF\nsystemctl daemon-reload 2>&1 && echo '✓ Config saved and daemon reloaded'`;
+      }},
     );
 
     // Service-specific smart actions
     if (n.includes("nginx")) {
       actions.push(
+        { label: "Edit nginx.conf", icon: <Edit3 size={8} />, cmd: `cat /etc/nginx/nginx.conf 2>&1`, editable: true, saveCmdFn: (content: string) => `cat > /etc/nginx/nginx.conf << 'NOVASHELL_EOF'\n${content}\nNOVASHELL_EOF\nnginx -t 2>&1 && echo '✓ Config valid' || echo '✗ Config invalid'` },
         { label: "Test config", icon: <Zap size={8} />, cmd: `nginx -t 2>&1` },
         { label: "Reload", icon: <RefreshCw size={8} />, cmd: `sudo nginx -s reload 2>&1 && echo '✓ Reloaded'` },
         { label: "Sites enabled", icon: <Globe size={8} />, cmd: `ls -la /etc/nginx/sites-enabled/ 2>/dev/null || ls -la /etc/nginx/conf.d/ 2>/dev/null` },
@@ -63,6 +72,7 @@ function getSmartActions(svc: DetectedService): SmartAction[] {
       );
     } else if (n.includes("apache") || n.includes("httpd")) {
       actions.push(
+        { label: "Edit config", icon: <Edit3 size={8} />, cmd: `cat /etc/apache2/apache2.conf 2>/dev/null || cat /etc/httpd/conf/httpd.conf 2>/dev/null`, editable: true, saveCmdFn: (content: string) => `cat > /etc/apache2/apache2.conf << 'NOVASHELL_EOF'\n${content}\nNOVASHELL_EOF\napache2ctl configtest 2>&1 && echo '✓ Config valid' || echo '✗ Config invalid'` },
         { label: "Test config", icon: <Zap size={8} />, cmd: `apache2ctl configtest 2>&1 || httpd -t 2>&1` },
         { label: "Reload", icon: <RefreshCw size={8} />, cmd: `sudo systemctl reload ${svc.name} 2>&1 && echo '✓ Reloaded'` },
         { label: "Error log", icon: <AlertTriangle size={8} />, cmd: `tail -30 /var/log/apache2/error.log 2>/dev/null || tail -30 /var/log/httpd/error_log 2>/dev/null` },
@@ -183,6 +193,11 @@ export function ServerMapPanel() {
   const [scanning, setScanning] = useState<string | null>(null);
   const [actionOutput, setActionOutput] = useState<{ title: string; content: string } | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
+  const [editMode, setEditMode] = useState(false);
+  const [editContent, setEditContent] = useState("");
+  const [editSaveFn, setEditSaveFn] = useState<((content: string) => string) | null>(null);
+  const [editConn, setEditConn] = useState<SSHConnection | null>(null);
+  const [saving, setSaving] = useState(false);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set(["docker", "systemd", "port"]));
   const [expandedService, setExpandedService] = useState<string | null>(null);
@@ -343,6 +358,7 @@ export function ServerMapPanel() {
     }
     setActionLoading(true);
     setActionOutput({ title: action.label, content: t("common.loading") });
+    setEditMode(false);
     try {
       const creds = await getCredentials(conn);
       if (!creds) { setActionOutput({ title: "Error", content: t("servermap.noCredentials") }); setActionLoading(false); return; }
@@ -352,10 +368,37 @@ export function ServerMapPanel() {
         password: creds.password, privateKey: creds.privateKey, command: action.cmd,
       });
       setActionOutput({ title: action.label, content: output || "(no output)" });
+      // If editable, set up edit mode
+      if (action.editable && action.saveCmdFn) {
+        setEditContent(output || "");
+        setEditSaveFn(() => action.saveCmdFn!);
+        setEditConn(conn);
+        setEditMode(true);
+      }
     } catch (e) {
       setActionOutput({ title: `${action.label} failed`, content: String(e) });
     }
     setActionLoading(false);
+  };
+
+  const saveEditedConfig = async () => {
+    if (!editSaveFn || !editConn) return;
+    setSaving(true);
+    try {
+      const creds = await getCredentials(editConn);
+      if (!creds) { setSaving(false); return; }
+      const { invoke } = await getTauriCore();
+      const saveCmd = editSaveFn(editContent);
+      const output = await invoke<string>("ssh_exec", {
+        host: editConn.host, port: editConn.port, username: editConn.username,
+        password: creds.password, privateKey: creds.privateKey, command: saveCmd,
+      });
+      setActionOutput((prev) => prev ? { ...prev, content: output || "Saved successfully" } : null);
+      setEditMode(false);
+    } catch (e) {
+      setActionOutput((prev) => prev ? { ...prev, content: `Save failed: ${e}` } : null);
+    }
+    setSaving(false);
   };
 
   const runSecurityAudit = async (conn: SSHConnection) => {
@@ -498,24 +541,53 @@ export function ServerMapPanel() {
         </div>
       )}
 
-      {/* Action output modal */}
+      {/* Action output modal — editable for config actions */}
       {actionOutput && (
         <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 100, display: "flex", flexDirection: "column", padding: 12 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
             <span style={{ fontSize: 12, fontWeight: 600, color: "var(--text-primary)", flex: 1 }}>
               {actionLoading && <Loader2 size={12} style={{ display: "inline", animation: "spin 1s linear infinite", marginRight: 6 }} />}
+              {saving && <Loader2 size={12} style={{ display: "inline", animation: "spin 1s linear infinite", marginRight: 6 }} />}
               {actionOutput.title}
+              {editMode && <span style={{ fontSize: 9, color: "#3fb950", marginLeft: 8, fontWeight: 400 }}>EDIT MODE</span>}
             </span>
-            <button onClick={() => navigator.clipboard.writeText(actionOutput.content)} title="Copy output" style={{ ...btnS, background: "var(--bg-tertiary)", color: "var(--text-secondary)", padding: "4px 8px" }}><Copy size={10} /></button>
-            <button onClick={() => setActionOutput(null)} style={{ ...btnS, background: "var(--bg-tertiary)", color: "var(--text-secondary)", padding: "4px 8px" }}><X size={12} /> {t("common.close")}</button>
+            {editMode && (
+              <button onClick={saveEditedConfig} disabled={saving}
+                style={{ ...btnS, background: "#3fb950", color: "white", padding: "4px 10px", fontWeight: 600 }}>
+                <Save size={10} /> Save
+              </button>
+            )}
+            {editMode && (
+              <button onClick={() => setEditMode(false)}
+                style={{ ...btnS, background: "var(--bg-tertiary)", color: "var(--text-secondary)", padding: "4px 8px" }}>
+                Cancel Edit
+              </button>
+            )}
+            <button onClick={() => navigator.clipboard.writeText(editMode ? editContent : actionOutput.content)} title="Copy"
+              style={{ ...btnS, background: "var(--bg-tertiary)", color: "var(--text-secondary)", padding: "4px 8px" }}><Copy size={10} /></button>
+            <button onClick={() => { setActionOutput(null); setEditMode(false); }}
+              style={{ ...btnS, background: "var(--bg-tertiary)", color: "var(--text-secondary)", padding: "4px 8px" }}><X size={12} /> {t("common.close")}</button>
           </div>
-          <pre style={{
-            flex: 1, overflow: "auto", background: "var(--bg-primary)", borderRadius: "var(--radius-sm)",
-            border: "1px solid var(--border-subtle)", padding: 10, fontSize: 11, color: "var(--text-primary)",
-            fontFamily: "'JetBrains Mono', monospace", whiteSpace: "pre-wrap", wordBreak: "break-all", margin: 0,
-          }}>
-            {actionOutput.content}
-          </pre>
+          {editMode ? (
+            <textarea
+              value={editContent}
+              onChange={(e) => setEditContent(e.target.value)}
+              spellCheck={false}
+              style={{
+                flex: 1, resize: "none", background: "#1e1e1e", borderRadius: "var(--radius-sm)",
+                border: "1px solid #3fb950", padding: 10, fontSize: 12, color: "#d4d4d4",
+                fontFamily: "'JetBrains Mono', monospace", outline: "none", lineHeight: 1.5,
+              }}
+            />
+          ) : (
+            <pre style={{
+              flex: 1, overflow: "auto", background: "var(--bg-primary)", borderRadius: "var(--radius-sm)",
+              border: "1px solid var(--border-subtle)", padding: 10, fontSize: 11, color: "var(--text-primary)",
+              fontFamily: "'JetBrains Mono', monospace", whiteSpace: "pre-wrap", wordBreak: "break-all", margin: 0,
+            }}>
+              {actionOutput.content}
+            </pre>
+          )}
         </div>
       )}
 

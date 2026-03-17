@@ -618,6 +618,7 @@ export function EditorPanel() {
   // Infra action execution
   const runInfraAction = async (action: InfraAction) => {
     if (!file) return;
+    if (action.dangerous && !window.confirm(`Are you sure you want to "${action.label}"? This is a destructive action.`)) return;
     setActionLoading(true);
     setActionOutput({ title: action.label, content: "Running..." });
     try {

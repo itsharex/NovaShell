@@ -56,14 +56,15 @@ function getSmartActions(svc: DetectedService): SmartAction[] {
         const pathLine = lines.find(l => l.startsWith("# /"));
         const path = pathLine ? pathLine.replace("# ", "").trim() : `/etc/systemd/system/${svc.name}.service`;
         const cleanContent = lines.filter(l => !l.startsWith("# /")).join("\n");
-        return `cat > ${path} << 'NOVASHELL_EOF'\n${cleanContent}\nNOVASHELL_EOF\nsystemctl daemon-reload 2>&1 && echo '✓ Config saved and daemon reloaded'`;
+        const safeContent = cleanContent.replace(/NOVASHELL_EOF/g, 'NOVASHELL_EOF_ESCAPED');
+        return `cp ${path} ${path}.bak 2>/dev/null; cat > ${path} << 'NOVASHELL_EOF'\n${safeContent}\nNOVASHELL_EOF\nsystemctl daemon-reload 2>&1 && echo '✓ Config saved and daemon reloaded'`;
       }},
     );
 
     // Service-specific smart actions
     if (n.includes("nginx")) {
       actions.push(
-        { label: "Edit nginx.conf", icon: <Edit3 size={8} />, cmd: `cat /etc/nginx/nginx.conf 2>&1`, editable: true, saveCmdFn: (content: string) => `cat > /etc/nginx/nginx.conf << 'NOVASHELL_EOF'\n${content}\nNOVASHELL_EOF\nnginx -t 2>&1 && echo '✓ Config valid' || echo '✗ Config invalid'` },
+        { label: "Edit nginx.conf", icon: <Edit3 size={8} />, cmd: `cat /etc/nginx/nginx.conf 2>&1`, editable: true, saveCmdFn: (content: string) => { const safeContent = content.replace(/NOVASHELL_EOF/g, 'NOVASHELL_EOF_ESCAPED'); return `cp /etc/nginx/nginx.conf /etc/nginx/nginx.conf.bak 2>/dev/null; cat > /etc/nginx/nginx.conf << 'NOVASHELL_EOF'\n${safeContent}\nNOVASHELL_EOF\nnginx -t 2>&1 && echo '✓ Config valid' || echo '✗ Config invalid'`; } },
         { label: "Test config", icon: <Zap size={8} />, cmd: `nginx -t 2>&1` },
         { label: "Reload", icon: <RefreshCw size={8} />, cmd: `sudo nginx -s reload 2>&1 && echo '✓ Reloaded'` },
         { label: "Sites enabled", icon: <Globe size={8} />, cmd: `ls -la /etc/nginx/sites-enabled/ 2>/dev/null || ls -la /etc/nginx/conf.d/ 2>/dev/null` },
@@ -72,7 +73,7 @@ function getSmartActions(svc: DetectedService): SmartAction[] {
       );
     } else if (n.includes("apache") || n.includes("httpd")) {
       actions.push(
-        { label: "Edit config", icon: <Edit3 size={8} />, cmd: `cat /etc/apache2/apache2.conf 2>/dev/null || cat /etc/httpd/conf/httpd.conf 2>/dev/null`, editable: true, saveCmdFn: (content: string) => `cat > /etc/apache2/apache2.conf << 'NOVASHELL_EOF'\n${content}\nNOVASHELL_EOF\napache2ctl configtest 2>&1 && echo '✓ Config valid' || echo '✗ Config invalid'` },
+        { label: "Edit config", icon: <Edit3 size={8} />, cmd: `cat /etc/apache2/apache2.conf 2>/dev/null || cat /etc/httpd/conf/httpd.conf 2>/dev/null`, editable: true, saveCmdFn: (content: string) => { const safeContent = content.replace(/NOVASHELL_EOF/g, 'NOVASHELL_EOF_ESCAPED'); return `cp /etc/apache2/apache2.conf /etc/apache2/apache2.conf.bak 2>/dev/null; cat > /etc/apache2/apache2.conf << 'NOVASHELL_EOF'\n${safeContent}\nNOVASHELL_EOF\napache2ctl configtest 2>&1 && echo '✓ Config valid' || echo '✗ Config invalid'`; } },
         { label: "Test config", icon: <Zap size={8} />, cmd: `apache2ctl configtest 2>&1 || httpd -t 2>&1` },
         { label: "Reload", icon: <RefreshCw size={8} />, cmd: `sudo systemctl reload ${svc.name} 2>&1 && echo '✓ Reloaded'` },
         { label: "Error log", icon: <AlertTriangle size={8} />, cmd: `tail -30 /var/log/apache2/error.log 2>/dev/null || tail -30 /var/log/httpd/error_log 2>/dev/null` },
@@ -206,6 +207,7 @@ export function ServerMapPanel() {
   const [countdown, setCountdown] = useState(30);
   const [searchQuery, setSearchQuery] = useState("");
   const [copiedCmd, setCopiedCmd] = useState<string | null>(null);
+  const [confirmAction, setConfirmAction] = useState<{conn: SSHConnection, action: SmartAction} | null>(null);
   const credCacheRef = useRef<Map<string, { password: string | null; privateKey: string | null }>>(new Map());
 
   // Multi-exec state
@@ -348,6 +350,11 @@ export function ServerMapPanel() {
     setMultiSelected(new Set(sshConnections.map((c) => c.id)));
   };
 
+  const isDestructiveAction = (action: SmartAction): boolean => {
+    const label = action.label.toLowerCase();
+    return label.includes("restart") || label.includes("stop") || label.includes("kill");
+  };
+
   const runAction = async (conn: SSHConnection, action: SmartAction) => {
     if (action.copyOnly) {
       navigator.clipboard.writeText(action.cmd).then(() => {
@@ -356,6 +363,12 @@ export function ServerMapPanel() {
       });
       return;
     }
+    // Require confirmation for destructive actions and config saves
+    if ((isDestructiveAction(action) || (action.editable && action.saveCmdFn)) && !confirmAction) {
+      setConfirmAction({ conn, action });
+      return;
+    }
+    setConfirmAction(null);
     setActionLoading(true);
     setActionOutput({ title: action.label, content: t("common.loading") });
     setEditMode(false);
@@ -419,6 +432,24 @@ export function ServerMapPanel() {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", gap: 0 }}>
+      {/* Confirmation dialog for destructive actions */}
+      {confirmAction && (
+        <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,0.5)", zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <div style={{ background: "var(--bg-primary)", border: "1px solid var(--border-subtle)", borderRadius: "var(--radius-md)", padding: 16, maxWidth: 400, width: "90%" }}>
+            <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)", marginBottom: 8 }}>
+              <AlertTriangle size={14} style={{ color: "#F59E0B", marginRight: 6, verticalAlign: "middle" }} />
+              Confirm Action
+            </div>
+            <p style={{ fontSize: 11, color: "var(--text-secondary)", margin: "0 0 12px 0" }}>
+              Are you sure you want to <strong>{confirmAction.action.label}</strong> on <strong>{confirmAction.conn.name}</strong>?
+            </p>
+            <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
+              <button onClick={() => setConfirmAction(null)} style={{ ...btnS, padding: "4px 12px", background: "var(--bg-tertiary)", color: "var(--text-secondary)" }}>Cancel</button>
+              <button onClick={() => runAction(confirmAction.conn, confirmAction.action)} style={{ ...btnS, padding: "4px 12px", background: "rgba(239,68,68,0.2)", color: "#EF4444", fontWeight: 600 }}>Confirm</button>
+            </div>
+          </div>
+        </div>
+      )}
       {/* Header */}
       <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6, flexShrink: 0 }}>
         <span className="sidebar-section-title" style={{ margin: 0 }}>{t("servermap.title")}</span>

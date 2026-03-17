@@ -1,5 +1,14 @@
 import { useAppStore, type SSHConnection } from "../store/appStore";
 
+/**
+ * Sanitize a path to prevent command injection.
+ * Rejects paths containing shell metacharacters; falls back to ~ if invalid.
+ */
+function sanitizePath(path: string): string {
+  if (/[;|&$`()><\n\r]/.test(path)) return "~";
+  return path;
+}
+
 // Pattern 1: cd server:/path (colon syntax)
 const SERVER_NAV_PATTERN = /^cd\s+(@?[\w.-]+):(.*)$/;
 
@@ -153,7 +162,7 @@ export async function navigateToServer(
   // If already connected, reuse session
   if (conn.status === "connected" && conn.sessionId) {
     // Just cd to the new path on the existing session
-    await invoke("ssh_write", { sessionId: conn.sessionId, data: `cd ${path}\r` });
+    await invoke("ssh_write", { sessionId: conn.sessionId, data: `cd ${sanitizePath(path)}\r` });
     return conn.sessionId;
   }
 
@@ -189,7 +198,7 @@ export async function navigateToServer(
       if (!done) { done = true; clearTimeout(timeout); resolve(); }
     });
   });
-  await invoke("ssh_write", { sessionId, data: `cd ${path}\r` });
+  await invoke("ssh_write", { sessionId, data: `cd ${sanitizePath(path)}\r` });
 
   return sessionId;
 }

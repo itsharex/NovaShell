@@ -762,6 +762,8 @@ function SFTPExplorer({
   // Delete remote
   const handleDeleteRemote = async () => {
     if (selectedRemote.size === 0) return;
+    const count = selectedRemote.size;
+    if (!window.confirm(`Delete ${count} file${count > 1 ? "s" : ""} from remote server? This cannot be undone.`)) return;
     const invoke = await getInvoke();
     for (const path of selectedRemote) {
       const entry = remoteFiles.find((f) => f.path === path);

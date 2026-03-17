@@ -400,6 +400,13 @@ export function ServerMapPanel() {
     if (!editSaveFn || !editConn) return;
     setSaving(true);
     try {
+      // Save config version history before overwriting
+      const configTitle = actionOutput?.title || "Config";
+      useAppStore.getState().addConfigVersion({
+        connectionId: editConn.id, serverName: editConn.name,
+        filePath: configTitle, content: editContent,
+      });
+
       const creds = await getCredentials(editConn);
       if (!creds) { setSaving(false); return; }
       const { invoke } = await getTauriCore();

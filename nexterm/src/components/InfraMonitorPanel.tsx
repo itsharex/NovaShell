@@ -553,6 +553,11 @@ export function InfraMonitorPanel() {
             failedServices: raw.failed_services || [],
           };
           addInfraMetrics(connId, snapshot);
+          // Update performance baseline every 10th sample
+          const monitorData = useAppStore.getState().infraMonitors[connId];
+          if (monitorData && monitorData.metrics.length % 10 === 0) {
+            useAppStore.getState().updateBaseline(connId, snapshot.cpu, snapshot.memPercent, snapshot.diskPercent);
+          }
         });
         cleanups.push(unlistenData);
         if (cancelled) { unlistenData(); return; }

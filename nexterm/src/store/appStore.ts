@@ -83,6 +83,38 @@ interface Snippet {
   icon?: string;
   runMode?: SnippetRunMode;
   folderId?: string;
+  variables?: Array<{ name: string; defaultValue: string }>;
+}
+
+// Config versioning
+export interface ConfigVersion {
+  id: string;
+  connectionId: string;
+  serverName: string;
+  filePath: string;
+  content: string;
+  timestamp: number;
+}
+
+// Batch executor
+export interface BatchOperation {
+  id: string;
+  name: string;
+  steps: Array<{ serverId: string; serverName: string; command: string; status: "pending" | "running" | "success" | "failed" | "skipped"; output?: string }>;
+  checkpointEvery: number;
+  rollbackOnFail: boolean;
+  status: "idle" | "running" | "paused" | "completed" | "failed";
+  currentStep: number;
+}
+
+// Performance baseline
+export interface PerformanceBaseline {
+  connectionId: string;
+  cpuAvg: number;
+  memAvg: number;
+  diskAvg: number;
+  sampleCount: number;
+  lastUpdated: number;
 }
 
 export interface SnippetFolder {
@@ -433,6 +465,22 @@ interface AppState {
   saveWorkspace: (name: string) => void;
   loadWorkspace: (id: string) => void;
   removeWorkspace: (id: string) => void;
+
+  // Config versioning
+  configVersions: ConfigVersion[];
+  addConfigVersion: (version: Omit<ConfigVersion, "id" | "timestamp">) => void;
+  getConfigHistory: (connectionId: string, filePath: string) => ConfigVersion[];
+
+  // Batch executor
+  batchOperations: BatchOperation[];
+  addBatchOperation: (op: Omit<BatchOperation, "id" | "status" | "currentStep">) => void;
+  updateBatchStep: (opId: string, stepIndex: number, updates: Partial<BatchOperation["steps"][0]>) => void;
+  updateBatchStatus: (opId: string, status: BatchOperation["status"], currentStep?: number) => void;
+  removeBatchOperation: (id: string) => void;
+
+  // Performance baselines
+  performanceBaselines: Record<string, PerformanceBaseline>;
+  updateBaseline: (connectionId: string, cpu: number, mem: number, disk: number) => void;
   customExploits: Array<{ id: string; name: string; description: string; category: string; risk: string; commands: string[] }>;
   addCustomExploit: (exploit: { name: string; description: string; category: string; risk: string; commands: string[] }) => void;
   updateCustomExploit: (id: string, updates: Partial<{ name: string; description: string; category: string; risk: string; commands: string[] }>) => void;
@@ -793,6 +841,68 @@ export const useAppStore = create<AppState>((set, get) => ({
     set((s) => ({ workspaces: s.workspaces.filter((w) => w.id !== id) }));
     scheduleSave();
   },
+
+  // Config versioning
+  configVersions: [],
+  addConfigVersion: (version) => set((s) => {
+    const newVersion: ConfigVersion = { ...version, id: crypto.randomUUID(), timestamp: Date.now() };
+    // Keep max 50 versions total, 5 per file per server
+    const filtered = s.configVersions.filter(
+      (v) => !(v.connectionId === version.connectionId && v.filePath === version.filePath) ||
+      s.configVersions.filter((x) => x.connectionId === version.connectionId && x.filePath === version.filePath).indexOf(v) < 4
+    );
+    return { configVersions: [newVersion, ...filtered].slice(0, 50) };
+  }),
+  getConfigHistory: (connectionId, filePath) => {
+    return get().configVersions.filter((v) => v.connectionId === connectionId && v.filePath === filePath);
+  },
+
+  // Batch executor
+  batchOperations: [],
+  addBatchOperation: (op) => set((s) => ({
+    batchOperations: [{ ...op, id: crypto.randomUUID(), status: "idle" as const, currentStep: 0 }, ...s.batchOperations].slice(0, 20),
+  })),
+  updateBatchStep: (opId, stepIndex, updates) => set((s) => ({
+    batchOperations: s.batchOperations.map((op) =>
+      op.id === opId ? { ...op, steps: op.steps.map((step, i) => i === stepIndex ? { ...step, ...updates } : step) } : op
+    ),
+  })),
+  updateBatchStatus: (opId, status, currentStep) => set((s) => ({
+    batchOperations: s.batchOperations.map((op) =>
+      op.id === opId ? { ...op, status, ...(currentStep !== undefined ? { currentStep } : {}) } : op
+    ),
+  })),
+  removeBatchOperation: (id) => set((s) => ({
+    batchOperations: s.batchOperations.filter((op) => op.id !== id),
+  })),
+
+  // Performance baselines
+  performanceBaselines: {},
+  updateBaseline: (connectionId, cpu, mem, disk) => set((s) => {
+    const existing = s.performanceBaselines[connectionId];
+    if (existing) {
+      const count = existing.sampleCount + 1;
+      return {
+        performanceBaselines: {
+          ...s.performanceBaselines,
+          [connectionId]: {
+            connectionId,
+            cpuAvg: (existing.cpuAvg * existing.sampleCount + cpu) / count,
+            memAvg: (existing.memAvg * existing.sampleCount + mem) / count,
+            diskAvg: (existing.diskAvg * existing.sampleCount + disk) / count,
+            sampleCount: count,
+            lastUpdated: Date.now(),
+          },
+        },
+      };
+    }
+    return {
+      performanceBaselines: {
+        ...s.performanceBaselines,
+        [connectionId]: { connectionId, cpuAvg: cpu, memAvg: mem, diskAvg: disk, sampleCount: 1, lastUpdated: Date.now() },
+      },
+    };
+  }),
   customExploits: [],
   addCustomExploit: (exploit) => {
     set((s) => ({
@@ -961,6 +1071,9 @@ export const useAppStore = create<AppState>((set, get) => ({
       ...(alertEntries.length > 0 ? { infraAlerts: allAlerts, infraTimeline: newTimeline } : {}),
     };
   }),
+
+  // Auto-update baselines on every 10th metric poll
+  // (done separately to avoid circular deps in addInfraMetrics)
 
   addInfraAlert: (alert) => set((s) => {
     const newAlert: InfraAlert = { ...alert, id: crypto.randomUUID(), timestamp: Date.now() };

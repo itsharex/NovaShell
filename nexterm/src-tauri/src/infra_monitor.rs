@@ -1,7 +1,7 @@
 use crate::ssh_manager;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Condvar, Mutex};
 use std::thread::JoinHandle;
 use tauri::Emitter;
 
@@ -35,6 +35,7 @@ pub struct MonitoredServer {
     pub password: Option<String>,
     pub private_key: Option<String>,
     running: Arc<Mutex<bool>>,
+    stop_signal: Arc<Condvar>,
     poll_thread: Option<JoinHandle<()>>,
 }
 
@@ -151,7 +152,9 @@ impl MonitoredServer {
         app_handle: tauri::AppHandle,
     ) -> Self {
         let running = Arc::new(Mutex::new(true));
+        let stop_signal = Arc::new(Condvar::new());
         let running_clone = Arc::clone(&running);
+        let stop_signal_clone = Arc::clone(&stop_signal);
 
         let h = host.clone();
         let u = username.clone();
@@ -191,14 +194,11 @@ impl MonitoredServer {
                     }
                 }
 
-                // Sleep in small increments to allow quick shutdown
-                for _ in 0..(interval_secs * 10) {
-                    if let Ok(r) = running_clone.lock() {
-                        if !*r {
-                            return;
-                        }
-                    }
-                    std::thread::sleep(std::time::Duration::from_millis(100));
+                // Sleep until next poll — uses Condvar for instant shutdown (zero CPU when idle)
+                let guard = running_clone.lock().unwrap();
+                let result = stop_signal_clone.wait_timeout(guard, std::time::Duration::from_secs(interval_secs)).unwrap();
+                if !*result.0 {
+                    return;
                 }
             }
         });
@@ -211,6 +211,7 @@ impl MonitoredServer {
             password,
             private_key,
             running,
+            stop_signal,
             poll_thread: Some(poll_thread),
         }
     }
@@ -219,6 +220,7 @@ impl MonitoredServer {
         if let Ok(mut running) = self.running.lock() {
             *running = false;
         }
+        self.stop_signal.notify_all();
     }
 }
 

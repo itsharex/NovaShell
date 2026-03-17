@@ -52,20 +52,24 @@ function flushDebugParse() {
   debugParseScheduled = false;
   if (debugBuffers.size === 0) return;
   const store = useAppStore.getState();
+  // Skip entire pipeline if debug is disabled
+  if (!store.debugEnabled) {
+    debugBuffers.clear();
+    return;
+  }
+  const hackingActive = store.hackingMode;
   debugBuffers.forEach((data, source) => {
-    // Keep incomplete last line in buffer (no trailing newline = might be partial)
     const lastNewline = data.lastIndexOf("\n");
-    if (lastNewline === -1) {
-      // No complete line yet, keep in buffer
-      return;
-    }
+    if (lastNewline === -1) return;
     const complete = data.slice(0, lastNewline + 1);
     const remainder = data.slice(lastNewline + 1);
     debugBuffers.set(source, remainder);
     parseTerminalOutput(complete, source, store.addDebugLog);
-    // Feed lines to hacking mode security scanner
-    for (const line of complete.split("\n")) {
-      if (line.trim()) scanForSecurityEvents(line);
+    // Only scan for security events when hacking mode is active
+    if (hackingActive) {
+      for (const line of complete.split("\n")) {
+        if (line.trim()) scanForSecurityEvents(line);
+      }
     }
   });
 }

@@ -1,6 +1,7 @@
 use portable_pty::{native_pty_system, CommandBuilder, MasterPty, PtySize};
 use std::io::{Read, Write};
-use std::sync::{Arc, Mutex};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Condvar, Mutex};
 use std::thread::JoinHandle;
 use std::time::Duration;
 use tauri::Emitter;
@@ -10,14 +11,12 @@ pub struct PtySession {
     writer: Arc<Mutex<Box<dyn Write + Send>>>,
     _reader_thread: Option<JoinHandle<()>>,
     _flusher_thread: Option<JoinHandle<()>>,
-    running: Arc<Mutex<bool>>,
+    running: Arc<AtomicBool>,
 }
 
 impl Drop for PtySession {
     fn drop(&mut self) {
-        if let Ok(mut running) = self.running.lock() {
-            *running = false;
-        }
+        self.running.store(false, Ordering::SeqCst);
         // Only join flusher thread (exits quickly after running=false)
         if let Some(handle) = self._flusher_thread.take() {
             let _ = handle.join();
@@ -25,10 +24,7 @@ impl Drop for PtySession {
         // Do NOT join reader thread — reader.read() blocks on ConPTY until
         // the master PTY is dropped. Since master is a struct field, it gets
         // dropped AFTER drop() returns, so joining here would deadlock.
-        // The reader thread will exit naturally when master PTY is dropped
-        // and read() returns 0 or an error.
         if let Some(handle) = self._reader_thread.take() {
-            // Detach the thread instead of joining
             drop(handle);
         }
     }
@@ -67,15 +63,17 @@ impl PtySession {
         let mut reader = pair.master.try_clone_reader()?;
         let writer = pair.master.take_writer()?;
 
-        let running = Arc::new(Mutex::new(true));
+        let running = Arc::new(AtomicBool::new(true));
         let sid = session_id.to_string();
 
-        // Shared batch buffer between reader and flusher threads
+        // Shared batch buffer + condvar for efficient wakeup
         let batch: Arc<Mutex<String>> = Arc::new(Mutex::new(String::new()));
+        let data_ready = Arc::new(Condvar::new());
 
         // Reader thread: reads from PTY and appends to shared batch
         let running_reader = Arc::clone(&running);
         let batch_reader = Arc::clone(&batch);
+        let data_ready_reader = Arc::clone(&data_ready);
         let app_handle_reader = app_handle.clone();
         let event_name = format!("pty-data-{}", sid);
         let exit_event = format!("pty-exit-{}", sid);
@@ -85,10 +83,8 @@ impl PtySession {
             let mut buf = [0u8; 8192];
 
             loop {
-                if let Ok(r) = running_reader.lock() {
-                    if !*r {
-                        break;
-                    }
+                if !running_reader.load(Ordering::Relaxed) {
+                    break;
                 }
 
                 match reader.read(&mut buf) {
@@ -108,6 +104,9 @@ impl PtySession {
                             // Flush immediately if batch is large (fast output like `cat` large file)
                             if b.len() > 16384 {
                                 let _ = app_handle_reader.emit(&event_name, std::mem::take(&mut *b));
+                            } else {
+                                // Signal flusher that data is ready
+                                data_ready_reader.notify_one();
                             }
                         }
                     }
@@ -125,21 +124,23 @@ impl PtySession {
             }
         });
 
-        // Flusher thread: periodically emits whatever is in the batch (~60fps)
-        // This ensures data is NEVER stuck waiting for the next read()
+        // Flusher thread: waits for data signal, then emits batch
+        // Uses Condvar instead of 16ms spin-loop — zero CPU when idle
         let running_flusher = Arc::clone(&running);
         let batch_flusher = Arc::clone(&batch);
+        let data_ready_flusher = Arc::clone(&data_ready);
         let flush_event = format!("pty-data-{}", sid);
 
         let flusher_thread = std::thread::spawn(move || {
-            let interval = Duration::from_millis(16); // ~60fps
             loop {
-                std::thread::sleep(interval);
+                // Wait for data signal or 50ms timeout (for smooth rendering)
+                {
+                    let lock = batch_flusher.lock().unwrap();
+                    let _ = data_ready_flusher.wait_timeout(lock, Duration::from_millis(50));
+                }
 
-                if let Ok(r) = running_flusher.lock() {
-                    if !*r {
-                        break;
-                    }
+                if !running_flusher.load(Ordering::Relaxed) {
+                    break;
                 }
 
                 if let Ok(mut b) = batch_flusher.lock() {

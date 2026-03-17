@@ -315,6 +315,8 @@ export function ServerMapPanel() {
   const runMultiExec = async () => {
     if (!multiCmd.trim() || multiSelected.size === 0 || multiRunning) return;
     const cmd = multiCmd.trim();
+    const serverCount = multiSelected.size;
+    if (!window.confirm(`Execute "${cmd}" on ${serverCount} server(s)? This cannot be undone.`)) return;
     setMultiRunning(true);
     setMultiResults([]);
     setMultiCmdHistory((prev) => [cmd, ...prev.filter((c) => c !== cmd)].slice(0, 20));

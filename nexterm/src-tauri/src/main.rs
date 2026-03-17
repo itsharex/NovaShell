@@ -835,10 +835,14 @@ async fn ai_generate_session_doc_with_template(
 
 #[tauri::command]
 fn save_pdf_to_downloads(bytes: Vec<u8>, filename: String) -> Result<String, String> {
+    let safe_filename = std::path::Path::new(&filename)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("export.pdf");
     let downloads = dirs::download_dir()
         .or_else(|| dirs::home_dir().map(|h| h.join("Downloads")))
         .unwrap_or_else(|| std::path::PathBuf::from("."));
-    let dest = downloads.join(&filename);
+    let dest = downloads.join(safe_filename);
     std::fs::write(&dest, &bytes).map_err(|e| format!("Write error: {}", e))?;
     Ok(dest.to_string_lossy().to_string())
 }
@@ -886,10 +890,14 @@ fn session_doc_delete(
 
 #[tauri::command]
 fn export_file_to_downloads(filename: String, content: String) -> Result<String, String> {
+    let safe_filename = std::path::Path::new(&filename)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("export.txt");
     let downloads = dirs::download_dir()
         .or_else(|| dirs::home_dir().map(|h| h.join("Downloads")))
         .unwrap_or_else(|| std::path::PathBuf::from("."));
-    let dest = downloads.join(&filename);
+    let dest = downloads.join(safe_filename);
     std::fs::write(&dest, &content).map_err(|e| format!("Export error: {}", e))?;
     Ok(dest.to_string_lossy().to_string())
 }
@@ -1181,6 +1189,9 @@ fn hacking_save_session(data: String, password: String) -> Result<String, String
 
 #[tauri::command]
 fn hacking_load_session(filename: String, password: String) -> Result<String, String> {
+    if filename.contains("..") || filename.contains('/') || filename.contains('\\') {
+        return Err("Invalid filename".to_string());
+    }
     let data_dir = dirs::data_dir()
         .unwrap_or_else(|| std::path::PathBuf::from("."))
         .join("novashell")
@@ -1216,6 +1227,9 @@ fn hacking_list_sessions() -> Result<Vec<String>, String> {
 
 #[tauri::command]
 fn hacking_delete_session(filename: String) -> Result<(), String> {
+    if filename.contains("..") || filename.contains('/') || filename.contains('\\') {
+        return Err("Invalid filename".to_string());
+    }
     let data_dir = dirs::data_dir()
         .unwrap_or_else(|| std::path::PathBuf::from("."))
         .join("novashell")

@@ -281,6 +281,8 @@ function scheduleSave() {
       theme: s.theme,
       snippets: s.snippets,
       snippetFolders: s.snippetFolders,
+      // WARNING: privateKey is persisted in plaintext. A proper fix would encrypt the config file
+      // or store keys in the OS keychain, but removing it would break SSH connections on restart.
       sshConnections: s.sshConnections.map(({ status, sessionId, errorMessage, sessionPassword, ...rest }) => rest),
       plugins: s.plugins,
       history: s.history.slice(0, 200).map(({ screenshot, ...rest }) => rest), // persist last 200, strip screenshots
@@ -1051,6 +1053,7 @@ if (typeof window !== "undefined") {
         theme: s.theme,
         snippets: s.snippets,
         snippetFolders: s.snippetFolders,
+        // WARNING: privateKey is persisted in plaintext — see scheduleSave() comment
         sshConnections: s.sshConnections.map(({ status, sessionId, errorMessage, sessionPassword, ...rest }) => rest),
         plugins: s.plugins,
         history: s.history.slice(0, 200),

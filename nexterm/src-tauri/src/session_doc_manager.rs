@@ -72,11 +72,17 @@ impl SessionDocManager {
     }
 
     pub fn load_doc(&self, filename: &str) -> Result<String, String> {
+        if filename.contains("..") || filename.contains('/') || filename.contains('\\') {
+            return Err("Invalid filename".to_string());
+        }
         let path = self.doc_dir.join(filename);
         std::fs::read_to_string(&path).map_err(|e| format!("Read error: {}", e))
     }
 
     pub fn delete_doc(&self, filename: &str) -> Result<(), String> {
+        if filename.contains("..") || filename.contains('/') || filename.contains('\\') {
+            return Err("Invalid filename".to_string());
+        }
         let path = self.doc_dir.join(filename);
         std::fs::remove_file(&path).map_err(|e| format!("Delete error: {}", e))
     }

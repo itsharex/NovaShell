@@ -73,6 +73,11 @@ impl SshSession {
             let key_path = temp_dir.join(format!("novashell_ssh_key_{}", session_id));
             std::fs::write(&key_path, key_content)
                 .map_err(|e| format!("Failed to write temp key: {}", e))?;
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                let _ = std::fs::set_permissions(&key_path, std::fs::Permissions::from_mode(0o600));
+            }
 
             let result = session.userauth_pubkey_file(
                 username,
@@ -288,6 +293,11 @@ impl LogStream {
             let temp_dir = std::env::temp_dir();
             let key_path = temp_dir.join(format!("novashell_logstream_{}", stream_id));
             std::fs::write(&key_path, key_content).map_err(|e| format!("Key write error: {}", e))?;
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                let _ = std::fs::set_permissions(&key_path, std::fs::Permissions::from_mode(0o600));
+            }
             let result = session.userauth_pubkey_file(username, None, &key_path, password);
             let _ = std::fs::remove_file(&key_path);
             result.map_err(|e| format!("Key auth failed: {}", e))?;
@@ -369,6 +379,11 @@ pub fn test_ssh_connection(
         let key_path = temp_dir.join(format!("novashell_ssh_test_{}", uuid::Uuid::new_v4()));
         std::fs::write(&key_path, key_content)
             .map_err(|e| format!("Failed to write temp key: {}", e))?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let _ = std::fs::set_permissions(&key_path, std::fs::Permissions::from_mode(0o600));
+        }
 
         let result = session.userauth_pubkey_file(username, None, &key_path, password);
         let _ = std::fs::remove_file(&key_path);
@@ -426,6 +441,11 @@ pub fn exec_command(
         let key_path = temp_dir.join(format!("novashell_exec_{}", uuid::Uuid::new_v4()));
         std::fs::write(&key_path, key_content)
             .map_err(|e| format!("Failed to write temp key: {}", e))?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let _ = std::fs::set_permissions(&key_path, std::fs::Permissions::from_mode(0o600));
+        }
         let result = session.userauth_pubkey_file(username, None, &key_path, password);
         let _ = std::fs::remove_file(&key_path);
         result.map_err(|e| format!("Key auth failed: {}", e))?;

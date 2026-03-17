@@ -651,13 +651,16 @@ export function InfraMonitorPanel() {
       else if (action === "show_failed") cmd = "systemctl list-units --state=failed --no-pager 2>/dev/null || echo 'systemctl not available'";
       else if (action.startsWith("restart:")) {
         const svc = action.split(":")[1];
+        if (!/^[a-zA-Z0-9._@-]+$/.test(svc)) return; // reject invalid service names
         cmd = `systemctl restart ${svc} 2>&1 && echo 'Restarted ${svc} successfully' || echo 'Failed to restart ${svc}'`;
       } else if (action.startsWith("kill_term:")) {
         const pid = action.split(":")[1];
+        if (!/^\d+$/.test(pid)) return; // reject non-numeric PIDs
         // SIGTERM — graceful, process can catch and clean up
         cmd = `ps -p ${pid} -o pid,user,comm,%cpu,%mem --no-headers 2>/dev/null && kill -15 ${pid} 2>&1 && echo 'Sent SIGTERM (graceful) to PID ${pid}' || echo 'Failed — PID ${pid} not found or permission denied'`;
       } else if (action.startsWith("kill_force:")) {
         const pid = action.split(":")[1];
+        if (!/^\d+$/.test(pid)) return; // reject non-numeric PIDs
         // SIGKILL — immediate, cannot be caught
         cmd = `ps -p ${pid} -o pid,user,comm,%cpu,%mem --no-headers 2>/dev/null && kill -9 ${pid} 2>&1 && echo 'Sent SIGKILL (force) to PID ${pid} — process terminated immediately' || echo 'Failed — PID ${pid} not found or permission denied'`;
       } else if (action === "analyze_disk") {

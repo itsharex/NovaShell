@@ -5,7 +5,7 @@ import { useAppStore, type SSHConnection } from "../store/appStore";
  * Rejects paths containing shell metacharacters; falls back to ~ if invalid.
  */
 function sanitizePath(path: string): string {
-  if (/[;|&$`()><\n\r]/.test(path)) return "~";
+  if (/[;|&$`()><\n\r"'\\]/.test(path)) return "~";
   return path;
 }
 

@@ -433,7 +433,8 @@ export function SSHPanel() {
             await invoke("ssh_write", { sessionId: activeSessionId, data: toSend });
           } catch { /* session may be closed */ }
           if (writeQueue) {
-            flushWriteQueue();
+            // Defer to next microtask — allows event loop to process other events between flushes
+            queueMicrotask(() => flushWriteQueue());
           } else {
             writeFlushing = false;
           }
@@ -450,7 +451,7 @@ export function SSHPanel() {
           if (sshResizeTimer) clearTimeout(sshResizeTimer);
           sshResizeTimer = setTimeout(() => {
             invoke("ssh_resize", { sessionId: activeSessionId, cols, rows });
-          }, 80);
+          }, 50);
         });
 
         // Initial resize

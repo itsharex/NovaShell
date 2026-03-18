@@ -508,7 +508,7 @@ export function TerminalPanel() {
           await invoke(cmd, { sessionId: liveSession.id, data: toSend });
         } catch { /* session may be closed */ }
         if (liveWriteQueue) {
-          flushLiveWriteQueue();
+          queueMicrotask(() => flushLiveWriteQueue());
         } else {
           liveWriteFlushing = false;
         }
@@ -628,7 +628,7 @@ export function TerminalPanel() {
             await invoke(cmd, { sessionId: currentTermRef.sessionId, data: toSend });
           } catch { /* session may be closed */ }
           if (sessionWriteQueue) {
-            flushSessionWriteQueue();
+            queueMicrotask(() => flushSessionWriteQueue());
           } else {
             sessionWriteFlushing = false;
           }
@@ -718,7 +718,7 @@ export function TerminalPanel() {
           termResizeTimer = setTimeout(() => {
             const resizeCmd = currentTermRef.sessionType === "ssh" ? "ssh_resize" : "resize_pty";
             invoke(resizeCmd, { sessionId: currentTermRef.sessionId, cols, rows });
-          }, 80);
+          }, 50);
         });
         disposables.push(resizeDisposable);
 

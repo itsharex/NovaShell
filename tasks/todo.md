@@ -160,6 +160,12 @@
 - [x] Config History: Reduced persisted entries 200→100 — smaller save payload
 - [x] TypeScript compilation verified
 
+## Completed (v2.4.8 Final Polish — Re-render Elimination)
+- [x] StatusBar: reduced from 15 to 8 reactive selectors (functions via getState, navStack memoized)
+- [x] Write flush: queueMicrotask prevents recursive microtask buildup (SSHPanel + TerminalPanel x2)
+- [x] Resize debounce: 80ms→50ms for snappier terminal resize (SSHPanel + TerminalPanel)
+- [x] TypeScript + Rust compilation verified
+
 ## Completed (v2.4.7 Lock Elimination & Throughput)
 - [x] SSH Reader: merged double lock into single lock scope (writes + EOF check + read in one acquire)
 - [x] SSH Session timeout 50ms→20ms: aligned with flusher for faster write processing

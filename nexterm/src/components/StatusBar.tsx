@@ -14,20 +14,26 @@ import { useAppStore } from "../store/appStore";
 import { useT } from "../i18n";
 
 export function StatusBar() {
+  // Single selector for all display state — minimizes re-renders
   const activeTabId = useAppStore((s) => s.activeTabId);
   const tabs = useAppStore((s) => s.tabs);
   const theme = useAppStore((s) => s.theme);
-  const setSystemStats = useAppStore((s) => s.setSystemStats);
   const gitBranch = useAppStore((s) => s.gitBranch);
-  const setGitBranch = useAppStore((s) => s.setGitBranch);
   const splitMode = useAppStore((s) => s.splitMode);
-  const setSplitMode = useAppStore((s) => s.setSplitMode);
-  const addTab = useAppStore((s) => s.addTab);
   const hackingMode = useAppStore((s) => s.hackingMode);
-  const activeNavStack = useAppStore((s) => s.navigationStacks[s.activeTabId]);
   const sshConnections = useAppStore((s) => s.sshConnections);
   const language = useAppStore((s) => s.language);
-  const setLanguage = useAppStore((s) => s.setLanguage);
+  // Stable function refs — read from getState() to avoid selector re-renders
+  const setSystemStats = useAppStore.getState().setSystemStats;
+  const setGitBranch = useAppStore.getState().setGitBranch;
+  const setSplitMode = useAppStore.getState().setSplitMode;
+  const addTab = useAppStore.getState().addTab;
+  const setLanguage = useAppStore.getState().setLanguage;
+  // Computed values — useMemo to avoid recalc on unrelated changes
+  const activeNavStack = useMemo(() => {
+    const s = useAppStore.getState();
+    return s.navigationStacks[activeTabId];
+  }, [activeTabId]);
   const executeSnippet = useAppStore((s) => s.executeSnippet);
   // Use polling for alert counts instead of reactive selectors —
   // avoids re-renders on every single alert change (high frequency)

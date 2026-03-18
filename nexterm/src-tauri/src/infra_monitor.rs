@@ -196,8 +196,14 @@ impl MonitoredServer {
                 }
 
                 // Sleep until next poll — uses Condvar for instant shutdown (zero CPU when idle)
-                let guard = running_clone.lock().unwrap();
-                let result = stop_signal_clone.wait_timeout(guard, std::time::Duration::from_secs(interval_secs)).unwrap();
+                let guard = match running_clone.lock() {
+                    Ok(g) => g,
+                    Err(_) => return, // mutex poisoned, exit cleanly
+                };
+                let result = match stop_signal_clone.wait_timeout(guard, std::time::Duration::from_secs(interval_secs)) {
+                    Ok(r) => r,
+                    Err(_) => return,
+                };
                 if !*result.0 {
                     return;
                 }

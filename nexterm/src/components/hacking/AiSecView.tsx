@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { Brain, Send, Loader2, AlertTriangle, Copy, Trash2 } from "lucide-react";
 import { useAppStore } from "../../store/appStore";
 import { useT } from "../../i18n";
@@ -34,6 +34,8 @@ export function AiSecView() {
   const [secMode, setSecMode] = useState<string>("analyze");
   const [query, setQuery] = useState("");
   const [chat, setChat] = useState<ChatEntry[]>([]);
+  const chatRef = useRef(chat);
+  chatRef.current = chat;
   const [loading, setLoading] = useState(false);
 
   const checkOllama = useCallback(async () => {
@@ -99,7 +101,7 @@ export function AiSecView() {
       const systemPrompt = `${mode.prompt}\n\nCurrent system context:\n${context}`;
 
       // Build full conversation history for context-aware responses
-      const history = chat.map((e) => ({ role: e.role, content: e.content }));
+      const history = chatRef.current.map((e) => ({ role: e.role, content: e.content }));
       history.push({ role: "user", content: userMsg });
       const response = await invoke<string>("ai_chat", {
         model: selectedModel,

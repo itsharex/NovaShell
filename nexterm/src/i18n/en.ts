@@ -628,6 +628,7 @@ export const en: Record<string, any> = {
     startingDownload: "Starting download...",
     updateInstalled: "Update installed successfully. Restart NovaShell to apply changes.",
     restartNow: "Restart Now",
+    whatsNew: "What's new",
   },
 
   // Snippets defaults

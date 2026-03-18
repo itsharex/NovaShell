@@ -23,6 +23,8 @@ function App() {
   const focusMode = useAppStore((s) => s.focusMode);
   const hackingMode = useAppStore((s) => s.hackingMode);
   const [sidebarWidth, setSidebarWidth] = useState(DEFAULT_SIDEBAR_WIDTH);
+  const sidebarWidthRef = useRef(DEFAULT_SIDEBAR_WIDTH);
+  sidebarWidthRef.current = sidebarWidth;
   const [paletteOpen, setPaletteOpen] = useState(false);
   const isResizing = useRef(false);
 
@@ -48,16 +50,15 @@ function App() {
     e.preventDefault();
     isResizing.current = true;
     const startX = e.clientX;
-    const startWidth = sidebarWidth;
+    const startWidth = sidebarWidthRef.current;
 
     // Disable CSS transition during drag for instant response
     sidebarWrapperRef.current?.classList.add("sidebar-resizing");
 
     const onMouseMove = (ev: MouseEvent) => {
       if (!isResizing.current) return;
-      // Sidebar is on the right, so dragging left = wider
       const delta = startX - ev.clientX;
-      const maxWidth = Math.floor(window.innerWidth * 0.8); // 80% of window
+      const maxWidth = Math.floor(window.innerWidth * 0.8);
       const newWidth = Math.min(maxWidth, Math.max(MIN_SIDEBAR_WIDTH, startWidth + delta));
       setSidebarWidth(newWidth);
     };
@@ -75,7 +76,7 @@ function App() {
     document.body.style.userSelect = "none";
     document.addEventListener("mousemove", onMouseMove);
     document.addEventListener("mouseup", onMouseUp);
-  }, [sidebarWidth]);
+  }, []); // stable reference — uses ref for startWidth
 
   return (
     <I18nProvider>

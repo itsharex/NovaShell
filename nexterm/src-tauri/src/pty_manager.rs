@@ -135,7 +135,10 @@ impl PtySession {
             loop {
                 // Wait for data signal or 50ms timeout (for smooth rendering)
                 {
-                    let lock = batch_flusher.lock().unwrap();
+                    let lock = match batch_flusher.lock() {
+                        Ok(l) => l,
+                        Err(e) => e.into_inner(), // recover from poisoned mutex
+                    };
                     let _ = data_ready_flusher.wait_timeout(lock, Duration::from_millis(50));
                 }
 

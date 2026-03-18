@@ -179,7 +179,7 @@ export function ReconView() {
     }
 
     setScanning(false);
-  }, [scanTarget, addHackingLog, addHackingAlert, addDebugLog, setReconResults]);
+  }, [scanTarget, customPorts, addHackingLog, addHackingAlert, addDebugLog, setReconResults]);
 
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text).catch(() => {});

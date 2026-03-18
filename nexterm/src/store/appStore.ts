@@ -314,26 +314,32 @@ async function loadConfig(): Promise<PersistedConfig> {
   }
 }
 
+// Cache the invoke function so beforeunload can call it synchronously
+let cachedInvoke: ((cmd: string, args?: Record<string, unknown>) => Promise<unknown>) | null = null;
+
+function buildPersistedConfig(): PersistedConfig {
+  const s = useAppStore.getState();
+  return {
+    theme: s.theme,
+    snippets: s.snippets,
+    snippetFolders: s.snippetFolders,
+    sshConnections: s.sshConnections.map(({ status, sessionId, errorMessage, sessionPassword, ...rest }) => rest),
+    plugins: s.plugins,
+    history: s.history.slice(0, 200).map(({ screenshot, ...rest }) => rest),
+    debugPersist: s.debugPersist,
+    language: s.language,
+    customExploits: s.customExploits.length > 0 ? s.customExploits : undefined,
+    workspaces: s.workspaces.length > 0 ? s.workspaces : undefined,
+  };
+}
+
 function scheduleSave() {
   if (saveTimer) clearTimeout(saveTimer);
   saveTimer = setTimeout(() => {
     saveTimer = null;
-    const s = useAppStore.getState();
-    const config: PersistedConfig = {
-      theme: s.theme,
-      snippets: s.snippets,
-      snippetFolders: s.snippetFolders,
-      // WARNING: privateKey is persisted in plaintext. A proper fix would encrypt the config file
-      // or store keys in the OS keychain, but removing it would break SSH connections on restart.
-      sshConnections: s.sshConnections.map(({ status, sessionId, errorMessage, sessionPassword, ...rest }) => rest),
-      plugins: s.plugins,
-      history: s.history.slice(0, 200).map(({ screenshot, ...rest }) => rest), // persist last 200, strip screenshots
-      debugPersist: s.debugPersist,
-      language: s.language,
-      customExploits: s.customExploits.length > 0 ? s.customExploits : undefined,
-      workspaces: s.workspaces.length > 0 ? s.workspaces : undefined,
-    };
+    const config = buildPersistedConfig();
     import("@tauri-apps/api/core").then(({ invoke }) => {
+      cachedInvoke = invoke;
       invoke("save_app_config", { data: JSON.stringify(config) }).catch(() => {});
     }).catch(() => {});
   }, 500);
@@ -956,10 +962,17 @@ export const useAppStore = create<AppState>((set, get) => ({
     const s = get();
     const ws = s.workspaces.find((w) => w.id === id);
     if (!ws) return;
-    // Restore split mode and sidebar tab
-    set({ splitMode: ws.splitMode as any, sidebarTab: ws.sidebarTab as any, sidebarOpen: true });
-    // Add tabs if needed
-    while (get().tabs.length < ws.tabCount) { get().addTab(); }
+    // Restore split mode, sidebar tab, and add missing tabs in a single set()
+    const currentTabs = s.tabs;
+    const newTabs = currentTabs.length < ws.tabCount
+      ? [...currentTabs, ...Array.from({ length: ws.tabCount - currentTabs.length }, (_, i) => ({
+          id: `tab-${Date.now()}-${i}`,
+          title: `Terminal ${currentTabs.length + i + 1}`,
+          shellType: navigator.platform.startsWith("Win") ? "powershell.exe" : "/bin/bash",
+          sessionId: null,
+        }))]
+      : currentTabs;
+    set({ splitMode: ws.splitMode as any, sidebarTab: ws.sidebarTab as any, sidebarOpen: true, tabs: newTabs });
   },
   removeWorkspace: (id) => {
     set((s) => ({ workspaces: s.workspaces.filter((w) => w.id !== id) }));
@@ -1341,29 +1354,19 @@ async function flushToDisk() {
 // Flush ALL pending data on page unload (config + debug logs)
 if (typeof window !== "undefined") {
   window.addEventListener("beforeunload", () => {
-    // Flush config save immediately (synchronous)
+    // Flush config save immediately using cached invoke (no async import race)
     if (saveTimer) {
       clearTimeout(saveTimer);
       saveTimer = null;
-      const s = useAppStore.getState();
-      const config: PersistedConfig = {
-        theme: s.theme,
-        snippets: s.snippets,
-        snippetFolders: s.snippetFolders,
-        // WARNING: privateKey is persisted in plaintext — see scheduleSave() comment
-        sshConnections: s.sshConnections.map(({ status, sessionId, errorMessage, sessionPassword, ...rest }) => rest),
-        plugins: s.plugins,
-        history: s.history.slice(0, 200).map(({ screenshot, ...rest }) => rest),
-        debugPersist: s.debugPersist,
-        language: s.language,
-        customExploits: s.customExploits.length > 0 ? s.customExploits : undefined,
-        workspaces: s.workspaces.length > 0 ? s.workspaces : undefined,
-      };
-      // Use synchronous XHR-style approach via navigator.sendBeacon isn't available for Tauri
-      // Fire and forget — the invoke will execute before the page unloads
-      import("@tauri-apps/api/core").then(({ invoke }) => {
-        invoke("save_app_config", { data: JSON.stringify(config) });
-      }).catch(() => {});
+      const config = buildPersistedConfig();
+      if (cachedInvoke) {
+        cachedInvoke("save_app_config", { data: JSON.stringify(config) });
+      } else {
+        // Fallback: try async import (may not complete before unload)
+        import("@tauri-apps/api/core").then(({ invoke }) => {
+          invoke("save_app_config", { data: JSON.stringify(config) });
+        }).catch(() => {});
+      }
     }
     if (debugPersistQueue.length > 0) {
       flushToDisk();

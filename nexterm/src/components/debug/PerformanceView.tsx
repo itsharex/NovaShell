@@ -86,10 +86,8 @@ export function PerformanceView() {
     return () => clearInterval(interval);
   }, [fetchProcesses, autoRefresh]);
 
-  // Session duration
-  const sessionDuration = useMemo(() => {
-    return Math.floor((Date.now() - sessionStartTime) / 1000);
-  }, [sessionStartTime]);
+  // Session duration — recomputed every render (tick interval triggers re-render every 30s)
+  const sessionDuration = Math.floor((Date.now() - sessionStartTime) / 1000);
 
   // Refresh duration every 30s
   const [, setTick] = useState(0);

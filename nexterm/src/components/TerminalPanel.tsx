@@ -701,7 +701,7 @@ export function TerminalPanel() {
             try {
               const scriptPath = await invoke<string>("write_shell_init_script", { shellType });
               // Wait for shell to be fully ready, then source the init script
-              const sourceDelay = shellType === "powershell" ? 2000 : 800;
+              const sourceDelay = shellType === "powershell" ? 800 : 300;
               setTimeout(() => {
                 let sourceCmd = "";
                 if (shellType === "powershell") {

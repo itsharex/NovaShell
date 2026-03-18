@@ -34,9 +34,10 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
   const toggleHackingMode = useAppStore((s) => s.toggleHackingMode);
   const addTab = useAppStore((s) => s.addTab);
   const toggleSidebar = useAppStore((s) => s.toggleSidebar);
-  const history = useAppStore((s) => s.history);
-  const snippets = useAppStore((s) => s.snippets);
-  const sshConnections = useAppStore((s) => s.sshConnections);
+  // Use stable length-based selectors to avoid re-renders on every history/snippet content change
+  const historyLen = useAppStore((s) => s.history.length);
+  const snippetsLen = useAppStore((s) => s.snippets.length);
+  const sshConnectionsLen = useAppStore((s) => s.sshConnections.length);
   const executeSnippet = useAppStore((s) => s.executeSnippet);
   const hackingMode = useAppStore((s) => s.hackingMode);
   const workspaces = useAppStore((s) => s.workspaces);
@@ -54,6 +55,7 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
 
   const allItems = useMemo((): PaletteItem[] => {
     const items: PaletteItem[] = [];
+    const { history, snippets, sshConnections } = useAppStore.getState();
 
     // Panels
     const panels: { id: SidebarTab; label: string; icon: React.ReactNode }[] = [
@@ -162,7 +164,7 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
     }
 
     return items;
-  }, [t, history, snippets, sshConnections, executeSnippet, hackingMode, language, workspaces,
+  }, [t, historyLen, snippetsLen, sshConnectionsLen, executeSnippet, hackingMode, language, workspaces,
       openPanel, addTab, setSplitMode, toggleFocusMode, toggleSidebar, toggleHackingMode,
       setTheme, setLanguage, saveWorkspace, loadWorkspace, onClose]);
 

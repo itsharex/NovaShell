@@ -325,7 +325,7 @@ function buildPersistedConfig(): PersistedConfig {
     snippetFolders: s.snippetFolders,
     sshConnections: s.sshConnections.map(({ status, sessionId, errorMessage, sessionPassword, ...rest }) => rest),
     plugins: s.plugins,
-    history: s.history.slice(0, 200).map(({ screenshot, ...rest }) => rest),
+    history: s.history.slice(0, 100).map(({ screenshot, ...rest }) => rest),
     debugPersist: s.debugPersist,
     language: s.language,
     customExploits: s.customExploits.length > 0 ? s.customExploits : undefined,
@@ -342,7 +342,7 @@ function scheduleSave() {
       cachedInvoke = invoke;
       invoke("save_app_config", { data: JSON.stringify(config) }).catch(() => {});
     }).catch(() => {});
-  }, 500);
+  }, 2000);
 }
 
 // Save shared folder data (snippets + subFolders) to its JSON file

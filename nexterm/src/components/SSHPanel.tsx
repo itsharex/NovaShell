@@ -160,18 +160,24 @@ export function SSHPanel() {
   const [testing, setTesting] = useState(false);
   const [keychainIds, setKeychainIds] = useState<Set<string>>(new Set());
 
-  // Check which connections have keychain passwords stored
+  // Check which connections have keychain passwords stored (parallel, non-blocking)
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
         const { invoke } = await getTauriCore();
+        const results = await Promise.allSettled(
+          sshConnections.map(async (conn) => {
+            const pass = await invoke<string | null>("keychain_get_password", { connectionId: conn.id });
+            return pass ? conn.id : null;
+          })
+        );
+        if (cancelled) return;
         const ids = new Set<string>();
-        for (const conn of sshConnections) {
-          const pass = await invoke<string | null>("keychain_get_password", { connectionId: conn.id });
-          if (pass) ids.add(conn.id);
+        for (const r of results) {
+          if (r.status === "fulfilled" && r.value) ids.add(r.value);
         }
-        if (!cancelled) setKeychainIds(ids);
+        setKeychainIds(ids);
       } catch {}
     })();
     return () => { cancelled = true; };
@@ -439,11 +445,15 @@ export function SSHPanel() {
 
     sshTermRef.current = { terminal, fitAddon, unlisteners };
 
-    // Handle resize
+    // Handle resize with debounce to avoid excessive fit() calls
+    let resizeTimer: ReturnType<typeof setTimeout> | null = null;
     const observer = new ResizeObserver(() => {
-      if (sshTermRef.current) {
-        sshTermRef.current.fitAddon.fit();
-      }
+      if (resizeTimer) clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(() => {
+        if (sshTermRef.current) {
+          sshTermRef.current.fitAddon.fit();
+        }
+      }, 100);
     });
     if (termContainerRef.current) {
       observer.observe(termContainerRef.current);
@@ -451,6 +461,7 @@ export function SSHPanel() {
 
     return () => {
       observer.disconnect();
+      if (resizeTimer) clearTimeout(resizeTimer);
       // Clean up terminal and event listeners when activeSessionId changes
       if (sshTermRef.current) {
         sshTermRef.current.unlisteners.forEach((fn) => fn());

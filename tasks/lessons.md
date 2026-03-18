@@ -137,6 +137,17 @@
 - String-based error matching (`e.to_string().contains("transport read")`) is fragile — prefer `e.kind()` for OS-level errors (ConnectionReset, BrokenPipe, ConnectionAborted) and only use string matching as fallback for ssh2-specific messages
 - OS-level connection errors (ConnectionReset, BrokenPipe) should be immediately fatal — no point retrying, the TCP socket is dead
 
+## SSH Batching — CRITICAL (v2.4.5)
+- SSH reader thread was emitting one IPC event per `channel.read()` call — up to hundreds per second during fast output
+- PTY already had a dual-thread (reader + flusher) pattern that batches data and emits on 50ms intervals
+- Ported the same pattern to SSH: reader appends to shared `Arc<Mutex<String>>`, flusher emits on Condvar signal or 50ms timeout
+- This reduces IPC events from ~100/sec to ~20/sec during bulk output, dramatically reducing frontend overhead
+- `AtomicBool` is faster than `Mutex<bool>` for a simple running flag — no lock contention
+- SSH write retry: 10 retries × 50ms sleep = 500ms worst case blocking on Tauri async thread. Reduced to 5 × 20ms = 100ms max
+- StatusBar reactive selectors for `hackingAlerts.length` and filtered `infraAlerts` caused re-renders on EVERY alert change — replaced with 3s polling interval
+- Config save at 500ms debounce fires too often when many state changes happen in sequence (e.g., terminal resize + history add + command count) — 2000ms is much safer
+- Shell init delay of 2000ms for PowerShell was unnecessarily conservative — 800ms is sufficient, and bash 300ms is fine
+
 ## Windows / Antivirus
 - Unsigned compiled `.exe` files in project root trigger Windows Defender false positives
 - Add `*.exe`, `*.msi`, `*.dmg`, etc. to `.gitignore` to prevent accidental commits

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo, useRef } from "react";
 import {
   GitBranch,
   Clock,
@@ -24,18 +24,15 @@ export function StatusBar() {
   const setSplitMode = useAppStore((s) => s.setSplitMode);
   const addTab = useAppStore((s) => s.addTab);
   const hackingMode = useAppStore((s) => s.hackingMode);
-  const hackingAlertCount = useAppStore((s) => s.hackingAlerts.length);
   const activeNavStack = useAppStore((s) => s.navigationStacks[s.activeTabId]);
   const sshConnections = useAppStore((s) => s.sshConnections);
-  const infraAlertCount = useAppStore((s) => {
-    let count = 0;
-    for (const a of s.infraAlerts) { if (!a.acknowledged) count++; }
-    return count;
-  });
   const language = useAppStore((s) => s.language);
   const setLanguage = useAppStore((s) => s.setLanguage);
   const executeSnippet = useAppStore((s) => s.executeSnippet);
-  // Access full arrays only on-demand via getState() to avoid re-renders on every alert change
+  // Use polling for alert counts instead of reactive selectors —
+  // avoids re-renders on every single alert change (high frequency)
+  const [hackingAlertCount, setHackingAlertCount] = useState(0);
+  const [infraAlertCount, setInfraAlertCount] = useState(0);
   const getInfraAlerts = () => useAppStore.getState().infraAlerts;
   const getHackingAlerts = () => useAppStore.getState().hackingAlerts;
   const t = useT();
@@ -52,6 +49,20 @@ export function StatusBar() {
   // Clock - update every 30 seconds (HH:MM is enough for a status bar)
   useEffect(() => {
     const timer = setInterval(() => setTime(new Date()), 30000);
+    return () => clearInterval(timer);
+  }, []);
+
+  // Poll alert counts every 3 seconds instead of reacting to every alert change
+  useEffect(() => {
+    const updateAlerts = () => {
+      const s = useAppStore.getState();
+      setHackingAlertCount(s.hackingAlerts.length);
+      let ic = 0;
+      for (const a of s.infraAlerts) { if (!a.acknowledged) ic++; }
+      setInfraAlertCount(ic);
+    };
+    updateAlerts();
+    const timer = setInterval(updateAlerts, 3000);
     return () => clearInterval(timer);
   }, []);
 

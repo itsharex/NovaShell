@@ -145,9 +145,26 @@
 - [x] Shared Snippet Folders: i18n keys for en.ts and es.ts
 - [x] Shared Snippet Folders: TypeScript + Rust compilation verified
 
+## Completed (v2.4.5 Performance Optimization)
+- [x] SSH Batching: Dual-thread reader+flusher pattern (mirrors PTY) — eliminates per-read IPC events
+- [x] SSH Batching: Condvar-based flusher (50ms) — zero CPU when idle, batches rapid output
+- [x] SSH Batching: AtomicBool for running flag — faster than Mutex for simple flag
+- [x] SSH Write: Reduced retries 10→5, sleep 50ms→20ms — less blocking on Tauri thread
+- [x] SSH Resize: Reduced sleep 100ms→50ms per retry
+- [x] StatusBar: Replaced reactive alert selectors with 3s polling — eliminates re-renders on every alert
+- [x] Config Save: Increased debounce 500ms→2000ms — reduces file I/O contention
+- [x] Shell Init: Reduced delay PowerShell 2000ms→800ms, bash 800ms→300ms
+- [x] SSHPanel ResizeObserver: Added 100ms debounce (was unbounded)
+- [x] SSHPanel Keychain Check: Parallel Promise.allSettled (was sequential)
+- [x] CommandPalette: Length-based selectors for history/snippets/connections
+- [x] Config History: Reduced persisted entries 200→100 — smaller save payload
+- [x] TypeScript compilation verified
+
 ## Pending
 - [ ] Test Cross-Server Navigation with real SSH servers
 - [ ] Test Infrastructure Monitor with real SSH servers
 - [ ] Test Debug Copilot AI analysis with live Ollama
 - [ ] Test full SSH flow end-to-end
 - [ ] Test debug panel with real terminal output
+- [ ] Test SSH batching with large output (e.g., find /, cat large file)
+- [ ] Verify Rust compilation after build cache fix

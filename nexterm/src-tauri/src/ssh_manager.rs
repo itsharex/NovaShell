@@ -1,23 +1,28 @@
 use ssh2::Session;
 use std::io::Read;
 use std::net::TcpStream;
-use std::sync::{Arc, Mutex};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Condvar, Mutex};
 use std::thread::JoinHandle;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use tauri::Emitter;
 
 pub struct SshSession {
     session: Arc<Mutex<Session>>,
     channel: Arc<Mutex<ssh2::Channel>>,
     _reader_thread: Option<JoinHandle<()>>,
-    running: Arc<Mutex<bool>>,
+    _flusher_thread: Option<JoinHandle<()>>,
+    running: Arc<AtomicBool>,
 }
 
 impl Drop for SshSession {
     fn drop(&mut self) {
-        if let Ok(mut running) = self.running.lock() {
-            *running = false;
+        self.running.store(false, Ordering::SeqCst);
+        // Join flusher first (exits quickly)
+        if let Some(handle) = self._flusher_thread.take() {
+            let _ = handle.join();
         }
+        // Join reader thread (exits after session timeout ~100ms)
         if let Some(handle) = self._reader_thread.take() {
             let _ = handle.join();
         }
@@ -125,28 +130,38 @@ impl SshSession {
         let session = Arc::new(Mutex::new(session));
         let channel = Arc::new(Mutex::new(channel));
 
-        let running = Arc::new(Mutex::new(true));
-        let running_clone = Arc::clone(&running);
-        let channel_clone = Arc::clone(&channel);
-        let session_clone = Arc::clone(&session);
+        let running = Arc::new(AtomicBool::new(true));
         let sid = session_id.to_string();
+
+        // Shared batch buffer + condvar for efficient batching (mirrors PTY pattern)
+        let batch: Arc<Mutex<String>> = Arc::new(Mutex::new(String::new()));
+        let data_ready = Arc::new(Condvar::new());
 
         // Pre-build event names to avoid repeated allocations
         let data_event = format!("ssh-data-{}", sid);
         let exit_event = format!("ssh-exit-{}", sid);
         let error_event = format!("ssh-error-{}", sid);
 
+        // Reader thread: reads from SSH channel and appends to shared batch
+        let running_reader = Arc::clone(&running);
+        let channel_clone = Arc::clone(&channel);
+        let session_clone = Arc::clone(&session);
+        let batch_reader = Arc::clone(&batch);
+        let data_ready_reader = Arc::clone(&data_ready);
+        let app_handle_reader = app_handle.clone();
+        let data_event_reader = data_event.clone();
+        let exit_event_reader = exit_event.clone();
+        let error_event_reader = error_event.clone();
+
         let reader_thread = std::thread::spawn(move || {
-            let mut buf = [0u8; 16384]; // 16KB buffer — fewer events for large outputs
+            let mut buf = [0u8; 16384]; // 16KB buffer
             let mut consecutive_errors: u32 = 0;
             let max_consecutive_errors: u32 = 50;
             let mut last_keepalive = Instant::now();
-            let keepalive_interval = std::time::Duration::from_secs(15);
+            let keepalive_interval = Duration::from_secs(15);
 
             loop {
-                if let Ok(r) = running_clone.lock() {
-                    if !*r { break; }
-                } else {
+                if !running_reader.load(Ordering::Relaxed) {
                     break;
                 }
 
@@ -157,7 +172,13 @@ impl SshSession {
                     };
 
                     if ch.eof() {
-                        let _ = app_handle.emit(&exit_event, ());
+                        // Flush remaining data before exit
+                        if let Ok(mut b) = batch_reader.lock() {
+                            if !b.is_empty() {
+                                let _ = app_handle_reader.emit(&data_event_reader, std::mem::take(&mut *b));
+                            }
+                        }
+                        let _ = app_handle_reader.emit(&exit_event_reader, ());
                         break;
                     }
 
@@ -166,19 +187,30 @@ impl SshSession {
 
                 match result {
                     Ok(0) => {
-                        let _ = app_handle.emit(&exit_event, ());
+                        if let Ok(mut b) = batch_reader.lock() {
+                            if !b.is_empty() {
+                                let _ = app_handle_reader.emit(&data_event_reader, std::mem::take(&mut *b));
+                            }
+                        }
+                        let _ = app_handle_reader.emit(&exit_event_reader, ());
                         break;
                     }
                     Ok(n) => {
                         consecutive_errors = 0;
-                        let data = String::from_utf8_lossy(&buf[..n]).to_string();
-                        let _ = app_handle.emit(&data_event, data);
+                        if let Ok(mut b) = batch_reader.lock() {
+                            b.push_str(&String::from_utf8_lossy(&buf[..n]));
+                            // Flush immediately if batch is large (fast output like `ls -la`)
+                            if b.len() > 16384 {
+                                let _ = app_handle_reader.emit(&data_event_reader, std::mem::take(&mut *b));
+                            } else {
+                                // Signal flusher that data is ready
+                                data_ready_reader.notify_one();
+                            }
+                        }
                     }
                     Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock
                         || e.kind() == std::io::ErrorKind::TimedOut => {
-                        // No data available — session timeout (100ms) already provides the wait
                         consecutive_errors = 0;
-
                         // Send keepalive at proper intervals
                         if last_keepalive.elapsed() >= keepalive_interval {
                             if let Ok(session) = session_clone.lock() {
@@ -186,14 +218,17 @@ impl SshSession {
                             }
                             last_keepalive = Instant::now();
                         }
-                        // No extra sleep needed — the 100ms session timeout already throttles
                     }
                     Err(ref e) if e.kind() == std::io::ErrorKind::ConnectionReset
                         || e.kind() == std::io::ErrorKind::BrokenPipe
                         || e.kind() == std::io::ErrorKind::ConnectionAborted => {
-                        // Connection lost at OS level — fatal, no recovery
+                        if let Ok(mut b) = batch_reader.lock() {
+                            if !b.is_empty() {
+                                let _ = app_handle_reader.emit(&data_event_reader, std::mem::take(&mut *b));
+                            }
+                        }
                         let msg = format!("SSH connection lost: {}", e);
-                        let _ = app_handle.emit(&error_event, msg);
+                        let _ = app_handle_reader.emit(&error_event_reader, msg);
                         break;
                     }
                     Err(ref e) => {
@@ -204,14 +239,47 @@ impl SshSession {
 
                         consecutive_errors += 1;
                         if consecutive_errors >= max_consecutive_errors {
+                            if let Ok(mut b) = batch_reader.lock() {
+                                if !b.is_empty() {
+                                    let _ = app_handle_reader.emit(&data_event_reader, std::mem::take(&mut *b));
+                                }
+                            }
                             let msg = format!("SSH connection lost: {}", e);
-                            let _ = app_handle.emit(&error_event, msg);
+                            let _ = app_handle_reader.emit(&error_event_reader, msg);
                             break;
                         }
 
-                        // Longer backoff for transient errors to let the connection recover
                         let backoff = if is_transient { 200 } else { 100 };
-                        std::thread::sleep(std::time::Duration::from_millis(backoff));
+                        std::thread::sleep(Duration::from_millis(backoff));
+                    }
+                }
+            }
+        });
+
+        // Flusher thread: waits for data signal, then emits batch
+        // Uses Condvar — zero CPU when idle, batches rapid output
+        let running_flusher = Arc::clone(&running);
+        let batch_flusher = Arc::clone(&batch);
+        let data_ready_flusher = Arc::clone(&data_ready);
+
+        let flusher_thread = std::thread::spawn(move || {
+            loop {
+                // Wait for data signal or 50ms timeout (smooth rendering)
+                {
+                    let lock = match batch_flusher.lock() {
+                        Ok(l) => l,
+                        Err(e) => e.into_inner(),
+                    };
+                    let _ = data_ready_flusher.wait_timeout(lock, Duration::from_millis(50));
+                }
+
+                if !running_flusher.load(Ordering::Relaxed) {
+                    break;
+                }
+
+                if let Ok(mut b) = batch_flusher.lock() {
+                    if !b.is_empty() {
+                        let _ = app_handle.emit(&data_event, std::mem::take(&mut *b));
                     }
                 }
             }
@@ -221,6 +289,7 @@ impl SshSession {
             session,
             channel,
             _reader_thread: Some(reader_thread),
+            _flusher_thread: Some(flusher_thread),
             running,
         })
     }
@@ -233,7 +302,6 @@ impl SshSession {
         let mut channel = self.channel.lock()
             .map_err(|e| format!("Channel lock error: {}", e))?;
 
-        // Session timeout is 100ms; for small writes this is plenty.
         // Retry if we get a transient timeout during write.
         use std::io::Write;
         let mut retries = 0;
@@ -241,9 +309,9 @@ impl SshSession {
             match channel.write_all(data) {
                 Ok(()) => break,
                 Err(ref e) if (e.kind() == std::io::ErrorKind::WouldBlock
-                    || e.kind() == std::io::ErrorKind::TimedOut) && retries < 10 => {
+                    || e.kind() == std::io::ErrorKind::TimedOut) && retries < 5 => {
                     retries += 1;
-                    std::thread::sleep(std::time::Duration::from_millis(50));
+                    std::thread::sleep(Duration::from_millis(20));
                 }
                 Err(e) => return Err(format!("SSH write error: {}", e)),
             }
@@ -268,7 +336,7 @@ impl SshSession {
                     let err_str = e.to_string();
                     if err_str.contains("EAGAIN") || err_str.contains("timeout") {
                         retries += 1;
-                        std::thread::sleep(std::time::Duration::from_millis(100));
+                        std::thread::sleep(Duration::from_millis(50));
                     } else {
                         return Err(format!("SSH resize error: {}", e));
                     }

@@ -4,6 +4,8 @@
 
 Built with [Tauri](https://tauri.app/) + React + Rust. Native performance, cross-platform, and packed with tools that go far beyond a traditional terminal.
 
+Created by **0xArlee**
+
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Latest Release](https://img.shields.io/github/v/release/FomoDonkey/NovaShell)](https://github.com/FomoDonkey/NovaShell/releases/latest)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey)](https://github.com/FomoDonkey/NovaShell/releases)
@@ -100,6 +102,8 @@ Download the latest installer from [Releases](https://github.com/FomoDonkey/Nova
 | macOS    | `.dmg` |
 | Linux    | `.deb`, `.rpm`, or `.AppImage` |
 
+> **Windows note:** NovaShell installs in your user folder (`AppData`), so no administrator permissions are needed. Auto-updates download and apply automatically without elevation prompts.
+
 ---
 
 ## Build from Source
@@ -194,6 +198,10 @@ Contributions are welcome! Please open an issue or submit a pull request.
 This project is licensed under the MIT License. See [LICENSE](LICENSE) for details.
 
 ---
+
+## Author
+
+**0xArlee** — [GitHub](https://github.com/FomoDonkey)
 
 ## Acknowledgments
 

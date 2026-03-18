@@ -494,29 +494,28 @@ export function TerminalPanel() {
       // Live session tracking — updated by cross-server navigation
       const liveSession = { id: null as string | null, type: "pty" as "pty" | "ssh" };
 
-      // Buffered async write — batches rapid keystrokes, never blocks JS
+      // Fire-and-forget write — microtask batching, zero IPC wait
       let liveWriteQueue = "";
-      let liveWriteFlushing = false;
-      const flushLiveWriteQueue = async () => {
-        if (!liveWriteQueue || !liveSession.id) { liveWriteFlushing = false; return; }
-        liveWriteFlushing = true;
-        const toSend = liveWriteQueue;
-        liveWriteQueue = "";
-        try {
-          const { invoke } = await getTauriCore();
-          const cmd = liveSession.type === "ssh" ? "ssh_write" : "write_to_pty";
-          await invoke(cmd, { sessionId: liveSession.id, data: toSend });
-        } catch { /* session may be closed */ }
-        if (liveWriteQueue) {
-          queueMicrotask(() => flushLiveWriteQueue());
-        } else {
-          liveWriteFlushing = false;
-        }
+      let liveWriteFlushScheduled = false;
+      const scheduleLiveWriteFlush = () => {
+        if (liveWriteFlushScheduled) return;
+        liveWriteFlushScheduled = true;
+        queueMicrotask(() => {
+          liveWriteFlushScheduled = false;
+          if (liveWriteQueue && liveSession.id) {
+            const toSend = liveWriteQueue;
+            liveWriteQueue = "";
+            const cmd = liveSession.type === "ssh" ? "ssh_write" : "write_to_pty";
+            getTauriCore().then(({ invoke }) => {
+              invoke(cmd, { sessionId: liveSession.id, data: toSend }).catch(() => {});
+            }).catch(() => {});
+          }
+        });
       };
       const writeToLiveSession = (text: string) => {
         if (!liveSession.id) return;
         liveWriteQueue += text;
-        if (!liveWriteFlushing) flushLiveWriteQueue();
+        scheduleLiveWriteFlush();
       };
 
       // Copy: Ctrl+C with selection copies to clipboard (otherwise sends SIGINT)
@@ -615,27 +614,25 @@ export function TerminalPanel() {
         let ptyInputBuffer = "";
         const currentTermRef = { sessionId, sessionType: "pty" as "pty" | "ssh", activeDataUnlisten: unlistenData as (() => void) | null };
 
-        // Buffered write — batches rapid input, never blocks event loop
+        // Fire-and-forget write — microtask batching, zero IPC wait
         let sessionWriteQueue = "";
-        let sessionWriteFlushing = false;
-        const flushSessionWriteQueue = async () => {
-          if (!sessionWriteQueue || !currentTermRef.sessionId) { sessionWriteFlushing = false; return; }
-          sessionWriteFlushing = true;
-          const toSend = sessionWriteQueue;
-          sessionWriteQueue = "";
-          try {
-            const cmd = currentTermRef.sessionType === "ssh" ? "ssh_write" : "write_to_pty";
-            await invoke(cmd, { sessionId: currentTermRef.sessionId, data: toSend });
-          } catch { /* session may be closed */ }
-          if (sessionWriteQueue) {
-            queueMicrotask(() => flushSessionWriteQueue());
-          } else {
-            sessionWriteFlushing = false;
-          }
+        let sessionWriteFlushScheduled = false;
+        const scheduleSessionWriteFlush = () => {
+          if (sessionWriteFlushScheduled) return;
+          sessionWriteFlushScheduled = true;
+          queueMicrotask(() => {
+            sessionWriteFlushScheduled = false;
+            if (sessionWriteQueue && currentTermRef.sessionId) {
+              const toSend = sessionWriteQueue;
+              sessionWriteQueue = "";
+              const cmd = currentTermRef.sessionType === "ssh" ? "ssh_write" : "write_to_pty";
+              invoke(cmd, { sessionId: currentTermRef.sessionId, data: toSend }).catch(() => {});
+            }
+          });
         };
         const writeToSession = (d: string) => {
           sessionWriteQueue += d;
-          if (!sessionWriteFlushing) flushSessionWriteQueue();
+          scheduleSessionWriteFlush();
         };
         const dataDisposable = terminal.onData((data) => {
           // Check for cross-server navigation on Enter

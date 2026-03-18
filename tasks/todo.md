@@ -160,6 +160,14 @@
 - [x] Config History: Reduced persisted entries 200→100 — smaller save payload
 - [x] TypeScript compilation verified
 
+## Completed (v2.5.0 Zero-Wait SSH Input)
+- [x] SSH write fire-and-forget: invoke() no longer awaited — zero IPC wait between keystrokes
+- [x] Microtask batching: all keystrokes from same JS frame sent in one IPC call
+- [x] Paste via writeQueue: Ctrl+V/right-click routes through same optimized path
+- [x] Session timeout 20ms→10ms: reader thread processes writes 2x faster
+- [x] Shared invokeRef: paste handlers use cached invoke instead of re-importing
+- [x] TypeScript + Rust compilation verified
+
 ## Completed (v2.4.9 Bug Fixes — Audit Results)
 - [x] Fix: UTF-8 split across read boundaries — incomplete sequences preserved for next read (SSH + PTY)
 - [x] Fix: Navigation stack unbounded growth — capped at 50 entries per tab

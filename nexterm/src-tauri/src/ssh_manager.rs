@@ -127,7 +127,7 @@ impl SshSession {
         // Keep session in BLOCKING mode — use read timeout for non-blocking behavior
         // This avoids the race condition of switching blocking/non-blocking between threads
         session.set_blocking(true);
-        session.set_timeout(20); // 20ms timeout — aligned with flusher for responsive writes
+        session.set_timeout(10); // 10ms timeout — fast loop for responsive write processing
 
         let session = Arc::new(Mutex::new(session));
         let channel = Arc::new(Mutex::new(channel));

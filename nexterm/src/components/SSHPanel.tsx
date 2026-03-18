@@ -355,8 +355,26 @@ export function SSHPanel() {
 
     fitAddon.fit();
 
-    // Copy/paste for SSH terminal
-    const currentSessionId = activeSessionId;
+    // Shared write queue — accessible from key handlers AND async setup
+    let writeQueue = "";
+    let writeFlushScheduled = false;
+    let invokeRef: typeof import("@tauri-apps/api/core")["invoke"] | null = null;
+
+    // Fire-and-forget flush: batches all keystrokes from same microtask, sends one IPC call
+    const scheduleWriteFlush = () => {
+      if (writeFlushScheduled) return;
+      writeFlushScheduled = true;
+      queueMicrotask(() => {
+        writeFlushScheduled = false;
+        if (writeQueue && invokeRef) {
+          const toSend = writeQueue;
+          writeQueue = "";
+          invokeRef("ssh_write", { sessionId: activeSessionId, data: toSend }).catch(() => {});
+        }
+      });
+    };
+
+    // Copy/paste for SSH terminal — paste routes through writeQueue for optimal batching
     terminal.attachCustomKeyEventHandler((e) => {
       if (e.type !== "keydown") return true;
       if ((e.ctrlKey || e.metaKey) && e.key === "c" && terminal.hasSelection()) {
@@ -365,9 +383,9 @@ export function SSHPanel() {
         return false;
       }
       if ((e.ctrlKey || e.metaKey) && e.key === "v") {
-        e.preventDefault(); // Prevent browser native paste (avoids duplicate)
+        e.preventDefault();
         navigator.clipboard.readText().then((text) => {
-          if (text) getTauriCore().then(({ invoke }) => invoke("ssh_write", { sessionId: currentSessionId, data: text }));
+          if (text) { writeQueue += text; scheduleWriteFlush(); }
         });
         return false;
       }
@@ -381,7 +399,7 @@ export function SSHPanel() {
         terminal.clearSelection();
       } else {
         navigator.clipboard.readText().then((text) => {
-          if (text) getTauriCore().then(({ invoke }) => invoke("ssh_write", { sessionId: currentSessionId, data: text }));
+          if (text) { writeQueue += text; scheduleWriteFlush(); }
         });
       }
     };
@@ -395,6 +413,7 @@ export function SSHPanel() {
       try {
         const { invoke } = await getTauriCore();
         const { listen } = await getTauriEvent();
+        invokeRef = invoke; // Make invoke available to key handlers
 
         const connForLog = useAppStore.getState().sshConnections.find((c) => c.sessionId === activeSessionId);
         const sshSource = connForLog ? `SSH:${connForLog.name}` : "SSH";
@@ -421,28 +440,10 @@ export function SSHPanel() {
         });
         unlisteners.push(unError);
 
-        // Buffered async write — batches rapid keystrokes, never blocks JS event loop
-        let writeQueue = "";
-        let writeFlushing = false;
-        const flushWriteQueue = async () => {
-          if (!writeQueue) { writeFlushing = false; return; }
-          writeFlushing = true;
-          const toSend = writeQueue;
-          writeQueue = "";
-          try {
-            await invoke("ssh_write", { sessionId: activeSessionId, data: toSend });
-          } catch { /* session may be closed */ }
-          if (writeQueue) {
-            // Defer to next microtask — allows event loop to process other events between flushes
-            queueMicrotask(() => flushWriteQueue());
-          } else {
-            writeFlushing = false;
-          }
-        };
-
+        // Terminal input → fire-and-forget via writeQueue
         const dataDisposable = terminal.onData((data) => {
           writeQueue += data;
-          if (!writeFlushing) flushWriteQueue();
+          scheduleWriteFlush();
         });
 
         // Debounced resize — avoids flooding IPC during window drag

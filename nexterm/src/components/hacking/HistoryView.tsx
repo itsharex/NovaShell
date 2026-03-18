@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { Clock, Download, Trash2, Lock, Unlock, Eye, EyeOff } from "lucide-react";
 import { useAppStore } from "../../store/appStore";
 import { useT } from "../../i18n";
@@ -32,9 +32,7 @@ export function HistoryView() {
     setSessionsLoaded(true);
   }, []);
 
-  if (!sessionsLoaded) {
-    loadSessionList();
-  }
+  useEffect(() => { if (!sessionsLoaded) loadSessionList(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const saveSession = useCallback(async () => {
     if (hackingLogs.length === 0 || !password) return;

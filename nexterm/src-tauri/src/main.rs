@@ -1060,7 +1060,8 @@ async fn server_map_scan(
         }
     }
 
-    // Deduplicate by name+port
+    // Sort then dedup — dedup_by only removes adjacent duplicates
+    services.sort_by(|a, b| (&a.name, a.port).cmp(&(&b.name, b.port)));
     services.dedup_by(|a, b| a.name == b.name && a.port == b.port);
 
     Ok(services)
@@ -1493,16 +1494,21 @@ fn save_screenshot(data_url: String) -> Result<String, String> {
 }
 
 fn base64_decode(input: &str) -> Result<Vec<u8>, String> {
-    // Simple base64 decoder
-    const TABLE: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    // O(1) lookup table instead of O(64) linear scan per byte
+    const DECODE: [u8; 256] = {
+        let mut t = [255u8; 256];
+        let chars = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+        let mut i = 0;
+        while i < 64 { t[chars[i] as usize] = i as u8; i += 1; }
+        t
+    };
     let mut buf: Vec<u8> = Vec::with_capacity(input.len() * 3 / 4);
     let mut bits: u32 = 0;
     let mut bit_count: u32 = 0;
     for &b in input.as_bytes() {
-        let val = if b == b'=' { continue }
-        else if let Some(pos) = TABLE.iter().position(|&t| t == b) { pos as u32 }
-        else { continue };
-        bits = (bits << 6) | val;
+        let val = DECODE[b as usize];
+        if val == 255 { continue; } // skip =, whitespace, invalid
+        bits = (bits << 6) | val as u32;
         bit_count += 6;
         if bit_count >= 8 {
             bit_count -= 8;
@@ -1551,11 +1557,30 @@ fn stop_log_stream(
 
 #[tauri::command]
 fn tail_local_file(path: String, lines: u32) -> Result<String, String> {
-    let content = std::fs::read_to_string(&path)
-        .map_err(|e| format!("Read error: {}", e))?;
-    let all_lines: Vec<&str> = content.lines().collect();
-    let start = if all_lines.len() > lines as usize { all_lines.len() - lines as usize } else { 0 };
-    Ok(all_lines[start..].join("\n"))
+    use std::io::{Seek, SeekFrom, BufRead, BufReader};
+    let file = std::fs::File::open(&path).map_err(|e| format!("Read error: {}", e))?;
+    let file_len = file.metadata().map(|m| m.len()).unwrap_or(0);
+    // For small files (< 64KB), just read the whole thing
+    if file_len < 65536 {
+        let content = std::io::read_to_string(file).map_err(|e| format!("Read error: {}", e))?;
+        let all_lines: Vec<&str> = content.lines().collect();
+        let start = if all_lines.len() > lines as usize { all_lines.len() - lines as usize } else { 0 };
+        return Ok(all_lines[start..].join("\n"));
+    }
+    // For large files, read from the end to avoid loading entire file
+    let want = lines as usize;
+    let chunk_size: u64 = std::cmp::min(file_len, (want as u64) * 200); // estimate ~200 bytes/line
+    let mut reader = BufReader::new(file);
+    reader.seek(SeekFrom::End(-(chunk_size as i64))).map_err(|e| format!("Seek error: {}", e))?;
+    // Skip partial first line
+    let mut _partial = String::new();
+    let _ = reader.read_line(&mut _partial);
+    let mut tail_lines: Vec<String> = Vec::with_capacity(want);
+    for line in reader.lines() {
+        if let Ok(l) = line { tail_lines.push(l); }
+    }
+    let start = if tail_lines.len() > want { tail_lines.len() - want } else { 0 };
+    Ok(tail_lines[start..].join("\n"))
 }
 
 // ──────────── File Write ────────────
@@ -1655,7 +1680,7 @@ fn main() {
             ssh_sessions: Mutex::new(HashMap::new()),
             sftp_sessions: Mutex::new(HashMap::new()),
             log_streams: Mutex::new(HashMap::new()),
-            system: Mutex::new(sysinfo::System::new_all()),
+            system: Mutex::new(sysinfo::System::new()),
             cached_path_commands: Mutex::new(None),
             log_manager: Mutex::new(log_manager::LogManager::new()),
             session_doc_manager: Mutex::new(session_doc_manager::SessionDocManager::new()),

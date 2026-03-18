@@ -988,7 +988,6 @@ body {
   border-radius: var(--radius-md);
   backdrop-filter: blur(10px);
   box-shadow: var(--shadow-md);
-  will-change: backdrop-filter;
 }
 
 .search-input {
@@ -1115,7 +1114,6 @@ body {
   backdrop-filter: blur(16px);
   box-shadow: 0 8px 32px rgba(88, 166, 255, 0.2), 0 0 0 1px rgba(88, 166, 255, 0.1);
   min-width: 280px;
-  will-change: backdrop-filter;
 }
 
 .achievement-toast-icon {
@@ -1252,8 +1250,7 @@ body {
 }
 
 .debug-log-entry:hover {
-  filter: brightness(1.15);
-  will-change: filter;
+  background: rgba(255, 255, 255, 0.03);
 }
 
 /* === Hacking Mode Visual Effects === */

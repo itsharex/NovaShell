@@ -99,8 +99,11 @@ pub fn detect_environment() -> EnvironmentInfo {
     // Detect VM (basic heuristics)
     #[cfg(target_os = "windows")]
     {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
         let model = std::process::Command::new("wmic")
             .args(["computersystem", "get", "model"])
+            .creation_flags(CREATE_NO_WINDOW)
             .output();
         if let Ok(output) = model {
             let text = String::from_utf8_lossy(&output.stdout).to_lowercase();
@@ -263,7 +266,14 @@ fn truncate_str(s: &str, max_len: usize) -> String {
     if s.len() <= max_len {
         s.to_string()
     } else {
-        format!("{}...", &s[..max_len.saturating_sub(3)])
+        // Use char_indices to avoid panicking on multi-byte UTF-8 boundaries
+        let truncate_at = max_len.saturating_sub(3);
+        let end = s.char_indices()
+            .take_while(|(i, _)| *i <= truncate_at)
+            .last()
+            .map(|(i, c)| i + c.len_utf8())
+            .unwrap_or(0);
+        format!("{}...", &s[..end])
     }
 }
 

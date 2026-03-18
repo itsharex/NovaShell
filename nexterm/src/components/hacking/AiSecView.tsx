@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { Brain, Send, Loader2, AlertTriangle, Copy, Trash2 } from "lucide-react";
 import { useAppStore } from "../../store/appStore";
 import { useT } from "../../i18n";
@@ -53,10 +53,8 @@ export function AiSecView() {
     }
   }, [selectedModel]);
 
-  // Auto-check on first render
-  if (ollamaOnline === null) {
-    checkOllama();
-  }
+  // Auto-check on mount (not during render)
+  useEffect(() => { checkOllama(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const buildContext = () => {
     const parts: string[] = [];

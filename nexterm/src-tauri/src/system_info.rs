@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use sysinfo::System;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::OnceLock;
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct SystemStats {
@@ -18,6 +19,9 @@ pub struct SystemStats {
 // to avoid the heavy enumerate-all-processes syscall on every poll
 static CALL_COUNTER: AtomicUsize = AtomicUsize::new(0);
 static CACHED_PROCESS_COUNT: AtomicUsize = AtomicUsize::new(0);
+// Cache static system properties — they never change at runtime
+static CACHED_HOSTNAME: OnceLock<String> = OnceLock::new();
+static CACHED_OS_NAME: OnceLock<String> = OnceLock::new();
 
 pub fn get_stats(sys: &mut System) -> SystemStats {
     sys.refresh_cpu_usage();
@@ -46,8 +50,8 @@ pub fn get_stats(sys: &mut System) -> SystemStats {
             0.0
         },
         processes_count,
-        hostname: System::host_name().unwrap_or_default(),
-        os_name: System::long_os_version().unwrap_or_default(),
+        hostname: CACHED_HOSTNAME.get_or_init(|| System::host_name().unwrap_or_default()).clone(),
+        os_name: CACHED_OS_NAME.get_or_init(|| System::long_os_version().unwrap_or_default()).clone(),
         uptime: System::uptime(),
     }
 }

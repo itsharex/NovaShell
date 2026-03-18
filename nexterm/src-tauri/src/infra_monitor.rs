@@ -44,6 +44,7 @@ impl Drop for MonitoredServer {
         if let Ok(mut running) = self.running.lock() {
             *running = false;
         }
+        self.stop_signal.notify_all(); // Wake the poll thread so it exits immediately
         if let Some(handle) = self.poll_thread.take() {
             let _ = handle.join();
         }

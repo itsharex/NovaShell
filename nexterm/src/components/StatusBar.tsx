@@ -35,8 +35,9 @@ export function StatusBar() {
   const language = useAppStore((s) => s.language);
   const setLanguage = useAppStore((s) => s.setLanguage);
   const executeSnippet = useAppStore((s) => s.executeSnippet);
-  const infraAlerts = useAppStore((s) => s.infraAlerts);
-  const hackingAlertsList = useAppStore((s) => s.hackingAlerts);
+  // Access full arrays only on-demand via getState() to avoid re-renders on every alert change
+  const getInfraAlerts = () => useAppStore.getState().infraAlerts;
+  const getHackingAlerts = () => useAppStore.getState().hackingAlerts;
   const t = useT();
   const [quickConnectOpen, setQuickConnectOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
@@ -248,7 +249,7 @@ export function StatusBar() {
                 <div style={{ padding: "8px 12px", borderBottom: "1px solid var(--border-subtle)", fontSize: 11, fontWeight: 600, color: "var(--text-primary)" }}>
                   Notifications ({totalAlerts})
                 </div>
-                {infraAlerts.filter((a) => !a.acknowledged).slice(0, 10).map((a) => (
+                {getInfraAlerts().filter((a) => !a.acknowledged).slice(0, 10).map((a) => (
                   <div key={a.id} style={{ padding: "6px 12px", borderBottom: "1px solid var(--border-subtle)", fontSize: 10 }}>
                     <div style={{ color: a.severity === "critical" ? "#ff7b72" : "#d29922", fontWeight: 600 }}>
                       {a.serverName}: {a.message}
@@ -258,7 +259,7 @@ export function StatusBar() {
                     </div>
                   </div>
                 ))}
-                {hackingAlertsList.slice(0, 5).map((a) => (
+                {getHackingAlerts().slice(0, 5).map((a) => (
                   <div key={a.id} style={{ padding: "6px 12px", borderBottom: "1px solid var(--border-subtle)", fontSize: 10 }}>
                     <div style={{ color: a.severity === "critical" ? "#ff7b72" : "#d29922", fontWeight: 600 }}>
                       {a.title}

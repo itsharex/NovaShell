@@ -50,6 +50,13 @@ const levelConfig: Record<LogLevel, { color: string; bg: string; icon: typeof Al
   output: { color: "#8b949e", bg: "transparent", icon: FileText, label: "OUT" },
 };
 
+// Extracted styles to avoid recreating objects in .map() loops (up to 1000 entries)
+const logEntryRowStyle: React.CSSProperties = { display: "flex", alignItems: "flex-start", gap: 6, minWidth: 0 };
+const logTimeStyle: React.CSSProperties = { fontSize: 9, color: "var(--text-muted)", fontFamily: "monospace", flexShrink: 0, marginTop: 1, minWidth: 72 };
+const logLabelStyle: React.CSSProperties = { fontSize: 9, fontWeight: 700, flexShrink: 0, marginTop: 1, minWidth: 24 };
+const logSourceStyle: React.CSSProperties = { fontSize: 9, color: "var(--accent-primary)", flexShrink: 0, marginTop: 1, maxWidth: 60, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" };
+const logMessageStyle: React.CSSProperties = { fontSize: 11, color: "var(--text-primary)", fontFamily: "'JetBrains Mono', monospace", flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis" };
+
 export function DebugPanel() {
   const t = useT();
   const [subTab, setSubTab] = useState<"logs" | "analysis" | "performance">("logs");
@@ -692,58 +699,18 @@ export function DebugPanel() {
                 }}
                 onClick={isMultiline ? () => toggleExpand(log.id) : undefined}
               >
-                <div style={{
-                  display: "flex",
-                  alignItems: "flex-start",
-                  gap: 6,
-                  minWidth: 0,
-                }}>
+                <div style={logEntryRowStyle}>
                   {isMultiline && (
                     expanded
                       ? <ChevronDown size={10} style={{ color: cfg.color, marginTop: 2, flexShrink: 0 }} />
                       : <ChevronRight size={10} style={{ color: cfg.color, marginTop: 2, flexShrink: 0 }} />
                   )}
                   <Icon size={10} style={{ color: cfg.color, marginTop: 2, flexShrink: 0 }} />
+                  <span style={logTimeStyle}>{formatTime(log.timestamp)}</span>
+                  <span style={{ ...logLabelStyle, color: cfg.color }}>{cfg.label}</span>
+                  <span style={logSourceStyle}>{log.source}</span>
                   <span style={{
-                    fontSize: 9,
-                    color: "var(--text-muted)",
-                    fontFamily: "monospace",
-                    flexShrink: 0,
-                    marginTop: 1,
-                    minWidth: 72,
-                  }}>
-                    {formatTime(log.timestamp)}
-                  </span>
-                  <span style={{
-                    fontSize: 9,
-                    color: cfg.color,
-                    fontWeight: 700,
-                    flexShrink: 0,
-                    marginTop: 1,
-                    minWidth: 24,
-                  }}>
-                    {cfg.label}
-                  </span>
-                  <span style={{
-                    fontSize: 9,
-                    color: "var(--accent-primary)",
-                    flexShrink: 0,
-                    marginTop: 1,
-                    maxWidth: 60,
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
-                    whiteSpace: "nowrap",
-                  }}>
-                    {log.source}
-                  </span>
-                  <span style={{
-                    fontSize: 11,
-                    color: "var(--text-primary)",
-                    fontFamily: "'JetBrains Mono', monospace",
-                    flex: 1,
-                    minWidth: 0,
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
+                    ...logMessageStyle,
                     whiteSpace: expanded ? "pre-wrap" : "nowrap",
                     wordBreak: expanded ? "break-all" : undefined,
                   }}>
@@ -779,11 +746,11 @@ function HistorySessionView({
   const t = useT();
   const [filter, setFilter] = useState("");
 
-  const filtered = session.entries.filter((log) => {
+  const filtered = useMemo(() => session.entries.filter((log) => {
     if (!filter) return true;
     const q = filter.toLowerCase();
     return log.message.toLowerCase().includes(q) || log.source.toLowerCase().includes(q) || log.level.includes(q);
-  });
+  }), [session.entries, filter]);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>

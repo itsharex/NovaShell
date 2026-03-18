@@ -342,6 +342,9 @@ export function EditorPanel() {
   const [liveLogsOpen, setLiveLogsOpen] = useState(false);
   const [liveLogLines, setLiveLogLines] = useState<string[]>([]);
   const [logStreamId, setLogStreamId] = useState<string | null>(null);
+  const logStreamIdRef = useRef<string | null>(null);
+  logStreamIdRef.current = logStreamId;
+  const logStreamUnlistenRef = useRef<(() => void) | null>(null);
   const logContainerRef = useRef<HTMLDivElement>(null);
 
   // File browser state
@@ -565,8 +568,8 @@ export function EditorPanel() {
     if (logContainerRef.current) logContainerRef.current.scrollTop = logContainerRef.current.scrollHeight;
   }, [liveLogLines]);
 
-  // Cleanup log stream on unmount
-  useEffect(() => () => { if (logStreamId) stopLogStreamBackend(logStreamId); }, []);
+  // Cleanup log stream on unmount — use ref to get current value, not stale closure
+  useEffect(() => () => { if (logStreamIdRef.current) stopLogStreamBackend(logStreamIdRef.current); }, []);
 
   const saveFile = useCallback(async () => {
     if (!file) return;
@@ -669,8 +672,8 @@ export function EditorPanel() {
             return all.length > 500 ? all.slice(-500) : all;
           });
         });
-        // Store unlisten for cleanup
-        (window as any).__logStreamUnlisten = unlisten;
+        // Store unlisten in ref for cleanup
+        logStreamUnlistenRef.current = unlisten;
       } catch (e) {
         setLiveLogLines([`Error: ${e}`]);
       }
@@ -691,9 +694,9 @@ export function EditorPanel() {
       const invoke = await getInvoke();
       await invoke("stop_log_stream", { streamId: id });
     } catch {}
-    if ((window as any).__logStreamUnlisten) {
-      (window as any).__logStreamUnlisten();
-      delete (window as any).__logStreamUnlisten;
+    if (logStreamUnlistenRef.current) {
+      logStreamUnlistenRef.current();
+      logStreamUnlistenRef.current = null;
     }
   };
 

@@ -4,18 +4,21 @@ import { useAppStore } from "../store/appStore";
 import type { ThemeName } from "../store/appStore";
 import { useT } from "../i18n";
 
+const themes: { name: ThemeName; label: string }[] = [
+  { name: "dark", label: "Dark" },
+  { name: "light", label: "Light" },
+  { name: "cyberpunk", label: "Cyber" },
+  { name: "retro", label: "Retro" },
+];
+
 export function TitleBar() {
-  const { theme, setTheme, toggleSidebar, toggleFocusMode } = useAppStore();
+  const theme = useAppStore((s) => s.theme);
+  const setTheme = useAppStore((s) => s.setTheme);
+  const toggleSidebar = useAppStore((s) => s.toggleSidebar);
+  const toggleFocusMode = useAppStore((s) => s.toggleFocusMode);
   const hackingMode = useAppStore((s) => s.hackingMode);
   const toggleHackingMode = useAppStore((s) => s.toggleHackingMode);
   const t = useT();
-
-  const themes: { name: ThemeName; label: string }[] = [
-    { name: "dark", label: "Dark" },
-    { name: "light", label: "Light" },
-    { name: "cyberpunk", label: "Cyber" },
-    { name: "retro", label: "Retro" },
-  ];
 
   const handleMinimize = async () => {
     const { getCurrentWindow } = await import("@tauri-apps/api/window");

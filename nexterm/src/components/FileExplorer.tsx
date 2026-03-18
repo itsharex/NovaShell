@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, memo } from "react";
 import {
   Folder,
   FolderOpen,
@@ -140,15 +140,19 @@ export function FileExplorer() {
     });
   }, []);
 
+  const treeRef = useRef(tree);
+  treeRef.current = tree;
+
   const handleDirClick = useCallback((dirPath: string) => {
-    if (tree.expanded.has(dirPath)) {
+    const t = treeRef.current;
+    if (t.expanded.has(dirPath)) {
       toggleDir(dirPath);
-    } else if (tree.children.has(dirPath)) {
+    } else if (t.children.has(dirPath)) {
       toggleDir(dirPath);
     } else {
       loadChildren(dirPath);
     }
-  }, [tree, toggleDir, loadChildren]);
+  }, [toggleDir, loadChildren]);
 
   const handleFileClick = useCallback(async (file: FileEntry) => {
     try {
@@ -347,7 +351,7 @@ function BreadcrumbItem({ label, onClick }: { label: string; onClick: () => void
   );
 }
 
-function TreeItem({
+const TreeItem = memo(function TreeItem({
   file,
   depth,
   tree,
@@ -432,7 +436,7 @@ function TreeItem({
       <span style={{ fontSize: 10, color: "var(--text-muted)", flexShrink: 0 }}>{formatSize(file.size)}</span>
     </div>
   );
-}
+});
 
 const iconBtnStyle: React.CSSProperties = {
   background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer",

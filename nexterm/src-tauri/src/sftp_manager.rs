@@ -7,6 +7,7 @@ use std::sync::{Arc, Mutex};
 
 pub struct SftpSession {
     session: Arc<Mutex<Session>>,
+    sftp: Mutex<Option<ssh2::Sftp>>,
     _tcp: TcpStream, // Keep TCP alive
 }
 
@@ -99,8 +100,11 @@ impl SftpSession {
         // Set longer timeout for SFTP operations
         session.set_timeout(30000);
 
+        // Create SFTP subsystem once upfront instead of per-operation
+        let sftp = session.sftp().map_err(|e| format!("SFTP subsystem error: {}", e))?;
         Ok(SftpSession {
             session: Arc::new(Mutex::new(session)),
+            sftp: Mutex::new(Some(sftp)),
             _tcp: tcp,
         })
     }
@@ -109,14 +113,17 @@ impl SftpSession {
     where
         F: FnOnce(&ssh2::Sftp) -> Result<T, String>,
     {
-        let session = self
-            .session
-            .lock()
-            .map_err(|e| format!("Session lock error: {}", e))?;
-        let sftp = session
-            .sftp()
-            .map_err(|e| format!("SFTP subsystem error: {}", e))?;
-        f(&sftp)
+        let guard = self.sftp.lock().map_err(|e| format!("SFTP lock error: {}", e))?;
+        match guard.as_ref() {
+            Some(sftp) => f(sftp),
+            None => {
+                // Fallback: create a new subsystem if somehow the cached one is gone
+                drop(guard);
+                let session = self.session.lock().map_err(|e| format!("Session lock error: {}", e))?;
+                let sftp = session.sftp().map_err(|e| format!("SFTP subsystem error: {}", e))?;
+                f(&sftp)
+            }
+        }
     }
 
     pub fn list_dir(&self, path: &str) -> Result<Vec<RemoteFileEntry>, String> {

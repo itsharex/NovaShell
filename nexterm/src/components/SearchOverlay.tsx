@@ -16,21 +16,24 @@ export function SearchOverlay({ onSearch, onClose }: SearchOverlayProps) {
     inputRef.current?.focus();
   }, []);
 
+  const queryRef = useRef(query);
+  queryRef.current = query;
+
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         onClose();
       } else if (e.key === "Enter") {
         if (e.shiftKey) {
-          onSearch(query, "prev");
+          onSearch(queryRef.current, "prev");
         } else {
-          onSearch(query, "next");
+          onSearch(queryRef.current, "next");
         }
       }
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [query, onSearch, onClose]);
+  }, [onSearch, onClose]);
 
   return (
     <div className="search-overlay">

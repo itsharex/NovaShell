@@ -327,7 +327,7 @@ function scheduleSave() {
       workspaces: s.workspaces.length > 0 ? s.workspaces : undefined,
     };
     import("@tauri-apps/api/core").then(({ invoke }) => {
-      invoke("save_app_config", { data: JSON.stringify(config, null, 2) }).catch(() => {});
+      invoke("save_app_config", { data: JSON.stringify(config) }).catch(() => {});
     }).catch(() => {});
   }, 500);
 }
@@ -1306,11 +1306,12 @@ if (typeof window !== "undefined") {
         debugPersist: s.debugPersist,
         language: s.language,
         customExploits: s.customExploits.length > 0 ? s.customExploits : undefined,
+        workspaces: s.workspaces.length > 0 ? s.workspaces : undefined,
       };
       // Use synchronous XHR-style approach via navigator.sendBeacon isn't available for Tauri
       // Fire and forget — the invoke will execute before the page unloads
       import("@tauri-apps/api/core").then(({ invoke }) => {
-        invoke("save_app_config", { data: JSON.stringify(config, null, 2) });
+        invoke("save_app_config", { data: JSON.stringify(config) });
       }).catch(() => {});
     }
     if (debugPersistQueue.length > 0) {

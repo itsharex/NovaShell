@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import {
   FileText,
   Sparkles,
@@ -41,6 +41,8 @@ export function SessionDocPanel() {
   const history = useAppStore((s) => s.history);
   const debugLogs = useAppStore((s) => s.debugLogs);
   const sessionStartTime = useAppStore((s) => s.sessionStartTime);
+  const sessionCmdCount = useMemo(() => history.filter((h) => h.timestamp >= sessionStartTime).length, [history, sessionStartTime]);
+  const sessionErrorCount = useMemo(() => debugLogs.filter((l) => l.timestamp >= sessionStartTime && l.level === "error").length, [debugLogs, sessionStartTime]);
 
   const [docs, setDocs] = useState<SessionDocInfo[]>([]);
   const [viewingDoc, setViewingDoc] = useState<{ filename: string; content: string } | null>(null);
@@ -388,13 +390,13 @@ export function SessionDocPanel() {
           </div>
           <button
             onClick={generateDoc}
-            disabled={generating || history.filter((h) => h.timestamp >= sessionStartTime).length === 0}
+            disabled={generating || sessionCmdCount === 0}
             style={{
               width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
               padding: "10px 16px", fontSize: 12, fontWeight: 600, border: "none", cursor: "pointer",
               borderRadius: "var(--radius-md)", transition: "all var(--transition-fast)",
-              background: generating || history.filter((h) => h.timestamp >= sessionStartTime).length === 0 ? "var(--bg-active)" : "var(--accent-gradient)",
-              color: "white", opacity: generating || history.filter((h) => h.timestamp >= sessionStartTime).length === 0 ? 0.5 : 1,
+              background: generating || sessionCmdCount === 0 ? "var(--bg-active)" : "var(--accent-gradient)",
+              color: "white", opacity: generating || sessionCmdCount === 0 ? 0.5 : 1,
             }}
           >
             {generating ? (
@@ -427,8 +429,8 @@ export function SessionDocPanel() {
         padding: "8px 12px", borderBottom: "1px solid var(--border-subtle)",
         display: "flex", gap: 12, fontSize: 10, color: "var(--text-muted)", flexShrink: 0,
       }}>
-        <span>{history.filter((h) => h.timestamp >= sessionStartTime).length} commands</span>
-        <span>{debugLogs.filter((l) => l.timestamp >= sessionStartTime && l.level === "error").length} errors</span>
+        <span>{sessionCmdCount} commands</span>
+        <span>{sessionErrorCount} errors</span>
         <span>
           <Clock size={10} style={{ verticalAlign: "middle", marginRight: 2 }} />
           {Math.round((Date.now() - sessionStartTime) / 60000)}m

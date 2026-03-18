@@ -25,11 +25,15 @@ async function getProcess() {
 
 // Parse GitHub release body markdown into styled JSX
 function renderReleaseNotes(body: string) {
+  if (!body || typeof body !== "string") return null;
+
   // Remove download section and footer
   const cleaned = body
     .replace(/## Downloads[\s\S]*$/i, "")
     .replace(/---[\s\S]*$/i, "")
     .trim();
+
+  if (!cleaned) return <span style={{ fontSize: 10.5 }}>{body.slice(0, 300)}</span>;
 
   const elements: React.ReactNode[] = [];
   let key = 0;
@@ -299,27 +303,38 @@ export const UpdateNotification = memo(function UpdateNotification() {
 
         {status.phase === "available" && (
           <>
-            {status.body && (
-              <>
-                <div style={{ fontSize: 10, fontWeight: 600, color: "var(--text-muted)", marginBottom: 4, textTransform: "uppercase", letterSpacing: 0.5 }}>
-                  {t("update.whatsNew")}
-                </div>
-                <div style={{
-                  fontSize: 11,
-                  color: "var(--text-secondary)",
-                  margin: "0 0 10px 0",
-                  maxHeight: 200,
-                  overflowY: "auto",
-                  lineHeight: 1.6,
-                  padding: "8px 10px",
-                  background: "var(--bg-primary)",
-                  borderRadius: "var(--radius-sm)",
-                  border: "1px solid var(--border-subtle)",
-                }}>
-                  {renderReleaseNotes(status.body)}
-                </div>
-              </>
-            )}
+            {status.body && status.body.trim().length > 0 && (() => {
+              try {
+                return (
+                  <>
+                    <div style={{ fontSize: 10, fontWeight: 600, color: "var(--text-muted)", marginBottom: 4, textTransform: "uppercase", letterSpacing: 0.5 }}>
+                      {t("update.whatsNew")}
+                    </div>
+                    <div style={{
+                      fontSize: 11,
+                      color: "var(--text-secondary)",
+                      margin: "0 0 10px 0",
+                      maxHeight: 200,
+                      overflowY: "auto",
+                      lineHeight: 1.6,
+                      padding: "8px 10px",
+                      background: "var(--bg-primary)",
+                      borderRadius: "var(--radius-sm)",
+                      border: "1px solid var(--border-subtle)",
+                    }}>
+                      {renderReleaseNotes(status.body)}
+                    </div>
+                  </>
+                );
+              } catch {
+                // Fallback: show raw text if markdown parsing fails
+                return (
+                  <p style={{ fontSize: 11, color: "var(--text-secondary)", margin: "0 0 10px 0", maxHeight: 80, overflowY: "auto", lineHeight: 1.5, whiteSpace: "pre-wrap" }}>
+                    {status.body.slice(0, 300)}
+                  </p>
+                );
+              }
+            })()}
             <div style={{ display: "flex", gap: 6 }}>
               <button
                 onClick={downloadAndInstall}

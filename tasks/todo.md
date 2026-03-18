@@ -160,6 +160,15 @@
 - [x] Config History: Reduced persisted entries 200→100 — smaller save payload
 - [x] TypeScript compilation verified
 
+## Completed (v2.4.7 Lock Elimination & Throughput)
+- [x] SSH Reader: merged double lock into single lock scope (writes + EOF check + read in one acquire)
+- [x] SSH Session timeout 50ms→20ms: aligned with flusher for faster write processing
+- [x] SSH + PTY: UTF-8 fast path (str::from_utf8 → zero-alloc for 99% of data)
+- [x] ssh_sessions: Mutex→RwLock: concurrent read access for ssh_write/ssh_resize (no serialization)
+- [x] LogStream: 4KB→16KB buffer, batched output, no sleep polling
+- [x] PTY buffer: 8KB→16KB: consistent with SSH, better throughput on large output
+- [x] TypeScript + Rust compilation verified
+
 ## Completed (v2.4.6 Deep Performance Optimization)
 - [x] SSH Write Queue: mpsc channel eliminates lock contention — IPC write is now instant (zero blocking)
 - [x] SSH Reader Thread processes writes: all channel I/O in single thread, no Mutex contention with IPC

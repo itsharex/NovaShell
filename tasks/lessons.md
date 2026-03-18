@@ -148,6 +148,16 @@
 - Config save at 500ms debounce fires too often when many state changes happen in sequence (e.g., terminal resize + history add + command count) — 2000ms is much safer
 - Shell init delay of 2000ms for PowerShell was unnecessarily conservative — 800ms is sufficient, and bash 300ms is fine
 
+## SSH Lock Elimination — CRITICAL (v2.4.7)
+- Double lock per reader iteration (lock for writes, release, lock for reads) was the remaining bottleneck
+- Fix: single lock scope — process writes, check EOF, read — all without releasing the Mutex
+- This halves lock acquire/release overhead and eliminates the window where resize could interleave
+- RwLock for ssh_sessions HashMap: ssh_write and ssh_resize only need read access (lookup), so they run concurrently
+- Only ssh_connect and ssh_disconnect need write access (insert/remove) — very infrequent
+- Session timeout must match flusher frequency: 20ms timeout + 16ms flusher = max ~36ms latency (was 50+50=100ms)
+- UTF-8 fast path: std::str::from_utf8 is a simple validation pass (no allocation), only fallback to lossy on invalid bytes
+- 99%+ of terminal output is valid UTF-8, so this eliminates almost all heap allocations in the read path
+
 ## SSH Write Queue Architecture — CRITICAL (v2.4.6)
 - The #1 cause of SSH lag was lock contention: reader thread holds channel Mutex during blocking ch.read() (up to 100ms), and every keystroke IPC call also needed that same Mutex
 - Fix: mpsc write queue — IPC just pushes Vec<u8> to queue (instant), reader thread drains queue before each read

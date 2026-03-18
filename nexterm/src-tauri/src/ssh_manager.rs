@@ -127,7 +127,7 @@ impl SshSession {
         // Keep session in BLOCKING mode — use read timeout for non-blocking behavior
         // This avoids the race condition of switching blocking/non-blocking between threads
         session.set_blocking(true);
-        session.set_timeout(50); // 50ms timeout for reads — faster loop = more responsive writes
+        session.set_timeout(20); // 20ms timeout — aligned with flusher for responsive writes
 
         let session = Arc::new(Mutex::new(session));
         let channel = Arc::new(Mutex::new(channel));
@@ -171,28 +171,24 @@ impl SshSession {
                     break;
                 }
 
-                // 1. Process pending writes FIRST (input has priority for responsiveness)
-                {
-                    let mut ch = match channel_clone.lock() {
-                        Ok(ch) => ch,
-                        Err(_) => break,
-                    };
-                    use std::io::Write;
-                    while let Ok(data) = write_rx.try_recv() {
-                        let _ = ch.write_all(&data);
-                        let _ = ch.flush();
-                    }
-                }
-
-                // 2. Read from channel
+                // Single lock scope: process writes + read in one lock acquire
                 let result = {
                     let mut ch = match channel_clone.lock() {
                         Ok(ch) => ch,
                         Err(_) => break,
                     };
 
+                    // 1. Process pending writes FIRST (input has priority)
+                    {
+                        use std::io::Write;
+                        while let Ok(data) = write_rx.try_recv() {
+                            let _ = ch.write_all(&data);
+                            let _ = ch.flush();
+                        }
+                    }
+
+                    // 2. Check EOF
                     if ch.eof() {
-                        // Flush remaining data before exit
                         if let Ok(mut b) = batch_reader.lock() {
                             if !b.is_empty() {
                                 let _ = app_handle_reader.emit(&data_event_reader, std::mem::take(&mut *b));
@@ -202,6 +198,7 @@ impl SshSession {
                         break;
                     }
 
+                    // 3. Read from channel (all in same lock — zero contention)
                     ch.read(&mut buf)
                 };
 
@@ -218,7 +215,11 @@ impl SshSession {
                     Ok(n) => {
                         consecutive_errors = 0;
                         if let Ok(mut b) = batch_reader.lock() {
-                            b.push_str(&String::from_utf8_lossy(&buf[..n]));
+                            // Fast path: valid UTF-8 (99% of terminal output) avoids allocation
+                            match std::str::from_utf8(&buf[..n]) {
+                                Ok(s) => b.push_str(s),
+                                Err(_) => b.push_str(&String::from_utf8_lossy(&buf[..n])),
+                            }
                             // Flush immediately if batch is large (fast output like `ls -la`)
                             if b.len() > 16384 {
                                 let _ = app_handle_reader.emit(&data_event_reader, std::mem::take(&mut *b));
@@ -434,20 +435,45 @@ impl LogStream {
         let data_event = format!("log-stream-data-{}", stream_id);
 
         let reader_thread = std::thread::spawn(move || {
-            let mut buf = [0u8; 4096];
+            let mut buf = [0u8; 16384]; // 16KB buffer
+            let mut batch = String::new();
+            let mut last_flush = Instant::now();
+            let flush_interval = Duration::from_millis(50); // batch log output
+
             loop {
                 if let Ok(r) = running_clone.lock() { if !*r { break; } } else { break; }
                 match channel.read(&mut buf) {
-                    Ok(0) => break,
+                    Ok(0) => {
+                        if !batch.is_empty() {
+                            let _ = app_handle.emit(&data_event, std::mem::take(&mut batch));
+                        }
+                        break;
+                    }
                     Ok(n) => {
-                        let data = String::from_utf8_lossy(&buf[..n]).to_string();
-                        let _ = app_handle.emit(&data_event, data);
+                        match std::str::from_utf8(&buf[..n]) {
+                            Ok(s) => batch.push_str(s),
+                            Err(_) => batch.push_str(&String::from_utf8_lossy(&buf[..n])),
+                        }
+                        // Flush if batch is large or interval elapsed
+                        if batch.len() > 16384 || last_flush.elapsed() >= flush_interval {
+                            let _ = app_handle.emit(&data_event, std::mem::take(&mut batch));
+                            last_flush = Instant::now();
+                        }
                     }
                     Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock
                         || e.kind() == std::io::ErrorKind::TimedOut => {
-                        std::thread::sleep(std::time::Duration::from_millis(50));
+                        // Flush any pending data on timeout (no sleep needed — session timeout handles pacing)
+                        if !batch.is_empty() {
+                            let _ = app_handle.emit(&data_event, std::mem::take(&mut batch));
+                            last_flush = Instant::now();
+                        }
                     }
-                    Err(_) => break,
+                    Err(_) => {
+                        if !batch.is_empty() {
+                            let _ = app_handle.emit(&data_event, std::mem::take(&mut batch));
+                        }
+                        break;
+                    }
                 }
             }
             let _ = session.disconnect(None, "Log stream closed", None);

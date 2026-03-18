@@ -80,7 +80,7 @@ impl PtySession {
         let error_event = format!("pty-error-{}", sid);
 
         let reader_thread = std::thread::spawn(move || {
-            let mut buf = [0u8; 8192];
+            let mut buf = [0u8; 16384]; // 16KB buffer — matches SSH for consistent throughput
 
             loop {
                 if !running_reader.load(Ordering::Relaxed) {
@@ -100,7 +100,11 @@ impl PtySession {
                     }
                     Ok(n) => {
                         if let Ok(mut b) = batch_reader.lock() {
-                            b.push_str(&String::from_utf8_lossy(&buf[..n]));
+                            // Fast path: valid UTF-8 (99% of terminal output) avoids allocation
+                            match std::str::from_utf8(&buf[..n]) {
+                                Ok(s) => b.push_str(s),
+                                Err(_) => b.push_str(&String::from_utf8_lossy(&buf[..n])),
+                            }
                             // Flush immediately if batch is large (fast output like `cat` large file)
                             if b.len() > 16384 {
                                 let _ = app_handle_reader.emit(&event_name, std::mem::take(&mut *b));

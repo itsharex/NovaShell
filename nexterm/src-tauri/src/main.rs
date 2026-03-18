@@ -13,13 +13,13 @@ mod system_info;
 
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
-use std::sync::Mutex;
+use std::sync::{Mutex, RwLock};
 use tauri::State;
 use std::time::UNIX_EPOCH;
 
 pub struct AppState {
     pub sessions: Mutex<HashMap<String, pty_manager::PtySession>>,
-    pub ssh_sessions: Mutex<HashMap<String, ssh_manager::SshSession>>,
+    pub ssh_sessions: RwLock<HashMap<String, ssh_manager::SshSession>>,
     pub sftp_sessions: Mutex<HashMap<String, std::sync::Arc<sftp_manager::SftpSession>>>,
     pub log_streams: Mutex<HashMap<String, ssh_manager::LogStream>>,
     pub system: Mutex<sysinfo::System>,
@@ -358,7 +358,7 @@ async fn ssh_connect(
     app_handle: tauri::AppHandle,
 ) -> Result<String, String> {
     {
-        let sessions = state.ssh_sessions.lock()
+        let sessions = state.ssh_sessions.read()
             .map_err(|e| format!("SSH session lock error: {}", e))?;
         if sessions.len() >= 10 {
             return Err("Maximum number of SSH sessions reached (10)".to_string());
@@ -375,7 +375,7 @@ async fn ssh_connect(
         app_handle,
     )?;
 
-    state.ssh_sessions.lock()
+    state.ssh_sessions.write()
         .map_err(|e| format!("SSH session lock error: {}", e))?
         .insert(session_id.clone(), session);
 
@@ -388,7 +388,8 @@ fn ssh_write(
     data: String,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
-    let sessions = state.ssh_sessions.lock()
+    // RwLock read — allows concurrent writes from multiple SSH sessions
+    let sessions = state.ssh_sessions.read()
         .map_err(|e| format!("SSH session lock error: {}", e))?;
     if let Some(session) = sessions.get(&session_id) {
         session.write(data.as_bytes())
@@ -404,7 +405,7 @@ fn ssh_resize(
     rows: u32,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
-    let sessions = state.ssh_sessions.lock()
+    let sessions = state.ssh_sessions.read()
         .map_err(|e| format!("SSH session lock error: {}", e))?;
     if let Some(session) = sessions.get(&session_id) {
         session.resize(cols, rows)
@@ -418,7 +419,7 @@ fn ssh_disconnect(
     session_id: String,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
-    let mut sessions = state.ssh_sessions.lock()
+    let mut sessions = state.ssh_sessions.write()
         .map_err(|e| format!("SSH session lock error: {}", e))?;
     if sessions.remove(&session_id).is_some() {
         Ok(())
@@ -1677,7 +1678,7 @@ fn main() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(AppState {
             sessions: Mutex::new(HashMap::new()),
-            ssh_sessions: Mutex::new(HashMap::new()),
+            ssh_sessions: RwLock::new(HashMap::new()),
             sftp_sessions: Mutex::new(HashMap::new()),
             log_streams: Mutex::new(HashMap::new()),
             system: Mutex::new(sysinfo::System::new()),

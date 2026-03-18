@@ -121,6 +121,7 @@ export interface SnippetFolder {
   id: string;
   name: string;
   color: string;
+  sharedPath?: string;
 }
 
 interface HistoryEntry {
@@ -390,6 +391,14 @@ interface AppState {
   removeSnippetFolder: (id: string) => void;
   renameSnippetFolder: (id: string, name: string) => void;
 
+  // Shared snippet folders
+  sharedSnippets: Record<string, Snippet[]>;
+  loadSharedFolder: (folderId: string) => Promise<void>;
+  addSharedSnippet: (folderId: string, snippet: Omit<Snippet, "id">) => Promise<void>;
+  removeSharedSnippet: (folderId: string, snippetId: string) => Promise<void>;
+  updateSharedSnippet: (folderId: string, snippetId: string, updates: Partial<Snippet>) => Promise<void>;
+  addSharedSnippetFolder: (name: string, color: string, sharedPath: string) => Promise<void>;
+
   systemStats: {
     cpu: number;
     memoryUsed: number;
@@ -644,10 +653,16 @@ export const useAppStore = create<AppState>((set, get) => ({
     scheduleSave();
   },
   removeSnippetFolder: (id) => {
-    set((s) => ({
-      snippetFolders: s.snippetFolders.filter((f) => f.id !== id),
-      snippets: s.snippets.map((sn) => sn.folderId === id ? { ...sn, folderId: undefined } : sn),
-    }));
+    set((s) => {
+      const folder = s.snippetFolders.find((f) => f.id === id);
+      const newShared = { ...s.sharedSnippets };
+      if (folder?.sharedPath) delete newShared[id];
+      return {
+        snippetFolders: s.snippetFolders.filter((f) => f.id !== id),
+        snippets: folder?.sharedPath ? s.snippets : s.snippets.map((sn) => sn.folderId === id ? { ...sn, folderId: undefined } : sn),
+        sharedSnippets: newShared,
+      };
+    });
     scheduleSave();
   },
   renameSnippetFolder: (id, name) => {
@@ -655,6 +670,64 @@ export const useAppStore = create<AppState>((set, get) => ({
       snippetFolders: s.snippetFolders.map((f) => f.id === id ? { ...f, name } : f),
     }));
     scheduleSave();
+  },
+
+  // Shared snippet folders
+  sharedSnippets: {},
+  loadSharedFolder: async (folderId) => {
+    const folder = get().snippetFolders.find((f) => f.id === folderId);
+    if (!folder?.sharedPath) return;
+    try {
+      const { invoke } = await import("@tauri-apps/api/core");
+      const raw = await invoke<string>("load_shared_snippets", { path: folder.sharedPath });
+      const snippets: Snippet[] = JSON.parse(raw);
+      set((s) => ({ sharedSnippets: { ...s.sharedSnippets, [folderId]: snippets } }));
+    } catch { /* file may not exist yet */ }
+  },
+  addSharedSnippet: async (folderId, snippet) => {
+    const folder = get().snippetFolders.find((f) => f.id === folderId);
+    if (!folder?.sharedPath) return;
+    const newSnippet: Snippet = { ...snippet, id: crypto.randomUUID(), folderId };
+    set((s) => ({ sharedSnippets: { ...s.sharedSnippets, [folderId]: [...(s.sharedSnippets[folderId] || []), newSnippet] } }));
+    const current = get().sharedSnippets[folderId] || [];
+    const { invoke } = await import("@tauri-apps/api/core");
+    await invoke("save_shared_snippets", { path: folder.sharedPath, data: JSON.stringify(current, null, 2) });
+  },
+  removeSharedSnippet: async (folderId, snippetId) => {
+    const folder = get().snippetFolders.find((f) => f.id === folderId);
+    if (!folder?.sharedPath) return;
+    set((s) => ({ sharedSnippets: { ...s.sharedSnippets, [folderId]: (s.sharedSnippets[folderId] || []).filter((sn) => sn.id !== snippetId) } }));
+    const current = get().sharedSnippets[folderId] || [];
+    const { invoke } = await import("@tauri-apps/api/core");
+    await invoke("save_shared_snippets", { path: folder.sharedPath, data: JSON.stringify(current, null, 2) });
+  },
+  updateSharedSnippet: async (folderId, snippetId, updates) => {
+    const folder = get().snippetFolders.find((f) => f.id === folderId);
+    if (!folder?.sharedPath) return;
+    set((s) => ({ sharedSnippets: { ...s.sharedSnippets, [folderId]: (s.sharedSnippets[folderId] || []).map((sn) => sn.id === snippetId ? { ...sn, ...updates } : sn) } }));
+    const current = get().sharedSnippets[folderId] || [];
+    const { invoke } = await import("@tauri-apps/api/core");
+    await invoke("save_shared_snippets", { path: folder.sharedPath, data: JSON.stringify(current, null, 2) });
+  },
+  addSharedSnippetFolder: async (name, color, sharedPath) => {
+    const id = crypto.randomUUID();
+    const filePath = sharedPath.endsWith(".json") ? sharedPath : sharedPath + "/shared_snippets.json";
+    set((s) => ({
+      snippetFolders: [...s.snippetFolders, { id, name, color, sharedPath: filePath }],
+    }));
+    scheduleSave();
+    try {
+      const { invoke } = await import("@tauri-apps/api/core");
+      // Try to load existing file; if it doesn't exist, create it
+      try {
+        const raw = await invoke<string>("load_shared_snippets", { path: filePath });
+        const snippets: Snippet[] = JSON.parse(raw);
+        set((s) => ({ sharedSnippets: { ...s.sharedSnippets, [id]: snippets } }));
+      } catch {
+        await invoke("save_shared_snippets", { path: filePath, data: "[]" });
+        set((s) => ({ sharedSnippets: { ...s.sharedSnippets, [id]: [] } }));
+      }
+    } catch { /* best effort */ }
   },
 
   systemStats: null,

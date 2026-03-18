@@ -137,19 +137,17 @@ impl SshSession {
         let error_event = format!("ssh-error-{}", sid);
 
         let reader_thread = std::thread::spawn(move || {
-            let mut buf = [0u8; 4096];
+            let mut buf = [0u8; 16384]; // 16KB buffer — fewer events for large outputs
             let mut consecutive_errors: u32 = 0;
-            let max_consecutive_errors: u32 = 50; // ~5 seconds of continuous errors
+            let max_consecutive_errors: u32 = 50;
             let mut last_keepalive = Instant::now();
             let keepalive_interval = std::time::Duration::from_secs(15);
 
             loop {
                 if let Ok(r) = running_clone.lock() {
-                    if !*r {
-                        break;
-                    }
+                    if !*r { break; }
                 } else {
-                    break; // Mutex poisoned, exit cleanly
+                    break;
                 }
 
                 let result = {
@@ -178,39 +176,42 @@ impl SshSession {
                     }
                     Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock
                         || e.kind() == std::io::ErrorKind::TimedOut => {
-                        // No data available — this is normal with timeout-based reading
+                        // No data available — session timeout (100ms) already provides the wait
                         consecutive_errors = 0;
 
-                        // Send keepalive ping at proper intervals (not every iteration)
+                        // Send keepalive at proper intervals
                         if last_keepalive.elapsed() >= keepalive_interval {
                             if let Ok(session) = session_clone.lock() {
                                 let _ = session.keepalive_send();
                             }
                             last_keepalive = Instant::now();
                         }
+                        // No extra sleep needed — the 100ms session timeout already throttles
+                    }
+                    Err(ref e) if e.kind() == std::io::ErrorKind::ConnectionReset
+                        || e.kind() == std::io::ErrorKind::BrokenPipe
+                        || e.kind() == std::io::ErrorKind::ConnectionAborted => {
+                        // Connection lost at OS level — fatal, no recovery
+                        let msg = format!("SSH connection lost: {}", e);
+                        let _ = app_handle.emit(&error_event, msg);
+                        break;
+                    }
+                    Err(ref e) => {
+                        let err_str = e.to_string();
+                        let is_transient = err_str.contains("transport read")
+                            || err_str.contains("EAGAIN")
+                            || err_str.contains("timeout");
 
-                        std::thread::sleep(std::time::Duration::from_millis(10));
-                    }
-                    Err(ref e) if e.to_string().contains("transport read")
-                        || e.to_string().contains("EAGAIN") => {
-                        // Transient transport errors — recover instead of counting as fatal
                         consecutive_errors += 1;
                         if consecutive_errors >= max_consecutive_errors {
                             let msg = format!("SSH connection lost: {}", e);
                             let _ = app_handle.emit(&error_event, msg);
                             break;
                         }
-                        // Longer backoff for transport errors to let the connection recover
-                        std::thread::sleep(std::time::Duration::from_millis(200));
-                    }
-                    Err(e) => {
-                        consecutive_errors += 1;
-                        if consecutive_errors >= max_consecutive_errors {
-                            let msg = format!("SSH connection lost: {}", e);
-                            let _ = app_handle.emit(&error_event, msg);
-                            break;
-                        }
-                        std::thread::sleep(std::time::Duration::from_millis(100));
+
+                        // Longer backoff for transient errors to let the connection recover
+                        let backoff = if is_transient { 200 } else { 100 };
+                        std::thread::sleep(std::time::Duration::from_millis(backoff));
                     }
                 }
             }

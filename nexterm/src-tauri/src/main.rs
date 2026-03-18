@@ -15,6 +15,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::sync::Mutex;
 use tauri::State;
+use std::time::UNIX_EPOCH;
 
 pub struct AppState {
     pub sessions: Mutex<HashMap<String, pty_manager::PtySession>>,
@@ -532,6 +533,25 @@ fn save_app_config(data: String) -> Result<(), String> {
         std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }
     std::fs::write(&config_path, data).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn load_shared_snippets(path: String) -> Result<String, String> {
+    let content = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
+    Ok(content)
+}
+
+#[tauri::command]
+fn save_shared_snippets(path: String, data: String) -> Result<(), String> {
+    std::fs::write(&path, &data).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn get_file_mtime(path: String) -> Result<u64, String> {
+    let metadata = std::fs::metadata(&path).map_err(|e| e.to_string())?;
+    let modified = metadata.modified().map_err(|e| e.to_string())?;
+    let duration = modified.duration_since(UNIX_EPOCH).map_err(|e| e.to_string())?;
+    Ok(duration.as_secs())
 }
 
 #[tauri::command]
@@ -1678,6 +1698,9 @@ fn main() {
             open_in_explorer,
             save_screenshot,
             pick_folder,
+            load_shared_snippets,
+            save_shared_snippets,
+            get_file_mtime,
             ai_health,
             ai_list_models,
             ai_pull_model,

@@ -194,6 +194,13 @@ function SnippetsPanel() {
   const addFolder = useAppStore((s) => s.addSnippetFolder);
   const removeFolder = useAppStore((s) => s.removeSnippetFolder);
   const renameFolder = useAppStore((s) => s.renameSnippetFolder);
+  const sharedSnippets = useAppStore((s) => s.sharedSnippets);
+  const loadSharedFolder = useAppStore((s) => s.loadSharedFolder);
+  const addSharedSnippet = useAppStore((s) => s.addSharedSnippet);
+  const removeSharedSnippet = useAppStore((s) => s.removeSharedSnippet);
+  const updateSharedSnippet = useAppStore((s) => s.updateSharedSnippet);
+  const addSharedSnippetFolder = useAppStore((s) => s.addSharedSnippetFolder);
+  const t = useT();
 
   const [adding, setAdding] = useState(false);
   const [addToFolder, setAddToFolder] = useState<string | undefined>(undefined);
@@ -216,6 +223,56 @@ function SnippetsPanel() {
   const dragStartPos = useRef<{ x: number; y: number } | null>(null);
   const pendingDragId = useRef<string | null>(null);
   const dragStateRef = useRef({ isDragging: false, snippetId: null as string | null, overFolder: null as string | null });
+
+  // Shared folder state
+  const [addingSharedFolder, setAddingSharedFolder] = useState(false);
+  const [sharedFolderName, setSharedFolderName] = useState("");
+  const [sharedFolderPath, setSharedFolderPath] = useState("");
+  const sharedMtimeRef = useRef<Record<string, number>>({});
+
+  // Poll shared folders for changes every 3 seconds
+  useEffect(() => {
+    const sharedFolders = folders.filter((f) => f.sharedPath);
+    if (sharedFolders.length === 0) return;
+
+    // Initial load
+    for (const f of sharedFolders) loadSharedFolder(f.id);
+
+    const interval = setInterval(async () => {
+      try {
+        const { invoke } = await import("@tauri-apps/api/core");
+        for (const f of sharedFolders) {
+          if (!f.sharedPath) continue;
+          try {
+            const mtime = await invoke<number>("get_file_mtime", { path: f.sharedPath });
+            if (sharedMtimeRef.current[f.id] !== undefined && mtime !== sharedMtimeRef.current[f.id]) {
+              loadSharedFolder(f.id);
+            }
+            sharedMtimeRef.current[f.id] = mtime;
+          } catch { /* file may be temporarily unavailable */ }
+        }
+      } catch { /* tauri not ready */ }
+    }, 3000);
+    return () => clearInterval(interval);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [folders.filter((f) => f.sharedPath).map((f) => f.id).join(",")]);
+
+  const handleBrowseSharedPath = async () => {
+    try {
+      const { invoke } = await import("@tauri-apps/api/core");
+      const picked = await invoke<string | null>("pick_folder", { defaultPath: null });
+      if (picked) setSharedFolderPath(picked);
+    } catch { /* cancelled */ }
+  };
+
+  const handleAddSharedFolder = async () => {
+    if (!sharedFolderName.trim() || !sharedFolderPath.trim()) return;
+    const color = FOLDER_COLORS[folders.length % FOLDER_COLORS.length];
+    await addSharedSnippetFolder(sharedFolderName.trim(), color, sharedFolderPath.trim());
+    setSharedFolderName("");
+    setSharedFolderPath("");
+    setAddingSharedFolder(false);
+  };
 
   // --- Variables support ---
   const [newVarDefaults, setNewVarDefaults] = useState<Record<string, string>>({});
@@ -263,7 +320,12 @@ function SnippetsPanel() {
     if (newName && newCmd) {
       const vars = detectVariables(newCmd);
       const variables = vars.map((v) => ({ name: v, defaultValue: newVarDefaults[v] || "" }));
-      addSnippet({ name: newName, command: newCmd, runMode: newRunMode, folderId: addToFolder, variables: variables.length > 0 ? variables : undefined });
+      const targetFolder = addToFolder ? folders.find((f) => f.id === addToFolder) : undefined;
+      if (targetFolder?.sharedPath) {
+        addSharedSnippet(addToFolder!, { name: newName, command: newCmd, runMode: newRunMode, folderId: addToFolder, variables: variables.length > 0 ? variables : undefined });
+      } else {
+        addSnippet({ name: newName, command: newCmd, runMode: newRunMode, folderId: addToFolder, variables: variables.length > 0 ? variables : undefined });
+      }
       setNewName(""); setNewCmd(""); setNewRunMode("stop-on-error"); setAdding(false); setAddToFolder(undefined); setNewVarDefaults({});
     }
   };
@@ -284,10 +346,16 @@ function SnippetsPanel() {
     if (editingId && editName && editCmd) {
       const vars = detectVariables(editCmd);
       const variables = vars.map((v) => ({ name: v, defaultValue: editVarDefaults[v] || "" }));
-      const { snippets: current } = useAppStore.getState();
-      useAppStore.setState({
-        snippets: current.map((s) => s.id === editingId ? { ...s, name: editName, command: editCmd, runMode: editRunMode, variables: variables.length > 0 ? variables : undefined } : s),
-      });
+      // Check if this snippet belongs to a shared folder
+      const sharedFolder = folders.find((f) => f.sharedPath && (sharedSnippets[f.id] || []).some((s) => s.id === editingId));
+      if (sharedFolder) {
+        updateSharedSnippet(sharedFolder.id, editingId, { name: editName, command: editCmd, runMode: editRunMode, variables: variables.length > 0 ? variables : undefined });
+      } else {
+        const { snippets: current } = useAppStore.getState();
+        useAppStore.setState({
+          snippets: current.map((s) => s.id === editingId ? { ...s, name: editName, command: editCmd, runMode: editRunMode, variables: variables.length > 0 ? variables : undefined } : s),
+        });
+      }
       setEditingId(null);
       setEditVarDefaults({});
     }
@@ -385,7 +453,7 @@ function SnippetsPanel() {
 
   const rootSnippets = snippets.filter((s) => !s.folderId);
 
-  const renderSnippetCard = (snippet: typeof snippets[0]) => {
+  const renderSnippetCard = (snippet: typeof snippets[0], customDeleteFn?: (id: string) => void) => {
     const cmdCount = getCommandCount(snippet.command);
     const isMulti = cmdCount > 1;
     const isExpanded = expandedId === snippet.id;
@@ -462,7 +530,7 @@ function SnippetsPanel() {
               </button>
             )}
             <button onClick={() => startEdit(snippet)} style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", padding: 2, display: "flex" }} title="Edit"><Edit3 size={13} /></button>
-            <button onClick={() => removeSnippet(snippet.id)} style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", padding: 2, display: "flex" }} title="Delete"><Trash2 size={13} /></button>
+            <button onClick={() => (customDeleteFn || removeSnippet)(snippet.id)} style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", padding: 2, display: "flex" }} title="Delete"><Trash2 size={13} /></button>
             <button className="snippet-run" title={`Run${isMulti ? " sequence" : ""}: ${snippet.name}`} aria-label={`Run ${snippet.name}`} onClick={() => handleRunWithVars(snippet)}><Play size={14} /></button>
           </div>
         </div>
@@ -556,10 +624,13 @@ function SnippetsPanel() {
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
         <span className="sidebar-section-title" style={{ margin: 0 }}>Quick Commands</span>
         <div style={{ display: "flex", gap: 2 }}>
-          <button onClick={() => { setAddingFolder(true); setAdding(false); }} style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", padding: 4 }} title="New folder" aria-label="New folder">
+          <button onClick={() => { setAddingSharedFolder(true); setAddingFolder(false); setAdding(false); }} style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", padding: 4 }} title={t("snippets.newSharedFolder")} aria-label={t("snippets.newSharedFolder")}>
+            <FolderSync size={14} />
+          </button>
+          <button onClick={() => { setAddingFolder(true); setAdding(false); setAddingSharedFolder(false); }} style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", padding: 4 }} title={t("snippets.newFolder")} aria-label={t("snippets.newFolder")}>
             <FolderPlus size={14} />
           </button>
-          <button onClick={() => { setAdding(!adding); setEditingId(null); setAddingFolder(false); }} style={{ background: "none", border: "none", color: "var(--accent-primary)", cursor: "pointer", padding: 4 }} aria-label="Add snippet">
+          <button onClick={() => { setAdding(!adding); setEditingId(null); setAddingFolder(false); setAddingSharedFolder(false); }} style={{ background: "none", border: "none", color: "var(--accent-primary)", cursor: "pointer", padding: 4 }} aria-label={t("snippets.addSnippet")}>
             <Plus size={14} />
           </button>
         </div>
@@ -598,15 +669,57 @@ function SnippetsPanel() {
         </div>
       )}
 
+      {/* Add shared folder form */}
+      {addingSharedFolder && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 10, padding: 10, background: "var(--bg-tertiary)", borderRadius: "var(--radius-md)", border: "1px dashed var(--accent-primary)" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, fontWeight: 600, color: "var(--accent-primary)" }}>
+            <FolderSync size={14} />
+            {t("snippets.newSharedFolder")}
+          </div>
+          <input
+            placeholder={t("snippets.folderName") + "..."}
+            value={sharedFolderName}
+            onChange={(e) => setSharedFolderName(e.target.value)}
+            autoFocus
+            style={inputBase}
+          />
+          <div style={{ display: "flex", gap: 4 }}>
+            <input
+              placeholder={t("snippets.sharedFolderPath") + "..."}
+              value={sharedFolderPath}
+              onChange={(e) => setSharedFolderPath(e.target.value)}
+              style={{ ...inputBase, flex: 1 }}
+            />
+            <button onClick={handleBrowseSharedPath} style={{ padding: "4px 8px", background: "var(--bg-active)", border: "none", borderRadius: "var(--radius-sm)", color: "var(--text-secondary)", fontSize: 11, cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap" }}>{t("snippets.browsePath")}</button>
+          </div>
+          <div style={{ fontSize: 10, color: "var(--text-muted)" }}>
+            {t("snippets.createNew")}: pick an empty folder. {t("snippets.linkExisting")}: pick a folder with an existing .json file.
+          </div>
+          <div style={{ display: "flex", gap: 4 }}>
+            <button onClick={handleAddSharedFolder} disabled={!sharedFolderName.trim() || !sharedFolderPath.trim()} style={{ flex: 1, padding: "5px", background: sharedFolderName.trim() && sharedFolderPath.trim() ? "var(--accent-primary)" : "var(--bg-active)", border: "none", borderRadius: "var(--radius-sm)", color: sharedFolderName.trim() && sharedFolderPath.trim() ? "white" : "var(--text-muted)", fontSize: 11, cursor: sharedFolderName.trim() && sharedFolderPath.trim() ? "pointer" : "default", fontFamily: "inherit" }}>{t("common.add")}</button>
+            <button onClick={() => { setAddingSharedFolder(false); setSharedFolderName(""); setSharedFolderPath(""); }} style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", padding: 2, display: "flex", alignItems: "center" }}><X size={14} /></button>
+          </div>
+        </div>
+      )}
+
       {/* Add snippet form */}
       {renderAddForm()}
 
       {/* Folders */}
       {folders.map((folder) => {
-        const folderSnippets = snippets.filter((s) => s.folderId === folder.id);
+        const isShared = !!folder.sharedPath;
+        const folderSnippets = isShared
+          ? (sharedSnippets[folder.id] || [])
+          : snippets.filter((s) => s.folderId === folder.id);
         const isCollapsed = collapsedFolders.has(folder.id);
         const isDragOver = dragOverFolder === folder.id;
         const isEditingFolder = editingFolderId === folder.id;
+        const FolderIcon = isShared ? FolderSync : (isCollapsed ? Folder : FolderOpen);
+
+        const handleDeleteSnippet = (snippetId: string) => {
+          if (isShared) removeSharedSnippet(folder.id, snippetId);
+          else removeSnippet(snippetId);
+        };
 
         return (
           <div
@@ -623,7 +736,7 @@ function SnippetsPanel() {
                 gap: 6,
                 padding: "6px 8px",
                 background: isDragOver ? "rgba(88,166,255,0.15)" : "var(--bg-tertiary)",
-                border: isDragOver ? "1px dashed var(--accent-primary)" : "1px solid var(--border-subtle)",
+                border: isDragOver ? "1px dashed var(--accent-primary)" : isShared ? "1px dashed var(--border-subtle)" : "1px solid var(--border-subtle)",
                 borderRadius: "var(--radius-sm)",
                 cursor: "pointer",
                 transition: "var(--transition-fast)",
@@ -634,10 +747,7 @@ function SnippetsPanel() {
                 ? <ChevronRight size={12} style={{ color: folder.color, flexShrink: 0 }} />
                 : <ChevronDown size={12} style={{ color: folder.color, flexShrink: 0 }} />
               }
-              {isCollapsed
-                ? <Folder size={14} style={{ color: folder.color, flexShrink: 0 }} />
-                : <FolderOpen size={14} style={{ color: folder.color, flexShrink: 0 }} />
-              }
+              <FolderIcon size={14} style={{ color: folder.color, flexShrink: 0 }} />
               {isEditingFolder ? (
                 <input
                   value={editFolderName}
@@ -654,9 +764,10 @@ function SnippetsPanel() {
               ) : (
                 <span style={{ flex: 1, fontSize: 11, fontWeight: 600, color: "var(--text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{folder.name}</span>
               )}
+              {isShared && <span style={{ fontSize: 8, background: "var(--accent-secondary)", color: "white", padding: "0 4px", borderRadius: 6, fontWeight: 700, lineHeight: "14px", flexShrink: 0 }}>{t("snippets.shared")}</span>}
               <span style={{ fontSize: 9, color: "var(--text-muted)", flexShrink: 0 }}>{folderSnippets.length}</span>
               <button
-                onClick={(e) => { e.stopPropagation(); setAddToFolder(folder.id); setAdding(true); setAddingFolder(false); if (collapsedFolders.has(folder.id)) toggleFolder(folder.id); }}
+                onClick={(e) => { e.stopPropagation(); setAddToFolder(folder.id); setAdding(true); setAddingFolder(false); setAddingSharedFolder(false); if (collapsedFolders.has(folder.id)) toggleFolder(folder.id); }}
                 style={{ background: "none", border: "none", color: "var(--accent-primary)", cursor: "pointer", padding: 2, display: "flex" }}
                 title="Add snippet to folder"
               ><Plus size={10} /></button>
@@ -676,10 +787,10 @@ function SnippetsPanel() {
               <div style={{ paddingLeft: 12, borderLeft: `2px solid ${folder.color}`, marginLeft: 10, marginTop: 4 }}>
                 {folderSnippets.length === 0 ? (
                   <div style={{ padding: "8px 0", fontSize: 10, color: "var(--text-muted)", textAlign: "center" }}>
-                    Drag snippets here
+                    {isShared ? "No shared snippets yet" : "Drag snippets here"}
                   </div>
                 ) : (
-                  folderSnippets.map(renderSnippetCard)
+                  folderSnippets.map((sn) => renderSnippetCard(sn, isShared ? handleDeleteSnippet : undefined))
                 )}
               </div>
             )}
@@ -699,7 +810,7 @@ function SnippetsPanel() {
           minHeight: rootSnippets.length === 0 && folders.length > 0 ? 32 : undefined,
         }}
       >
-        {rootSnippets.map(renderSnippetCard)}
+        {rootSnippets.map((sn) => renderSnippetCard(sn))}
         {rootSnippets.length === 0 && folders.length > 0 && (
           <div style={{ padding: "8px 0", fontSize: 10, color: "var(--text-muted)", textAlign: "center" }}>
             Unsorted commands

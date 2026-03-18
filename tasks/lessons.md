@@ -129,6 +129,14 @@
 - MetricsSnapshot fields use snake_case in Rust, camelCase in TypeScript — transform in the event listener
 - Network I/O rate: calculate delta between consecutive snapshots divided by time interval
 
+## SSH Performance — CRITICAL
+- SSHPanel was calling `parseTerminalOutput()` SYNCHRONOUSLY on every SSH data event — this blocks the event handler and causes massive lag during rapid output
+- TerminalPanel correctly uses `queueDebugParse()` with 200ms debounce — SSHPanel must do the same (separate buffer to avoid cross-contamination)
+- The ssh2 `session.set_timeout(100)` already provides a 100ms wait on WouldBlock — adding `thread::sleep(10ms)` on top was redundant double-waiting
+- Increasing SSH read buffer from 4KB to 16KB reduces the number of events emitted per second for bulk output (e.g., `cat` large files), directly reducing frontend re-renders
+- String-based error matching (`e.to_string().contains("transport read")`) is fragile — prefer `e.kind()` for OS-level errors (ConnectionReset, BrokenPipe, ConnectionAborted) and only use string matching as fallback for ssh2-specific messages
+- OS-level connection errors (ConnectionReset, BrokenPipe) should be immediately fatal — no point retrying, the TCP socket is dead
+
 ## Windows / Antivirus
 - Unsigned compiled `.exe` files in project root trigger Windows Defender false positives
 - Add `*.exe`, `*.msi`, `*.dmg`, etc. to `.gitignore` to prevent accidental commits

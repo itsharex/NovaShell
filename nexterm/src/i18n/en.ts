@@ -133,6 +133,12 @@ export const en: Record<string, any> = {
     viewSequence: "View sequence",
     dragToReorder: "Drag to reorder",
     folderName: "Folder name",
+    newSharedFolder: "New shared folder",
+    sharedFolderPath: "Shared folder path",
+    createNew: "Create new",
+    linkExisting: "Link existing",
+    shared: "Shared",
+    browsePath: "Browse...",
   },
 
   // SSH Panel

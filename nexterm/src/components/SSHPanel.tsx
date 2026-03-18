@@ -25,6 +25,35 @@ import { useT } from "../i18n";
 import type { SSHConnection } from "../store/appStore";
 import { parseTerminalOutput } from "./DebugPanel";
 
+// Batched async SSH debug log parsing — mirrors TerminalPanel's queueDebugParse
+// Never blocks terminal rendering; buffers data and flushes every 200ms
+const sshDebugBuffers = new Map<string, string>();
+let sshDebugParseScheduled = false;
+const MAX_SSH_DEBUG_SOURCES = 16;
+
+function queueSshDebugParse(data: string, source: string) {
+  if (!useAppStore.getState().debugEnabled) return;
+  if (!sshDebugBuffers.has(source) && sshDebugBuffers.size >= MAX_SSH_DEBUG_SOURCES) return;
+  const existing = sshDebugBuffers.get(source) || "";
+  const combined = existing + data;
+  sshDebugBuffers.set(source, combined.length > 262144 ? combined.slice(-131072) : combined);
+  if (!sshDebugParseScheduled) {
+    sshDebugParseScheduled = true;
+    setTimeout(flushSshDebugParse, 200);
+  }
+}
+
+function flushSshDebugParse() {
+  sshDebugParseScheduled = false;
+  if (sshDebugBuffers.size === 0) return;
+  const store = useAppStore.getState();
+  if (!store.debugEnabled) { sshDebugBuffers.clear(); return; }
+  for (const [source, buf] of sshDebugBuffers) {
+    parseTerminalOutput(buf, source, store.addDebugLog);
+  }
+  sshDebugBuffers.clear();
+}
+
 // Cached Tauri imports
 let tauriCoreCache: typeof import("@tauri-apps/api/core") | null = null;
 let tauriEventCache: typeof import("@tauri-apps/api/event") | null = null;
@@ -366,10 +395,7 @@ export function SSHPanel() {
 
         const unData = await listen<string>(`ssh-data-${activeSessionId}`, (event) => {
           terminal.write(event.payload);
-          const store = useAppStore.getState();
-          if (store.debugEnabled) {
-            parseTerminalOutput(event.payload, sshSource, store.addDebugLog);
-          }
+          queueSshDebugParse(event.payload, sshSource);
         });
         unlisteners.push(unData);
 

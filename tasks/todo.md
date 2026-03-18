@@ -137,6 +137,14 @@
 - [x] Store: diskPreviousScans for growth tracking (auto-saved on rescan)
 - [x] TypeScript + Rust compilation verified (post-all-improvements)
 
+- [x] Shared Snippet Folders: 3 Rust backend commands (load_shared_snippets, save_shared_snippets, get_file_mtime)
+- [x] Shared Snippet Folders: SnippetFolder.sharedPath + sharedSnippets state in appStore
+- [x] Shared Snippet Folders: 5 store actions (loadSharedFolder, addSharedSnippet, removeSharedSnippet, updateSharedSnippet, addSharedSnippetFolder)
+- [x] Shared Snippet Folders: UI - FolderSync button, path picker form, dashed border style, "Shared" badge
+- [x] Shared Snippet Folders: Polling mtime every 3s for auto-reload on external changes
+- [x] Shared Snippet Folders: i18n keys for en.ts and es.ts
+- [x] Shared Snippet Folders: TypeScript + Rust compilation verified
+
 ## Pending
 - [ ] Test Cross-Server Navigation with real SSH servers
 - [ ] Test Infrastructure Monitor with real SSH servers

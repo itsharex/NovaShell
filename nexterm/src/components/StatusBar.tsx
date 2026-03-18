@@ -143,6 +143,9 @@ export function StatusBar() {
           <Terminal size={12} />
           <span>{getShellLabel(activeTab?.shellType || "shell")}</span>
         </div>
+        <div className="statusbar-item" style={{ opacity: 0.5, fontSize: 10 }}>
+          <span>by 0xArlee</span>
+        </div>
         {gitBranch && (
           <div className="statusbar-item">
             <GitBranch size={12} />

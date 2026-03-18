@@ -139,6 +139,8 @@ export const es: Record<string, any> = {
     linkExisting: "Vincular existente",
     shared: "Compartida",
     browsePath: "Explorar...",
+    newSubFolder: "Nueva sub-carpeta",
+    subFolderName: "Nombre de sub-carpeta...",
   },
 
   // Panel SSH

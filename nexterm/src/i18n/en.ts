@@ -139,6 +139,8 @@ export const en: Record<string, any> = {
     linkExisting: "Link existing",
     shared: "Shared",
     browsePath: "Browse...",
+    newSubFolder: "New sub-folder",
+    subFolderName: "Sub-folder name...",
   },
 
   // SSH Panel

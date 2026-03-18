@@ -200,10 +200,15 @@ function SnippetsPanel() {
   const removeSharedSnippet = useAppStore((s) => s.removeSharedSnippet);
   const updateSharedSnippet = useAppStore((s) => s.updateSharedSnippet);
   const addSharedSnippetFolder = useAppStore((s) => s.addSharedSnippetFolder);
+  const sharedSubFolders = useAppStore((s) => s.sharedSubFolders);
+  const addSharedSubFolder = useAppStore((s) => s.addSharedSubFolder);
+  const removeSharedSubFolder = useAppStore((s) => s.removeSharedSubFolder);
+  const renameSharedSubFolder = useAppStore((s) => s.renameSharedSubFolder);
   const t = useT();
 
   const [adding, setAdding] = useState(false);
   const [addToFolder, setAddToFolder] = useState<string | undefined>(undefined);
+  const [addToSubFolder, setAddToSubFolder] = useState<string | undefined>(undefined);
   const [newName, setNewName] = useState("");
   const [newCmd, setNewCmd] = useState("");
   const [newRunMode, setNewRunMode] = useState<"stop-on-error" | "run-all">("stop-on-error");
@@ -229,6 +234,10 @@ function SnippetsPanel() {
   const [sharedFolderName, setSharedFolderName] = useState("");
   const [sharedFolderPath, setSharedFolderPath] = useState("");
   const sharedMtimeRef = useRef<Record<string, number>>({});
+  const [addingSubFolderIn, setAddingSubFolderIn] = useState<string | null>(null);
+  const [newSubFolderName, setNewSubFolderName] = useState("");
+  const [editingSubFolderId, setEditingSubFolderId] = useState<string | null>(null);
+  const [editSubFolderName, setEditSubFolderName] = useState("");
 
   // Poll shared folders for changes every 3 seconds
   useEffect(() => {
@@ -322,11 +331,11 @@ function SnippetsPanel() {
       const variables = vars.map((v) => ({ name: v, defaultValue: newVarDefaults[v] || "" }));
       const targetFolder = addToFolder ? folders.find((f) => f.id === addToFolder) : undefined;
       if (targetFolder?.sharedPath) {
-        addSharedSnippet(addToFolder!, { name: newName, command: newCmd, runMode: newRunMode, folderId: addToFolder, variables: variables.length > 0 ? variables : undefined });
+        addSharedSnippet(addToFolder!, { name: newName, command: newCmd, runMode: newRunMode, folderId: addToFolder, subFolderId: addToSubFolder, variables: variables.length > 0 ? variables : undefined });
       } else {
         addSnippet({ name: newName, command: newCmd, runMode: newRunMode, folderId: addToFolder, variables: variables.length > 0 ? variables : undefined });
       }
-      setNewName(""); setNewCmd(""); setNewRunMode("stop-on-error"); setAdding(false); setAddToFolder(undefined); setNewVarDefaults({});
+      setNewName(""); setNewCmd(""); setNewRunMode("stop-on-error"); setAdding(false); setAddToFolder(undefined); setAddToSubFolder(undefined); setNewVarDefaults({});
     }
   };
 
@@ -584,13 +593,23 @@ function SnippetsPanel() {
         {folders.length > 0 && (
           <select
             value={addToFolder || ""}
-            onChange={(e) => setAddToFolder(e.target.value || undefined)}
+            onChange={(e) => { setAddToFolder(e.target.value || undefined); setAddToSubFolder(undefined); }}
             style={{ ...inputBase, cursor: "pointer" }}
           >
             <option value="">No folder (root)</option>
-            {folders.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
+            {folders.map((f) => <option key={f.id} value={f.id}>{f.name}{f.sharedPath ? ` (${t("snippets.shared")})` : ""}</option>)}
           </select>
         )}
+        {addToFolder && (() => {
+          const targetF = folders.find((f) => f.id === addToFolder);
+          const subs = targetF?.sharedPath ? (sharedSubFolders[addToFolder] || []) : [];
+          return subs.length > 0 ? (
+            <select value={addToSubFolder || ""} onChange={(e) => setAddToSubFolder(e.target.value || undefined)} style={{ ...inputBase, cursor: "pointer", fontSize: 11 }}>
+              <option value="">Root of folder</option>
+              {subs.map((sf) => <option key={sf.id} value={sf.id}>{sf.name}</option>)}
+            </select>
+          ) : null;
+        })()}
         {getCommandCount(newCmd) > 1 && (
           <div style={{ display: "flex", gap: 4 }}>
             <button onClick={() => setNewRunMode("stop-on-error")} style={{ flex: 1, padding: "4px", border: "none", borderRadius: "var(--radius-sm)", background: newRunMode === "stop-on-error" ? "var(--accent-primary)" : "var(--bg-active)", color: newRunMode === "stop-on-error" ? "white" : "var(--text-muted)", fontSize: 10, cursor: "pointer", fontFamily: "inherit" }}>Stop on error (&&)</button>
@@ -766,8 +785,15 @@ function SnippetsPanel() {
               )}
               {isShared && <span style={{ fontSize: 8, background: "var(--accent-secondary)", color: "white", padding: "0 4px", borderRadius: 6, fontWeight: 700, lineHeight: "14px", flexShrink: 0 }}>{t("snippets.shared")}</span>}
               <span style={{ fontSize: 9, color: "var(--text-muted)", flexShrink: 0 }}>{folderSnippets.length}</span>
+              {isShared && (
+                <button
+                  onClick={(e) => { e.stopPropagation(); setAddingSubFolderIn(folder.id); if (collapsedFolders.has(folder.id)) toggleFolder(folder.id); }}
+                  style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", padding: 2, display: "flex" }}
+                  title={t("snippets.newSubFolder")}
+                ><FolderPlus size={10} /></button>
+              )}
               <button
-                onClick={(e) => { e.stopPropagation(); setAddToFolder(folder.id); setAdding(true); setAddingFolder(false); setAddingSharedFolder(false); if (collapsedFolders.has(folder.id)) toggleFolder(folder.id); }}
+                onClick={(e) => { e.stopPropagation(); setAddToFolder(folder.id); setAddToSubFolder(undefined); setAdding(true); setAddingFolder(false); setAddingSharedFolder(false); if (collapsedFolders.has(folder.id)) toggleFolder(folder.id); }}
                 style={{ background: "none", border: "none", color: "var(--accent-primary)", cursor: "pointer", padding: 2, display: "flex" }}
                 title="Add snippet to folder"
               ><Plus size={10} /></button>
@@ -785,12 +811,71 @@ function SnippetsPanel() {
             {/* Folder contents */}
             {!isCollapsed && (
               <div style={{ paddingLeft: 12, borderLeft: `2px solid ${folder.color}`, marginLeft: 10, marginTop: 4 }}>
-                {folderSnippets.length === 0 ? (
-                  <div style={{ padding: "8px 0", fontSize: 10, color: "var(--text-muted)", textAlign: "center" }}>
-                    {isShared ? "No shared snippets yet" : "Drag snippets here"}
-                  </div>
-                ) : (
-                  folderSnippets.map((sn) => renderSnippetCard(sn, isShared ? handleDeleteSnippet : undefined))
+                {isShared && (() => {
+                  const subs = sharedSubFolders[folder.id] || [];
+                  const rootShared = folderSnippets.filter((sn) => !sn.subFolderId);
+                  return (
+                    <>
+                      {/* Sub-folders inside shared folder */}
+                      {subs.map((sub) => {
+                        const subSnippets = folderSnippets.filter((sn) => sn.subFolderId === sub.id);
+                        const subCollapsed = collapsedFolders.has(sub.id);
+                        const isEditingSub = editingSubFolderId === sub.id;
+                        return (
+                          <div key={sub.id} style={{ marginBottom: 4 }}>
+                            <div
+                              style={{ display: "flex", alignItems: "center", gap: 5, padding: "4px 6px", background: "var(--bg-primary)", borderRadius: "var(--radius-sm)", cursor: "pointer", border: "1px solid var(--border-subtle)" }}
+                              onClick={() => !isEditingSub && toggleFolder(sub.id)}
+                            >
+                              {subCollapsed ? <ChevronRight size={10} style={{ color: sub.color, flexShrink: 0 }} /> : <ChevronDown size={10} style={{ color: sub.color, flexShrink: 0 }} />}
+                              {subCollapsed ? <Folder size={12} style={{ color: sub.color, flexShrink: 0 }} /> : <FolderOpen size={12} style={{ color: sub.color, flexShrink: 0 }} />}
+                              {isEditingSub ? (
+                                <input
+                                  value={editSubFolderName}
+                                  onChange={(e) => setEditSubFolderName(e.target.value)}
+                                  onKeyDown={(e) => { if (e.key === "Enter" && editSubFolderName.trim()) { renameSharedSubFolder(folder.id, sub.id, editSubFolderName.trim()); setEditingSubFolderId(null); } if (e.key === "Escape") setEditingSubFolderId(null); }}
+                                  onBlur={() => { if (editSubFolderName.trim()) renameSharedSubFolder(folder.id, sub.id, editSubFolderName.trim()); setEditingSubFolderId(null); }}
+                                  onClick={(e) => e.stopPropagation()}
+                                  autoFocus
+                                  style={{ ...inputBase, padding: "1px 4px", fontSize: 10, flex: 1 }}
+                                />
+                              ) : (
+                                <span style={{ flex: 1, fontSize: 10, fontWeight: 600, color: "var(--text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{sub.name}</span>
+                              )}
+                              <span style={{ fontSize: 8, color: "var(--text-muted)", flexShrink: 0 }}>{subSnippets.length}</span>
+                              <button onClick={(e) => { e.stopPropagation(); setAddToFolder(folder.id); setAddToSubFolder(sub.id); setAdding(true); if (subCollapsed) toggleFolder(sub.id); }} style={{ background: "none", border: "none", color: "var(--accent-primary)", cursor: "pointer", padding: 1, display: "flex" }} title="Add snippet"><Plus size={9} /></button>
+                              <button onClick={(e) => { e.stopPropagation(); setEditingSubFolderId(sub.id); setEditSubFolderName(sub.name); }} style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", padding: 1, display: "flex" }} title="Rename"><Edit3 size={9} /></button>
+                              <button onClick={(e) => { e.stopPropagation(); removeSharedSubFolder(folder.id, sub.id); }} style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", padding: 1, display: "flex" }} title="Delete sub-folder"><Trash2 size={9} /></button>
+                            </div>
+                            {!subCollapsed && (
+                              <div style={{ paddingLeft: 10, borderLeft: `2px solid ${sub.color}`, marginLeft: 8, marginTop: 2 }}>
+                                {subSnippets.length === 0 ? (
+                                  <div style={{ padding: "4px 0", fontSize: 9, color: "var(--text-muted)", textAlign: "center" }}>Empty</div>
+                                ) : subSnippets.map((sn) => renderSnippetCard(sn, handleDeleteSnippet))}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                      {/* Add sub-folder form */}
+                      {addingSubFolderIn === folder.id && (
+                        <div style={{ display: "flex", gap: 4, marginBottom: 4, marginTop: 4 }}>
+                          <input placeholder={t("snippets.subFolderName")} value={newSubFolderName} onChange={(e) => setNewSubFolderName(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && newSubFolderName.trim()) { const c = FOLDER_COLORS[(subs.length + 1) % FOLDER_COLORS.length]; addSharedSubFolder(folder.id, newSubFolderName.trim(), c); setNewSubFolderName(""); setAddingSubFolderIn(null); } }} autoFocus style={{ ...inputBase, flex: 1, fontSize: 10, padding: "3px 6px" }} />
+                          <button onClick={() => { if (newSubFolderName.trim()) { const c = FOLDER_COLORS[(subs.length + 1) % FOLDER_COLORS.length]; addSharedSubFolder(folder.id, newSubFolderName.trim(), c); setNewSubFolderName(""); setAddingSubFolderIn(null); } }} disabled={!newSubFolderName.trim()} style={{ padding: "2px 6px", background: newSubFolderName.trim() ? "var(--accent-primary)" : "var(--bg-active)", border: "none", borderRadius: "var(--radius-sm)", color: newSubFolderName.trim() ? "white" : "var(--text-muted)", fontSize: 10, cursor: newSubFolderName.trim() ? "pointer" : "default", fontFamily: "inherit" }}>OK</button>
+                          <button onClick={() => { setAddingSubFolderIn(null); setNewSubFolderName(""); }} style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", padding: 1, display: "flex", alignItems: "center" }}><X size={12} /></button>
+                        </div>
+                      )}
+                      {/* Root snippets (no sub-folder) inside shared folder */}
+                      {rootShared.length === 0 && subs.length === 0 ? (
+                        <div style={{ padding: "8px 0", fontSize: 10, color: "var(--text-muted)", textAlign: "center" }}>No shared snippets yet</div>
+                      ) : rootShared.map((sn) => renderSnippetCard(sn, handleDeleteSnippet))}
+                    </>
+                  );
+                })()}
+                {!isShared && (
+                  folderSnippets.length === 0 ? (
+                    <div style={{ padding: "8px 0", fontSize: 10, color: "var(--text-muted)", textAlign: "center" }}>Drag snippets here</div>
+                  ) : folderSnippets.map((sn) => renderSnippetCard(sn))
                 )}
               </div>
             )}

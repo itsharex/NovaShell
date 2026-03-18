@@ -202,9 +202,9 @@ export async function navigateToServer(
 
     return sessionId;
   } catch (e) {
-    // Clean up orphaned session on navigation failure
+    // Clean up orphaned session on navigation failure — all cleanup in try/catch to preserve original error
     try { await invoke("ssh_disconnect", { sessionId }); } catch { /* already gone */ }
-    useAppStore.getState().updateSSHConnection(conn.id, { status: "disconnected", sessionId: undefined });
+    try { useAppStore.getState().updateSSHConnection(conn.id, { status: "disconnected", sessionId: undefined }); } catch { /* store error */ }
     throw e;
   }
 }

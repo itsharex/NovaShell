@@ -81,6 +81,7 @@ impl PtySession {
 
         let reader_thread = std::thread::spawn(move || {
             let mut buf = [0u8; 16384]; // 16KB buffer — matches SSH for consistent throughput
+            let mut utf8_remainder: Vec<u8> = Vec::new(); // holds incomplete UTF-8 bytes between reads
 
             loop {
                 if !running_reader.load(Ordering::Relaxed) {
@@ -99,11 +100,35 @@ impl PtySession {
                         break;
                     }
                     Ok(n) => {
+                        // Prepend any leftover bytes from previous read's incomplete UTF-8
+                        let data = if utf8_remainder.is_empty() {
+                            &buf[..n]
+                        } else {
+                            utf8_remainder.extend_from_slice(&buf[..n]);
+                            utf8_remainder.as_slice()
+                        };
                         if let Ok(mut b) = batch_reader.lock() {
-                            // Fast path: valid UTF-8 (99% of terminal output) avoids allocation
-                            match std::str::from_utf8(&buf[..n]) {
-                                Ok(s) => b.push_str(s),
-                                Err(_) => b.push_str(&String::from_utf8_lossy(&buf[..n])),
+                            match std::str::from_utf8(data) {
+                                Ok(s) => {
+                                    b.push_str(s);
+                                    utf8_remainder.clear();
+                                }
+                                Err(e) => {
+                                    let valid_up_to = e.valid_up_to();
+                                    if valid_up_to > 0 {
+                                        b.push_str(unsafe { std::str::from_utf8_unchecked(&data[..valid_up_to]) });
+                                    }
+                                    match e.error_len() {
+                                        None => {
+                                            // Incomplete sequence at end — save for next read
+                                            utf8_remainder = data[valid_up_to..].to_vec();
+                                        }
+                                        Some(_) => {
+                                            b.push_str(&String::from_utf8_lossy(&data[valid_up_to..]));
+                                            utf8_remainder.clear();
+                                        }
+                                    }
+                                }
                             }
                             // Flush immediately if batch is large (fast output like `cat` large file)
                             if b.len() > 16384 {

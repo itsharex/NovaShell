@@ -1,5 +1,13 @@
 # NovaTerm - Lessons Learned
 
+## UTF-8 Boundary Handling — CRITICAL (v2.4.9)
+- A 16KB read buffer can split a multi-byte UTF-8 character (e.g., emoji, CJK) between two reads
+- `str::from_utf8()` fails with `Utf8Error` which has `valid_up_to()` and `error_len()`
+- `error_len() == None` means incomplete sequence at end → save leftover bytes for next read
+- `error_len() == Some(n)` means invalid byte mid-stream → use lossy conversion
+- Must prepend leftover bytes to next read's buffer before UTF-8 validation
+- This affects both SSH and PTY readers — identical pattern in both
+
 ## SSH Integration
 - ssh2 Rust crate v0.9 works well for native SSH without Node.js dependency
 - Channel needs mut for request_pty_size call

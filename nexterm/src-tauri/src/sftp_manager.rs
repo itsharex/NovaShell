@@ -190,20 +190,29 @@ impl SftpSession {
         let mut buf = [0u8; 32768];
         let mut total: u64 = 0;
 
-        loop {
-            match remote_file.read(&mut buf) {
-                Ok(0) => break,
-                Ok(n) => {
-                    local_file
-                        .write_all(&buf[..n])
-                        .map_err(|e| format!("Write error: {}", e))?;
-                    total += n as u64;
+        let result: Result<u64, String> = (|| {
+            loop {
+                match remote_file.read(&mut buf) {
+                    Ok(0) => break,
+                    Ok(n) => {
+                        local_file
+                            .write_all(&buf[..n])
+                            .map_err(|e| format!("Write error: {}", e))?;
+                        total += n as u64;
+                    }
+                    Err(e) => return Err(format!("Read error: {}", e)),
                 }
-                Err(e) => return Err(format!("Read error: {}", e)),
             }
+            Ok(total)
+        })();
+
+        if result.is_err() {
+            // Clean up partial file on failure
+            drop(local_file);
+            let _ = std::fs::remove_file(local_path);
         }
 
-        Ok(total)
+        result
     }
 
     pub fn upload_file(&self, local_path: &str, remote_path: &str) -> Result<u64, String> {

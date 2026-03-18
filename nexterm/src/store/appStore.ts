@@ -325,7 +325,7 @@ function buildPersistedConfig(): PersistedConfig {
     snippetFolders: s.snippetFolders,
     sshConnections: s.sshConnections.map(({ status, sessionId, errorMessage, sessionPassword, ...rest }) => rest),
     plugins: s.plugins,
-    history: s.history.slice(0, 100).map(({ screenshot, ...rest }) => rest),
+    history: s.history.slice(0, 200).map(({ screenshot, ...rest }) => rest),
     debugPersist: s.debugPersist,
     language: s.language,
     customExploits: s.customExploits.length > 0 ? s.customExploits : undefined,
@@ -334,6 +334,7 @@ function buildPersistedConfig(): PersistedConfig {
 }
 
 function scheduleSave() {
+  if (!configLoaded) return; // Don't save until initial config is loaded — prevents overwriting
   if (saveTimer) clearTimeout(saveTimer);
   saveTimer = setTimeout(() => {
     saveTimer = null;
@@ -640,7 +641,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   history: [],
   addHistory: (entry) => {
     set((s) => {
-      const prev = s.history.length >= 500 ? s.history.slice(0, 499) : s.history;
+      const prev = s.history.length >= 200 ? s.history.slice(0, 199) : s.history;
       return {
         history: [{ ...entry, id: crypto.randomUUID(), timestamp: Date.now() }, ...prev],
       };
@@ -1085,12 +1086,15 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   // Cross-Server Navigation
   navigationStacks: {},
-  pushServerContext: (tabId, ctx) => set((s) => ({
-    navigationStacks: {
-      ...s.navigationStacks,
-      [tabId]: [...(s.navigationStacks[tabId] || []), ctx],
-    },
-  })),
+  pushServerContext: (tabId, ctx) => set((s) => {
+    const stack = [...(s.navigationStacks[tabId] || []), ctx];
+    return {
+      navigationStacks: {
+        ...s.navigationStacks,
+        [tabId]: stack.length > 50 ? stack.slice(-50) : stack,
+      },
+    };
+  }),
   popServerContext: (tabId) => {
     const stack = get().navigationStacks[tabId];
     if (!stack || stack.length === 0) return null;

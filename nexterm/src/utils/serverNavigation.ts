@@ -175,30 +175,36 @@ export async function navigateToServer(
     privateKey: credentials.privateKey || null,
   });
 
-  // Update connection status in store
-  useAppStore.getState().updateSSHConnection(conn.id, {
-    status: "connected",
-    sessionId,
-    sessionPassword: credentials.password,
-  });
-
-  // Wait for shell to initialize by listening for first data event,
-  // with a fallback timeout to avoid hanging forever
-  const { listen } = await import("@tauri-apps/api/event");
-  await new Promise<void>((resolve) => {
-    let done = false;
-    const timeout = setTimeout(() => { if (!done) { done = true; resolve(); } }, 3000);
-    listen<string>(`ssh-data-${sessionId}`, () => {
-      if (!done) { done = true; clearTimeout(timeout); resolve(); }
-    }).then((unlisten) => {
-      if (done) unlisten();
-      else setTimeout(() => unlisten(), 3500);
-    }).catch(() => {
-      // listen() failed — resolve anyway so navigation isn't blocked
-      if (!done) { done = true; clearTimeout(timeout); resolve(); }
+  try {
+    // Update connection status in store
+    useAppStore.getState().updateSSHConnection(conn.id, {
+      status: "connected",
+      sessionId,
+      sessionPassword: credentials.password,
     });
-  });
-  await invoke("ssh_write", { sessionId, data: `cd ${sanitizePath(path)}\r` });
 
-  return sessionId;
+    // Wait for shell to initialize by listening for first data event,
+    // with a fallback timeout to avoid hanging forever
+    const { listen } = await import("@tauri-apps/api/event");
+    await new Promise<void>((resolve) => {
+      let done = false;
+      const timeout = setTimeout(() => { if (!done) { done = true; resolve(); } }, 3000);
+      listen<string>(`ssh-data-${sessionId}`, () => {
+        if (!done) { done = true; clearTimeout(timeout); resolve(); }
+      }).then((unlisten) => {
+        if (done) unlisten();
+        else setTimeout(() => unlisten(), 3500);
+      }).catch(() => {
+        if (!done) { done = true; clearTimeout(timeout); resolve(); }
+      });
+    });
+    await invoke("ssh_write", { sessionId, data: `cd ${sanitizePath(path)}\r` });
+
+    return sessionId;
+  } catch (e) {
+    // Clean up orphaned session on navigation failure
+    try { await invoke("ssh_disconnect", { sessionId }); } catch { /* already gone */ }
+    useAppStore.getState().updateSSHConnection(conn.id, { status: "disconnected", sessionId: undefined });
+    throw e;
+  }
 }

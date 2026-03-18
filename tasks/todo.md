@@ -160,6 +160,15 @@
 - [x] Config History: Reduced persisted entries 200→100 — smaller save payload
 - [x] TypeScript compilation verified
 
+## Completed (v2.4.9 Bug Fixes — Audit Results)
+- [x] Fix: UTF-8 split across read boundaries — incomplete sequences preserved for next read (SSH + PTY)
+- [x] Fix: Navigation stack unbounded growth — capped at 50 entries per tab
+- [x] Fix: History mismatch (500 memory / 100 persisted) — aligned to 200 both sides
+- [x] Fix: Config save/load race — scheduleSave blocked until configLoaded is true
+- [x] Fix: SFTP partial file cleanup — incomplete downloads deleted on failure
+- [x] Fix: Orphaned SSH sessions on navigation failure — disconnect + cleanup on error
+- [x] TypeScript + Rust compilation verified
+
 ## Completed (v2.4.8 Final Polish — Re-render Elimination)
 - [x] StatusBar: reduced from 15 to 8 reactive selectors (functions via getState, navStack memoized)
 - [x] Write flush: queueMicrotask prevents recursive microtask buildup (SSHPanel + TerminalPanel x2)

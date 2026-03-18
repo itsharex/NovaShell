@@ -516,6 +516,7 @@ export function InfraMonitorPanel() {
   const activeMonitors = useAppStore((s) => s.infraActiveMonitors);
   const addActiveMonitor = useAppStore((s) => s.addInfraActiveMonitor);
   const removeActiveMonitor = useAppStore((s) => s.removeInfraActiveMonitor);
+  const performanceBaselines = useAppStore((s) => s.performanceBaselines);
 
   const [view, setView] = useState<InfraView>("overview");
   const [remediationOutput, setRemediationOutput] = useState<string | null>(null);
@@ -845,7 +846,7 @@ export function InfraMonitorPanel() {
           <CompareView
             connections={sshConnections}
             infraMonitors={infraMonitors}
-            baselines={useAppStore((s) => s.performanceBaselines)}
+            baselines={performanceBaselines}
           />
         )}
 

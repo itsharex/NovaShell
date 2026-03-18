@@ -2,10 +2,12 @@ import { useState, useEffect, useCallback, useRef, memo } from "react";
 import { Download, X, RefreshCw, CheckCircle, AlertCircle, Loader } from "lucide-react";
 import { useT } from "../i18n";
 
+type VersionNote = { version: string; title: string; highlights: string[] };
+
 type UpdateStatus =
   | { phase: "idle" }
   | { phase: "checking" }
-  | { phase: "available"; version: string; body: string }
+  | { phase: "available"; version: string; body: string; allNotes: VersionNote[] }
   | { phase: "downloading"; progress: number }
   | { phase: "ready" }
   | { phase: "error"; message: string }
@@ -23,70 +25,86 @@ async function getProcess() {
   return processCache;
 }
 
-// Parse GitHub release body markdown into styled JSX
-function renderReleaseNotes(body: string) {
-  if (!body || typeof body !== "string") return null;
+// Compare semver strings: returns -1, 0, or 1
+function compareSemver(a: string, b: string): number {
+  const pa = a.replace(/^v/, "").split(".").map(Number);
+  const pb = b.replace(/^v/, "").split(".").map(Number);
+  for (let i = 0; i < 3; i++) {
+    if ((pa[i] || 0) < (pb[i] || 0)) return -1;
+    if ((pa[i] || 0) > (pb[i] || 0)) return 1;
+  }
+  return 0;
+}
 
-  // Remove download section and footer
+// Extract user-friendly highlights from a GitHub release body
+function extractHighlights(body: string): string[] {
+  if (!body || typeof body !== "string") return [];
+  const highlights: string[] = [];
+
+  // Remove downloads/footer sections
   const cleaned = body
     .replace(/## Downloads[\s\S]*$/i, "")
     .replace(/---[\s\S]*$/i, "")
     .trim();
 
-  if (!cleaned) return <span style={{ fontSize: 10.5 }}>{body.slice(0, 300)}</span>;
-
-  const elements: React.ReactNode[] = [];
-  let key = 0;
-
   for (const line of cleaned.split("\n")) {
     const trimmed = line.trim();
-    if (!trimmed) continue;
 
-    // ### Header → section title
+    // ### Section headers → use as highlight
     if (trimmed.startsWith("### ")) {
-      elements.push(
-        <div key={key++} style={{ fontSize: 11, fontWeight: 700, color: "var(--accent-primary)", marginTop: elements.length > 0 ? 8 : 0, marginBottom: 3 }}>
-          {trimmed.replace(/^###\s*/, "")}
-        </div>
-      );
+      const title = trimmed.replace(/^###\s*/, "").trim();
+      if (title && !title.toLowerCase().includes("download")) {
+        highlights.push(title);
+      }
     }
-    // ## Header → main title
-    else if (trimmed.startsWith("## ")) {
-      elements.push(
-        <div key={key++} style={{ fontSize: 12, fontWeight: 700, color: "var(--text-primary)", marginTop: elements.length > 0 ? 6 : 0, marginBottom: 4 }}>
-          {trimmed.replace(/^##\s*/, "")}
-        </div>
-      );
+    // - **Bold item** → extract the bold part as a highlight
+    else if (trimmed.startsWith("- **")) {
+      const match = trimmed.match(/\*\*(.+?)\*\*/);
+      if (match) {
+        // Get the bold text + the rest after ** as context
+        const rest = trimmed.slice(trimmed.indexOf("**", trimmed.indexOf("**") + 2) + 2).replace(/^\s*[—\-:]\s*/, "").trim();
+        const text = rest ? `${match[1]} — ${rest.slice(0, 80)}` : match[1];
+        highlights.push(text);
+      }
     }
-    // - Bullet point
-    else if (trimmed.startsWith("- ")) {
-      const text = trimmed.slice(2)
-        .replace(/\*\*(.+?)\*\*/g, "\u200B$1\u200B"); // bold markers for split below
-      const parts = text.split("\u200B");
-      elements.push(
-        <div key={key++} style={{ display: "flex", gap: 5, marginBottom: 2, paddingLeft: 4 }}>
-          <span style={{ color: "var(--accent-primary)", flexShrink: 0, fontSize: 10, lineHeight: "16px" }}>&#8226;</span>
-          <span style={{ fontSize: 10.5, color: "var(--text-secondary)", lineHeight: "16px" }}>
-            {parts.map((part, i) =>
-              i % 2 === 1
-                ? <strong key={i} style={{ color: "var(--text-primary)", fontWeight: 600 }}>{part}</strong>
-                : <span key={i}>{part}</span>
-            )}
-          </span>
-        </div>
-      );
-    }
-    // Regular text
-    else {
-      elements.push(
-        <div key={key++} style={{ fontSize: 10.5, color: "var(--text-secondary)", marginBottom: 2 }}>
-          {trimmed}
-        </div>
-      );
+    // - Regular bullet → use if short enough and meaningful
+    else if (trimmed.startsWith("- ") && !trimmed.startsWith("- *")) {
+      const text = trimmed.slice(2).trim();
+      if (text.length > 5 && text.length < 100) {
+        highlights.push(text);
+      }
     }
   }
 
-  return elements.length > 0 ? elements : <span style={{ fontSize: 10.5 }}>{body.slice(0, 500)}</span>;
+  // Cap at 5 highlights per version to keep it concise
+  return highlights.slice(0, 5);
+}
+
+// Fetch all intermediate release notes from GitHub API
+async function fetchAllReleaseNotes(currentVersion: string, targetVersion: string): Promise<VersionNote[]> {
+  try {
+    const res = await fetch("https://api.github.com/repos/FomoDonkey/NovaShell/releases?per_page=20");
+    if (!res.ok) return [];
+    const releases: Array<{ tag_name: string; name: string; body: string }> = await res.json();
+
+    const notes: VersionNote[] = [];
+    for (const rel of releases) {
+      const ver = rel.tag_name.replace(/^v/, "");
+      // Include versions that are > currentVersion AND <= targetVersion
+      if (compareSemver(ver, currentVersion) > 0 && compareSemver(ver, targetVersion) <= 0) {
+        const highlights = extractHighlights(rel.body || "");
+        // Extract title from release name (e.g. "v2.4.0 — Sub-folders" → "Sub-folders")
+        const title = (rel.name || rel.tag_name).replace(/^v?\d+\.\d+\.\d+\s*[—\-:]\s*/, "").trim() || rel.tag_name;
+        notes.push({ version: ver, title, highlights });
+      }
+    }
+
+    // Sort newest first
+    notes.sort((a, b) => compareSemver(b.version, a.version));
+    return notes;
+  } catch {
+    return [];
+  }
 }
 
 export const UpdateNotification = memo(function UpdateNotification() {
@@ -98,7 +116,6 @@ export const UpdateNotification = memo(function UpdateNotification() {
   const t = useT();
 
   const checkForUpdates = useCallback(async (silent = true) => {
-    // Don't re-check if we already downloaded and installed an update
     if (updateInstalledRef.current) return;
 
     try {
@@ -107,17 +124,21 @@ export const UpdateNotification = memo(function UpdateNotification() {
       const update = await check();
 
       if (update) {
+        // Fetch all intermediate release notes in background
+        const currentVer = typeof APP_VERSION === "string" ? APP_VERSION : "0.0.0";
+        const allNotes = await fetchAllReleaseNotes(currentVer, update.version);
+
         setStatus({
           phase: "available",
           version: update.version,
           body: update.body || "",
+          allNotes,
         });
         setDismissed(false);
         setMinimized(false);
       } else {
         setStatus({ phase: "up-to-date" });
         if (silent) {
-          // Auto-dismiss "up to date" after 3s in silent mode
           dismissTimerRef.current = setTimeout(() => setStatus({ phase: "idle" }), 3000);
         }
       }
@@ -125,7 +146,6 @@ export const UpdateNotification = memo(function UpdateNotification() {
       if (!silent) {
         setStatus({ phase: "error", message: String(e) });
       } else {
-        // Silent check failure — don't bother the user
         setStatus({ phase: "idle" });
       }
     }
@@ -158,7 +178,6 @@ export const UpdateNotification = memo(function UpdateNotification() {
         }
       });
 
-      // Mark as installed so auto-check doesn't re-notify
       updateInstalledRef.current = true;
       setStatus({ phase: "ready" });
     } catch (e) {
@@ -178,7 +197,6 @@ export const UpdateNotification = memo(function UpdateNotification() {
   // Auto-check on startup (30s delay to not block boot)
   useEffect(() => {
     const timer = setTimeout(() => checkForUpdates(true), 30000);
-    // Then check every 4 hours
     const interval = setInterval(() => checkForUpdates(true), 4 * 60 * 60 * 1000);
     return () => {
       clearTimeout(timer);
@@ -191,27 +209,17 @@ export const UpdateNotification = memo(function UpdateNotification() {
   if (status.phase === "idle") return null;
   if (dismissed && status.phase !== "downloading" && status.phase !== "ready") return null;
 
-  // Minimized badge (small dot in corner)
+  // Minimized badge
   if (minimized && status.phase === "available") {
     return (
       <button
         onClick={() => setMinimized(false)}
         style={{
-          position: "fixed",
-          bottom: 32,
-          right: 16,
-          width: 36,
-          height: 36,
-          borderRadius: "50%",
-          background: "var(--accent-primary)",
-          border: "2px solid var(--bg-primary)",
-          color: "white",
-          cursor: "pointer",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          boxShadow: "0 4px 12px rgba(0,0,0,0.4)",
-          zIndex: 9999,
+          position: "fixed", bottom: 32, right: 16, width: 36, height: 36,
+          borderRadius: "50%", background: "var(--accent-primary)",
+          border: "2px solid var(--bg-primary)", color: "white", cursor: "pointer",
+          display: "flex", alignItems: "center", justifyContent: "center",
+          boxShadow: "0 4px 12px rgba(0,0,0,0.4)", zIndex: 9999,
           animation: "pulse-glow 2s ease-in-out infinite",
         }}
         title="Update available"
@@ -223,29 +231,15 @@ export const UpdateNotification = memo(function UpdateNotification() {
 
   return (
     <div style={{
-      position: "fixed",
-      bottom: 32,
-      right: 16,
-      width: 380,
-      background: "var(--bg-secondary)",
-      border: "1px solid var(--border-subtle)",
-      borderRadius: "var(--radius-md)",
-      boxShadow: "0 8px 32px rgba(0,0,0,0.5)",
-      zIndex: 9999,
-      overflow: "hidden",
-      fontFamily: "inherit",
+      position: "fixed", bottom: 32, right: 16, width: 380,
+      background: "var(--bg-secondary)", border: "1px solid var(--border-subtle)",
+      borderRadius: "var(--radius-md)", boxShadow: "0 8px 32px rgba(0,0,0,0.5)",
+      zIndex: 9999, overflow: "hidden", fontFamily: "inherit",
     }}>
       {/* Header */}
       <div style={{
-        display: "flex",
-        alignItems: "center",
-        gap: 8,
-        padding: "10px 12px",
-        background: status.phase === "error"
-          ? "rgba(255,123,114,0.1)"
-          : status.phase === "ready"
-            ? "rgba(63,185,80,0.1)"
-            : "rgba(88,166,255,0.1)",
+        display: "flex", alignItems: "center", gap: 8, padding: "10px 12px",
+        background: status.phase === "error" ? "rgba(255,123,114,0.1)" : status.phase === "ready" ? "rgba(63,185,80,0.1)" : "rgba(88,166,255,0.1)",
         borderBottom: "1px solid var(--border-subtle)",
       }}>
         {status.phase === "checking" && <Loader size={14} style={{ color: "var(--accent-primary)", animation: "spin 1s linear infinite" }} />}
@@ -266,21 +260,8 @@ export const UpdateNotification = memo(function UpdateNotification() {
 
         {status.phase !== "downloading" && status.phase !== "ready" && (
           <button
-            onClick={() => {
-              if (status.phase === "available") {
-                setMinimized(true);
-              } else {
-                setDismissed(true);
-              }
-            }}
-            style={{
-              background: "none",
-              border: "none",
-              color: "var(--text-muted)",
-              cursor: "pointer",
-              padding: 2,
-              display: "flex",
-            }}
+            onClick={() => { if (status.phase === "available") setMinimized(true); else setDismissed(true); }}
+            style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", padding: 2, display: "flex" }}
           >
             <X size={12} />
           </button>
@@ -290,69 +271,72 @@ export const UpdateNotification = memo(function UpdateNotification() {
       {/* Body */}
       <div style={{ padding: "10px 12px" }}>
         {status.phase === "checking" && (
-          <p style={{ fontSize: 11, color: "var(--text-secondary)", margin: 0 }}>
-            {t("update.connectingServer")}
-          </p>
+          <p style={{ fontSize: 11, color: "var(--text-secondary)", margin: 0 }}>{t("update.connectingServer")}</p>
         )}
 
         {status.phase === "up-to-date" && (
-          <p style={{ fontSize: 11, color: "var(--text-secondary)", margin: 0 }}>
-            {t("update.latestVersion")}
-          </p>
+          <p style={{ fontSize: 11, color: "var(--text-secondary)", margin: 0 }}>{t("update.latestVersion")}</p>
         )}
 
         {status.phase === "available" && (
           <>
-            {status.body && status.body.trim().length > 0 && (() => {
-              try {
-                return (
-                  <>
-                    <div style={{ fontSize: 10, fontWeight: 600, color: "var(--text-muted)", marginBottom: 4, textTransform: "uppercase", letterSpacing: 0.5 }}>
-                      {t("update.whatsNew")}
+            {/* Release notes — show all intermediate versions */}
+            {(status.allNotes.length > 0 || (status.body && status.body.trim())) && (
+              <>
+                <div style={{ fontSize: 10, fontWeight: 600, color: "var(--text-muted)", marginBottom: 4, textTransform: "uppercase", letterSpacing: 0.5 }}>
+                  {t("update.whatsNew")}
+                </div>
+                <div style={{
+                  margin: "0 0 10px 0", maxHeight: 220, overflowY: "auto",
+                  padding: "8px 10px", background: "var(--bg-primary)",
+                  borderRadius: "var(--radius-sm)", border: "1px solid var(--border-subtle)",
+                }}>
+                  {status.allNotes.map((note, idx) => (
+                    <div key={note.version} style={{ marginBottom: idx < status.allNotes.length - 1 ? 10 : 0 }}>
+                      {/* Version header */}
+                      <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
+                        <span style={{ fontSize: 10, fontWeight: 700, color: "var(--accent-primary)", background: "rgba(88,166,255,0.1)", padding: "1px 6px", borderRadius: 4 }}>
+                          v{note.version}
+                        </span>
+                        <span style={{ fontSize: 10.5, fontWeight: 600, color: "var(--text-primary)", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          {note.title}
+                        </span>
+                      </div>
+                      {/* Highlights */}
+                      {note.highlights.map((h, i) => (
+                        <div key={i} style={{ display: "flex", gap: 5, marginBottom: 1, paddingLeft: 4 }}>
+                          <span style={{ color: "var(--accent-primary)", flexShrink: 0, fontSize: 9, lineHeight: "15px" }}>&#8226;</span>
+                          <span style={{ fontSize: 10, color: "var(--text-secondary)", lineHeight: "15px" }}>{h}</span>
+                        </div>
+                      ))}
+                      {/* Separator between versions */}
+                      {idx < status.allNotes.length - 1 && (
+                        <div style={{ borderBottom: "1px solid var(--border-subtle)", marginTop: 6 }} />
+                      )}
                     </div>
-                    <div style={{
-                      fontSize: 11,
-                      color: "var(--text-secondary)",
-                      margin: "0 0 10px 0",
-                      maxHeight: 200,
-                      overflowY: "auto",
-                      lineHeight: 1.6,
-                      padding: "8px 10px",
-                      background: "var(--bg-primary)",
-                      borderRadius: "var(--radius-sm)",
-                      border: "1px solid var(--border-subtle)",
-                    }}>
-                      {renderReleaseNotes(status.body)}
-                    </div>
-                  </>
-                );
-              } catch {
-                // Fallback: show raw text if markdown parsing fails
-                return (
-                  <p style={{ fontSize: 11, color: "var(--text-secondary)", margin: "0 0 10px 0", maxHeight: 80, overflowY: "auto", lineHeight: 1.5, whiteSpace: "pre-wrap" }}>
-                    {status.body.slice(0, 300)}
-                  </p>
-                );
-              }
-            })()}
+                  ))}
+                  {/* Fallback: if GitHub API failed, show the body from the updater */}
+                  {status.allNotes.length === 0 && status.body && (
+                    <p style={{ fontSize: 10.5, color: "var(--text-secondary)", margin: 0, lineHeight: 1.5, whiteSpace: "pre-wrap" }}>
+                      {status.body
+                        .replace(/## Downloads[\s\S]*$/i, "")
+                        .replace(/---[\s\S]*$/i, "")
+                        .replace(/^## /gm, "")
+                        .trim()
+                        .slice(0, 400)}
+                    </p>
+                  )}
+                </div>
+              </>
+            )}
             <div style={{ display: "flex", gap: 6 }}>
               <button
                 onClick={downloadAndInstall}
                 style={{
-                  flex: 1,
-                  padding: "7px 12px",
-                  background: "var(--accent-primary)",
-                  border: "none",
-                  borderRadius: "var(--radius-sm)",
-                  color: "white",
-                  fontSize: 12,
-                  fontWeight: 600,
-                  cursor: "pointer",
-                  fontFamily: "inherit",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  gap: 6,
+                  flex: 1, padding: "7px 12px", background: "var(--accent-primary)",
+                  border: "none", borderRadius: "var(--radius-sm)", color: "white",
+                  fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: "inherit",
+                  display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
                 }}
               >
                 <Download size={12} />
@@ -361,14 +345,9 @@ export const UpdateNotification = memo(function UpdateNotification() {
               <button
                 onClick={() => setDismissed(true)}
                 style={{
-                  padding: "7px 12px",
-                  background: "var(--bg-tertiary)",
-                  border: "1px solid var(--border-subtle)",
-                  borderRadius: "var(--radius-sm)",
-                  color: "var(--text-secondary)",
-                  fontSize: 12,
-                  cursor: "pointer",
-                  fontFamily: "inherit",
+                  padding: "7px 12px", background: "var(--bg-tertiary)",
+                  border: "1px solid var(--border-subtle)", borderRadius: "var(--radius-sm)",
+                  color: "var(--text-secondary)", fontSize: 12, cursor: "pointer", fontFamily: "inherit",
                 }}
               >
                 {t("update.later")}
@@ -379,21 +358,8 @@ export const UpdateNotification = memo(function UpdateNotification() {
 
         {status.phase === "downloading" && (
           <>
-            <div style={{
-              width: "100%",
-              height: 6,
-              background: "var(--bg-active)",
-              borderRadius: 3,
-              overflow: "hidden",
-              marginBottom: 6,
-            }}>
-              <div style={{
-                width: `${status.progress}%`,
-                height: "100%",
-                background: "var(--accent-primary)",
-                borderRadius: 3,
-                transition: "width 0.3s ease",
-              }} />
+            <div style={{ width: "100%", height: 6, background: "var(--bg-active)", borderRadius: 3, overflow: "hidden", marginBottom: 6 }}>
+              <div style={{ width: `${status.progress}%`, height: "100%", background: "var(--accent-primary)", borderRadius: 3, transition: "width 0.3s ease" }} />
             </div>
             <p style={{ fontSize: 10, color: "var(--text-muted)", margin: 0, textAlign: "center" }}>
               {status.progress > 0 ? `${status.progress}%` : t("update.startingDownload")}
@@ -404,25 +370,15 @@ export const UpdateNotification = memo(function UpdateNotification() {
         {status.phase === "ready" && (
           <>
             <p style={{ fontSize: 11, color: "var(--text-secondary)", margin: "0 0 10px 0" }}>
-              Update installed successfully. Restart NovaShell to apply changes.
+              {t("update.updateInstalled")}
             </p>
             <button
               onClick={relaunchApp}
               style={{
-                width: "100%",
-                padding: "7px 12px",
-                background: "var(--accent-secondary)",
-                border: "none",
-                borderRadius: "var(--radius-sm)",
-                color: "white",
-                fontSize: 12,
-                fontWeight: 600,
-                cursor: "pointer",
-                fontFamily: "inherit",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                gap: 6,
+                width: "100%", padding: "7px 12px", background: "var(--accent-secondary)",
+                border: "none", borderRadius: "var(--radius-sm)", color: "white",
+                fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: "inherit",
+                display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
               }}
             >
               <RefreshCw size={12} />
@@ -433,32 +389,16 @@ export const UpdateNotification = memo(function UpdateNotification() {
 
         {status.phase === "error" && (
           <>
-            <p style={{
-              fontSize: 11,
-              color: "var(--accent-error)",
-              margin: "0 0 8px 0",
-              maxHeight: 40,
-              overflowY: "auto",
-              wordBreak: "break-word",
-            }}>
+            <p style={{ fontSize: 11, color: "var(--accent-error)", margin: "0 0 8px 0", maxHeight: 40, overflowY: "auto", wordBreak: "break-word" }}>
               {status.message}
             </p>
             <button
               onClick={() => checkForUpdates(false)}
               style={{
-                width: "100%",
-                padding: "6px 12px",
-                background: "var(--bg-tertiary)",
-                border: "1px solid var(--border-subtle)",
-                borderRadius: "var(--radius-sm)",
-                color: "var(--text-secondary)",
-                fontSize: 11,
-                cursor: "pointer",
-                fontFamily: "inherit",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                gap: 6,
+                width: "100%", padding: "6px 12px", background: "var(--bg-tertiary)",
+                border: "1px solid var(--border-subtle)", borderRadius: "var(--radius-sm)",
+                color: "var(--text-secondary)", fontSize: 11, cursor: "pointer", fontFamily: "inherit",
+                display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
               }}
             >
               <RefreshCw size={11} />

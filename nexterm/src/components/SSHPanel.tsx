@@ -451,6 +451,12 @@ export function SSHPanel() {
 
     return () => {
       observer.disconnect();
+      // Clean up terminal and event listeners when activeSessionId changes
+      if (sshTermRef.current) {
+        sshTermRef.current.unlisteners.forEach((fn) => fn());
+        sshTermRef.current.terminal.dispose();
+        sshTermRef.current = null;
+      }
     };
   }, [activeSessionId]);
 

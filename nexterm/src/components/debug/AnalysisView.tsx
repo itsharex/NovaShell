@@ -64,6 +64,9 @@ export function AnalysisView() {
   const [ollamaStatus, setOllamaStatus] = useState<"unknown" | "online" | "offline">("unknown");
   const [availableModels, setAvailableModels] = useState<string[]>([]);
   const [selectedModel, setSelectedModel] = useState<string>("");
+  const selectedModelRef = useRef("");
+  const aiResultsRef = useRef(aiResults);
+  aiResultsRef.current = aiResults;
   const checkedOllama = useRef(false);
 
   // Pattern-matched issues (Layer 1)
@@ -114,8 +117,9 @@ export function AnalysisView() {
         const names = models.map((m) => m.name);
         setAvailableModels(names);
         // Auto-select first model
-        if (names.length > 0 && !selectedModel) {
+        if (names.length > 0 && !selectedModelRef.current) {
           setSelectedModel(names[0]);
+          selectedModelRef.current = names[0];
         }
       } else {
         setOllamaStatus("offline");
@@ -123,15 +127,15 @@ export function AnalysisView() {
     } catch {
       setOllamaStatus("offline");
     }
-  }, [selectedModel]);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Analyze a single error with AI
   const analyzeWithAI = useCallback(async (error: UnmatchedError) => {
-    // Check cache
-    if (aiResults.has(error.hash)) return;
+    // Check cache using ref (not stale closure)
+    if (aiResultsRef.current.has(error.hash)) return;
 
     await checkOllama();
-    if (!selectedModel) return;
+    if (!selectedModelRef.current) return;
 
     setAiLoading((prev) => new Set(prev).add(error.hash));
     setAiErrors((prev) => { const n = new Map(prev); n.delete(error.hash); return n; });
@@ -139,7 +143,7 @@ export function AnalysisView() {
     try {
       const { invoke } = await getTauriCore();
       const response = await invoke<string>("ai_chat", {
-        model: selectedModel,
+        model: selectedModelRef.current,
         systemPrompt: AI_SYSTEM_PROMPT,
         messages: [{
           role: "user",

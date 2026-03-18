@@ -466,6 +466,7 @@ export function EditorPanel() {
   }, []);
 
   const handleFolderDirClick = useCallback((dirPath: string) => {
+    let needsLoad = false;
     setFolderTree((prev) => {
       if (prev.expanded.has(dirPath)) {
         const newExpanded = new Set(prev.expanded);
@@ -477,12 +478,11 @@ export function EditorPanel() {
         newExpanded.add(dirPath);
         return { ...prev, expanded: newExpanded };
       }
+      needsLoad = true;
       return prev;
     });
-    if (!folderTree.expanded.has(dirPath) && !folderTree.children.has(dirPath)) {
-      loadFolderChildren(dirPath);
-    }
-  }, [folderTree, loadFolderChildren]);
+    if (needsLoad) loadFolderChildren(dirPath);
+  }, [loadFolderChildren]);
 
   const handleFolderFileClick = useCallback(async (entry: FileEntry) => {
     try {

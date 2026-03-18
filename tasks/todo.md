@@ -160,6 +160,22 @@
 - [x] Config History: Reduced persisted entries 200→100 — smaller save payload
 - [x] TypeScript compilation verified
 
+## Completed (v2.4.6 Deep Performance Optimization)
+- [x] SSH Write Queue: mpsc channel eliminates lock contention — IPC write is now instant (zero blocking)
+- [x] SSH Reader Thread processes writes: all channel I/O in single thread, no Mutex contention with IPC
+- [x] SSH Session timeout 100ms→50ms: reader loop iterates faster, writes processed sooner
+- [x] SSH Error backoff 100-200ms→10-50ms: faster recovery from transient errors
+- [x] SSH Max consecutive errors 50→15: faster dead connection detection
+- [x] SSH Resize retry sleep 50ms→20ms, retries 5→3
+- [x] SSH Flusher timeout 50ms→16ms (~60fps rendering)
+- [x] PTY Flusher timeout 50ms→16ms (~60fps rendering)
+- [x] SSHPanel: buffered async write queue (batches rapid keystrokes)
+- [x] SSHPanel: debounced onResize (80ms) prevents IPC flooding during window drag
+- [x] TerminalPanel: buffered async write queue for both PTY and SSH paths
+- [x] TerminalPanel: debounced onResize (80ms) for PTY/SSH
+- [x] TerminalPanel: fix fetchSuggestions debounce timer not cleared on early return
+- [x] TypeScript + Rust compilation verified
+
 ## Pending
 - [ ] Test Cross-Server Navigation with real SSH servers
 - [ ] Test Infrastructure Monitor with real SSH servers

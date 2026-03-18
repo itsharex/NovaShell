@@ -3,6 +3,7 @@ use std::io::Read;
 use std::net::TcpStream;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
+use std::sync::mpsc;
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 use tauri::Emitter;
@@ -13,6 +14,7 @@ pub struct SshSession {
     _reader_thread: Option<JoinHandle<()>>,
     _flusher_thread: Option<JoinHandle<()>>,
     running: Arc<AtomicBool>,
+    write_tx: mpsc::Sender<Vec<u8>>,
 }
 
 impl Drop for SshSession {
@@ -125,13 +127,16 @@ impl SshSession {
         // Keep session in BLOCKING mode — use read timeout for non-blocking behavior
         // This avoids the race condition of switching blocking/non-blocking between threads
         session.set_blocking(true);
-        session.set_timeout(100); // 100ms timeout for reads — returns WouldBlock-like error if no data
+        session.set_timeout(50); // 50ms timeout for reads — faster loop = more responsive writes
 
         let session = Arc::new(Mutex::new(session));
         let channel = Arc::new(Mutex::new(channel));
 
         let running = Arc::new(AtomicBool::new(true));
         let sid = session_id.to_string();
+
+        // Write queue — IPC pushes here (instant), reader thread processes (no lock contention)
+        let (write_tx, write_rx) = mpsc::channel::<Vec<u8>>();
 
         // Shared batch buffer + condvar for efficient batching (mirrors PTY pattern)
         let batch: Arc<Mutex<String>> = Arc::new(Mutex::new(String::new()));
@@ -142,7 +147,8 @@ impl SshSession {
         let exit_event = format!("ssh-exit-{}", sid);
         let error_event = format!("ssh-error-{}", sid);
 
-        // Reader thread: reads from SSH channel and appends to shared batch
+        // Reader thread: processes writes from queue + reads from SSH channel
+        // All channel I/O happens in this single thread — zero lock contention with IPC
         let running_reader = Arc::clone(&running);
         let channel_clone = Arc::clone(&channel);
         let session_clone = Arc::clone(&session);
@@ -156,7 +162,7 @@ impl SshSession {
         let reader_thread = std::thread::spawn(move || {
             let mut buf = [0u8; 16384]; // 16KB buffer
             let mut consecutive_errors: u32 = 0;
-            let max_consecutive_errors: u32 = 50;
+            let max_consecutive_errors: u32 = 15;
             let mut last_keepalive = Instant::now();
             let keepalive_interval = Duration::from_secs(15);
 
@@ -165,6 +171,20 @@ impl SshSession {
                     break;
                 }
 
+                // 1. Process pending writes FIRST (input has priority for responsiveness)
+                {
+                    let mut ch = match channel_clone.lock() {
+                        Ok(ch) => ch,
+                        Err(_) => break,
+                    };
+                    use std::io::Write;
+                    while let Ok(data) = write_rx.try_recv() {
+                        let _ = ch.write_all(&data);
+                        let _ = ch.flush();
+                    }
+                }
+
+                // 2. Read from channel
                 let result = {
                     let mut ch = match channel_clone.lock() {
                         Ok(ch) => ch,
@@ -249,7 +269,7 @@ impl SshSession {
                             break;
                         }
 
-                        let backoff = if is_transient { 200 } else { 100 };
+                        let backoff = if is_transient { 50 } else { 10 };
                         std::thread::sleep(Duration::from_millis(backoff));
                     }
                 }
@@ -264,13 +284,13 @@ impl SshSession {
 
         let flusher_thread = std::thread::spawn(move || {
             loop {
-                // Wait for data signal or 50ms timeout (smooth rendering)
+                // Wait for data signal or 16ms timeout (~60fps rendering)
                 {
                     let lock = match batch_flusher.lock() {
                         Ok(l) => l,
                         Err(e) => e.into_inner(),
                     };
-                    let _ = data_ready_flusher.wait_timeout(lock, Duration::from_millis(50));
+                    let _ = data_ready_flusher.wait_timeout(lock, Duration::from_millis(16));
                 }
 
                 if !running_flusher.load(Ordering::Relaxed) {
@@ -291,35 +311,15 @@ impl SshSession {
             _reader_thread: Some(reader_thread),
             _flusher_thread: Some(flusher_thread),
             running,
+            write_tx,
         })
     }
 
     pub fn write(&self, data: &[u8]) -> Result<(), String> {
-        // Lock BOTH session and channel together to avoid race conditions
-        // The reader thread also locks these, so this blocks until reader releases
-        let _session = self.session.lock()
-            .map_err(|e| format!("Session lock error: {}", e))?;
-        let mut channel = self.channel.lock()
-            .map_err(|e| format!("Channel lock error: {}", e))?;
-
-        // Retry if we get a transient timeout during write.
-        use std::io::Write;
-        let mut retries = 0;
-        loop {
-            match channel.write_all(data) {
-                Ok(()) => break,
-                Err(ref e) if (e.kind() == std::io::ErrorKind::WouldBlock
-                    || e.kind() == std::io::ErrorKind::TimedOut) && retries < 5 => {
-                    retries += 1;
-                    std::thread::sleep(Duration::from_millis(20));
-                }
-                Err(e) => return Err(format!("SSH write error: {}", e)),
-            }
-        }
-        channel.flush()
-            .map_err(|e| format!("SSH flush error: {}", e))?;
-
-        Ok(())
+        // Push to write queue — instant, zero blocking
+        // The reader thread drains the queue and writes to the SSH channel
+        self.write_tx.send(data.to_vec())
+            .map_err(|e| format!("SSH write queue error: {}", e))
     }
 
     pub fn resize(&self, cols: u32, rows: u32) -> Result<(), String> {
@@ -332,11 +332,11 @@ impl SshSession {
         loop {
             match channel.request_pty_size(cols, rows, None, None) {
                 Ok(()) => break,
-                Err(ref e) if retries < 5 => {
+                Err(ref e) if retries < 3 => {
                     let err_str = e.to_string();
                     if err_str.contains("EAGAIN") || err_str.contains("timeout") {
                         retries += 1;
-                        std::thread::sleep(Duration::from_millis(50));
+                        std::thread::sleep(Duration::from_millis(20));
                     } else {
                         return Err(format!("SSH resize error: {}", e));
                     }

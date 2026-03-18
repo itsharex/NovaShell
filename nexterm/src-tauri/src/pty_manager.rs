@@ -133,13 +133,13 @@ impl PtySession {
 
         let flusher_thread = std::thread::spawn(move || {
             loop {
-                // Wait for data signal or 50ms timeout (for smooth rendering)
+                // Wait for data signal or 16ms timeout (~60fps rendering)
                 {
                     let lock = match batch_flusher.lock() {
                         Ok(l) => l,
                         Err(e) => e.into_inner(), // recover from poisoned mutex
                     };
-                    let _ = data_ready_flusher.wait_timeout(lock, Duration::from_millis(50));
+                    let _ = data_ready_flusher.wait_timeout(lock, Duration::from_millis(16));
                 }
 
                 if !running_flusher.load(Ordering::Relaxed) {

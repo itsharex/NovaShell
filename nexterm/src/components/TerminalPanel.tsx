@@ -394,12 +394,12 @@ export function TerminalPanel() {
   // Debounced suggestion fetcher
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const fetchSuggestions = useCallback((prefix: string) => {
+    if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
     if (prefix.length < 2) {
       setSuggestions([]);
       setShowAutocomplete(false);
       return;
     }
-    if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
     debounceTimerRef.current = setTimeout(async () => {
       try {
         const { invoke } = await getTauriCore();
@@ -493,12 +493,30 @@ export function TerminalPanel() {
       let sessionId: string | null = null;
       // Live session tracking — updated by cross-server navigation
       const liveSession = { id: null as string | null, type: "pty" as "pty" | "ssh" };
+
+      // Buffered async write — batches rapid keystrokes, never blocks JS
+      let liveWriteQueue = "";
+      let liveWriteFlushing = false;
+      const flushLiveWriteQueue = async () => {
+        if (!liveWriteQueue || !liveSession.id) { liveWriteFlushing = false; return; }
+        liveWriteFlushing = true;
+        const toSend = liveWriteQueue;
+        liveWriteQueue = "";
+        try {
+          const { invoke } = await getTauriCore();
+          const cmd = liveSession.type === "ssh" ? "ssh_write" : "write_to_pty";
+          await invoke(cmd, { sessionId: liveSession.id, data: toSend });
+        } catch { /* session may be closed */ }
+        if (liveWriteQueue) {
+          flushLiveWriteQueue();
+        } else {
+          liveWriteFlushing = false;
+        }
+      };
       const writeToLiveSession = (text: string) => {
         if (!liveSession.id) return;
-        const cmd = liveSession.type === "ssh" ? "ssh_write" : "write_to_pty";
-        getTauriCore().then(({ invoke }) => {
-          invoke(cmd, { sessionId: liveSession.id, data: text });
-        });
+        liveWriteQueue += text;
+        if (!liveWriteFlushing) flushLiveWriteQueue();
       };
 
       // Copy: Ctrl+C with selection copies to clipboard (otherwise sends SIGINT)
@@ -596,9 +614,28 @@ export function TerminalPanel() {
 
         let ptyInputBuffer = "";
         const currentTermRef = { sessionId, sessionType: "pty" as "pty" | "ssh", activeDataUnlisten: unlistenData as (() => void) | null };
+
+        // Buffered write — batches rapid input, never blocks event loop
+        let sessionWriteQueue = "";
+        let sessionWriteFlushing = false;
+        const flushSessionWriteQueue = async () => {
+          if (!sessionWriteQueue || !currentTermRef.sessionId) { sessionWriteFlushing = false; return; }
+          sessionWriteFlushing = true;
+          const toSend = sessionWriteQueue;
+          sessionWriteQueue = "";
+          try {
+            const cmd = currentTermRef.sessionType === "ssh" ? "ssh_write" : "write_to_pty";
+            await invoke(cmd, { sessionId: currentTermRef.sessionId, data: toSend });
+          } catch { /* session may be closed */ }
+          if (sessionWriteQueue) {
+            flushSessionWriteQueue();
+          } else {
+            sessionWriteFlushing = false;
+          }
+        };
         const writeToSession = (d: string) => {
-          const cmd = currentTermRef.sessionType === "ssh" ? "ssh_write" : "write_to_pty";
-          invoke(cmd, { sessionId: currentTermRef.sessionId, data: d });
+          sessionWriteQueue += d;
+          if (!sessionWriteFlushing) flushSessionWriteQueue();
         };
         const dataDisposable = terminal.onData((data) => {
           // Check for cross-server navigation on Enter
@@ -674,9 +711,14 @@ export function TerminalPanel() {
         });
         disposables.push(dataDisposable);
 
+        // Debounced resize — avoids flooding IPC during window drag
+        let termResizeTimer: ReturnType<typeof setTimeout> | null = null;
         const resizeDisposable = terminal.onResize(({ cols, rows }) => {
-          const resizeCmd = currentTermRef.sessionType === "ssh" ? "ssh_resize" : "resize_pty";
-          invoke(resizeCmd, { sessionId: currentTermRef.sessionId, cols, rows });
+          if (termResizeTimer) clearTimeout(termResizeTimer);
+          termResizeTimer = setTimeout(() => {
+            const resizeCmd = currentTermRef.sessionType === "ssh" ? "ssh_resize" : "resize_pty";
+            invoke(resizeCmd, { sessionId: currentTermRef.sessionId, cols, rows });
+          }, 80);
         });
         disposables.push(resizeDisposable);
 

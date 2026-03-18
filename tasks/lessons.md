@@ -148,6 +148,15 @@
 - Config save at 500ms debounce fires too often when many state changes happen in sequence (e.g., terminal resize + history add + command count) — 2000ms is much safer
 - Shell init delay of 2000ms for PowerShell was unnecessarily conservative — 800ms is sufficient, and bash 300ms is fine
 
+## SSH Write Queue Architecture — CRITICAL (v2.4.6)
+- The #1 cause of SSH lag was lock contention: reader thread holds channel Mutex during blocking ch.read() (up to 100ms), and every keystroke IPC call also needed that same Mutex
+- Fix: mpsc write queue — IPC just pushes Vec<u8> to queue (instant), reader thread drains queue before each read
+- This means ALL channel I/O happens in a single thread — zero Mutex contention between IPC and reader
+- The write() method went from "lock session + lock channel + retry + sleep + flush" to "mpsc send" — literally instant
+- Resize still needs the Mutex (infrequent), but with session timeout reduced from 100ms to 50ms, contention window is halved
+- Frontend buffered write queue further helps: batches rapid keystrokes into fewer IPC calls
+- Combined with flusher at 16ms (60fps) instead of 50ms, SSH now feels as responsive as local PTY
+
 ## Windows / Antivirus
 - Unsigned compiled `.exe` files in project root trigger Windows Defender false positives
 - Add `*.exe`, `*.msi`, `*.dmg`, etc. to `.gitignore` to prevent accidental commits

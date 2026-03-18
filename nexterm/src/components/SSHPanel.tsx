@@ -421,12 +421,36 @@ export function SSHPanel() {
         });
         unlisteners.push(unError);
 
+        // Buffered async write — batches rapid keystrokes, never blocks JS event loop
+        let writeQueue = "";
+        let writeFlushing = false;
+        const flushWriteQueue = async () => {
+          if (!writeQueue) { writeFlushing = false; return; }
+          writeFlushing = true;
+          const toSend = writeQueue;
+          writeQueue = "";
+          try {
+            await invoke("ssh_write", { sessionId: activeSessionId, data: toSend });
+          } catch { /* session may be closed */ }
+          if (writeQueue) {
+            flushWriteQueue();
+          } else {
+            writeFlushing = false;
+          }
+        };
+
         const dataDisposable = terminal.onData((data) => {
-          invoke("ssh_write", { sessionId: activeSessionId, data });
+          writeQueue += data;
+          if (!writeFlushing) flushWriteQueue();
         });
 
+        // Debounced resize — avoids flooding IPC during window drag
+        let sshResizeTimer: ReturnType<typeof setTimeout> | null = null;
         const resizeDisposable = terminal.onResize(({ cols, rows }) => {
-          invoke("ssh_resize", { sessionId: activeSessionId, cols, rows });
+          if (sshResizeTimer) clearTimeout(sshResizeTimer);
+          sshResizeTimer = setTimeout(() => {
+            invoke("ssh_resize", { sessionId: activeSessionId, cols, rows });
+          }, 80);
         });
 
         // Initial resize

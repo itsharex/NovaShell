@@ -1803,13 +1803,20 @@ function DiskAnalyzerView({
                                 <ActionBtn label={t("disk.clean")} icon={<Eraser size={10} />}
                                   onClick={() => {
                                     const warnings: Record<string, string> = {
-                                      docker: "This will remove ALL unused containers, networks, and dangling images. Running containers are safe.",
-                                      oldkernels: "This will permanently remove old kernel packages. Current running kernel is always kept.",
-                                      trash: "This will permanently empty the trash. Files cannot be recovered after this.",
-                                      devcache: "This will clear npm, yarn, and pip download caches. Packages will re-download on next install.",
-                                      journal: "This will delete system logs older than 7 days. Recent logs are preserved.",
+                                      logs: "🟢 SAFE — Only deletes old compressed log copies (.gz, .old, .1). Active logs are NOT touched. Impact: none.",
+                                      journal: "🟢 SAFE — Deletes system event logs older than 7 days. Recent logs stay. Impact: you lose old diagnostic history, but the system works fine.",
+                                      cache: "🟡 CAUTION — System cache used by apps to load faster. After cleaning, some apps may be slower the first time they open.",
+                                      pkgcache: "🟢 SAFE — Old downloaded installers (.deb/.rpm) already installed. Cleaning just means they re-download if you reinstall. Impact: none.",
+                                      tmp: "🟢 SAFE — Temporary files older than 7 days that no program is using. Impact: none.",
+                                      docker: "🟡 CAUTION — Removes stopped containers, unused networks, and orphan images. Running containers are NOT affected. Impact: you may need to re-pull images you deleted.",
+                                      coredumps: "🟢 SAFE — Crash reports from failed programs. Only useful for developers debugging crashes. Impact: none.",
+                                      devcache: "🟢 SAFE — Downloaded package files (npm/yarn/pip). After cleaning, packages re-download automatically on next install. Impact: slightly slower first install.",
+                                      trash: "🔴 WARNING — Permanently deletes ALL files in your trash. Once emptied, files CANNOT be recovered. Make sure you don't need anything in the trash.",
+                                      thumbnails: "🟢 SAFE — Cached image previews. They regenerate automatically when you browse folders. Impact: folders may load slightly slower once.",
+                                      oldkernels: "🟡 CAUTION — Removes old Linux kernel versions. The current running kernel is ALWAYS kept safe. Impact: you can't boot into removed old versions (rarely needed).",
+                                      snaps: "🟡 CAUTION — Snap package data. Remove individual snaps manually with 'snap remove'. Impact: removed apps stop working.",
                                     };
-                                    setCleanConfirm({ catId: cat.id, cmd: cat.cleanCmd!, name: cat.name, warning: warnings[cat.id] });
+                                    setCleanConfirm({ catId: cat.id, cmd: cat.cleanCmd!, name: cat.name, warning: warnings[cat.id] || "Review what will be deleted before confirming." });
                                   }} />
                               )
                             )}
@@ -1856,9 +1863,18 @@ function DiskAnalyzerView({
                     )}
                   </div>
                   {batchConfirm && (
-                    <div style={{ fontSize: 9, color: "#ffb347", background: "rgba(255,179,71,0.1)", padding: "4px 6px", borderRadius: 3, marginTop: 6, display: "flex", alignItems: "center", gap: 4 }}>
-                      <AlertTriangle size={10} style={{ flexShrink: 0 }} />
-                      <span>This will permanently delete files from {selectedClean.size} categories (~{formatSize(selectedTotal)}). This action cannot be undone.</span>
+                    <div style={{ fontSize: 9, color: "#ffb347", background: "rgba(255,179,71,0.1)", padding: "6px 8px", borderRadius: 3, marginTop: 6, lineHeight: 1.5 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 4, fontWeight: 600, marginBottom: 3 }}>
+                        <AlertTriangle size={10} style={{ flexShrink: 0 }} />
+                        <span>Are you sure? This cannot be undone.</span>
+                      </div>
+                      <div style={{ color: "var(--text-secondary)" }}>
+                        This will permanently delete ~{formatSize(selectedTotal)} from {selectedClean.size} categories:
+                        <br />
+                        {activeAnalysis.categories.filter((c) => selectedClean.has(c.id)).map((c) => c.name).join(", ")}.
+                        <br />
+                        <span style={{ color: "var(--text-muted)" }}>Tip: Use "Inspect" on each category first to see exactly what will be deleted.</span>
+                      </div>
                     </div>
                   )}
                 </div>

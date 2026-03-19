@@ -1720,10 +1720,42 @@ function DiskAnalyzerView({
             <div style={{ background: "var(--bg-secondary)", borderRadius: "var(--radius-md)", border: "1px solid var(--border-subtle)", padding: 12 }}>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
                 <span style={{ fontWeight: 600, fontSize: 12 }}>{t("disk.cleanup")}</span>
-                {activeAnalysis.totalReclaimableMB > 0 && (
-                  <span style={{ fontSize: 10, fontWeight: 600, color: "#3fb950", background: "rgba(63,185,80,0.1)", padding: "2px 8px", borderRadius: 8 }}>
-                    ~{formatSize(activeAnalysis.totalReclaimableMB)} {t("disk.reclaimable")}
-                  </span>
+                <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
+                  {activeAnalysis.totalReclaimableMB > 0 && (
+                    <span style={{ fontSize: 10, fontWeight: 600, color: "#3fb950", background: "rgba(63,185,80,0.1)", padding: "2px 8px", borderRadius: 8 }}>
+                      ~{formatSize(activeAnalysis.totalReclaimableMB)} {t("disk.reclaimable")}
+                    </span>
+                  )}
+                </div>
+              </div>
+              {/* Quick actions: Select Safe / Select All / Deselect */}
+              <div style={{ display: "flex", gap: 4, marginBottom: 8 }}>
+                <button
+                  onClick={() => {
+                    const safeIds = ["logs", "journal", "pkgcache", "tmp", "coredumps", "devcache", "thumbnails"];
+                    const safe = new Set(activeAnalysis.categories.filter((c) => safeIds.includes(c.id) && c.reclaimable && c.cleanCmd).map((c) => c.id));
+                    setSelectedClean(safe);
+                  }}
+                  style={{ padding: "3px 8px", fontSize: 9, fontWeight: 600, background: "rgba(63,185,80,0.1)", color: "#3fb950", border: "1px solid rgba(63,185,80,0.2)", borderRadius: "var(--radius-sm)", cursor: "pointer", fontFamily: "inherit" }}
+                >
+                  🟢 Quick Safe Clean
+                </button>
+                <button
+                  onClick={() => {
+                    const all = new Set(activeAnalysis.categories.filter((c) => c.reclaimable && c.cleanCmd).map((c) => c.id));
+                    setSelectedClean(all);
+                  }}
+                  style={{ padding: "3px 8px", fontSize: 9, background: "var(--bg-tertiary)", color: "var(--text-secondary)", border: "1px solid var(--border-subtle)", borderRadius: "var(--radius-sm)", cursor: "pointer", fontFamily: "inherit" }}
+                >
+                  Select All
+                </button>
+                {selectedClean.size > 0 && (
+                  <button
+                    onClick={() => setSelectedClean(new Set())}
+                    style={{ padding: "3px 8px", fontSize: 9, background: "var(--bg-tertiary)", color: "var(--text-muted)", border: "1px solid var(--border-subtle)", borderRadius: "var(--radius-sm)", cursor: "pointer", fontFamily: "inherit" }}
+                  >
+                    Deselect All
+                  </button>
                 )}
               </div>
 
@@ -1756,13 +1788,30 @@ function DiskAnalyzerView({
                           {categoryIcons[cat.icon] || <HardDrive size={14} />}
                         </span>
                         <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ display: "flex", justifyContent: "space-between" }}>
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                             <span style={{ fontSize: 11, fontWeight: 500 }}>{cat.name}</span>
-                            <span style={{ fontSize: 11, fontWeight: 600, color: cat.sizeMB > 500 ? "#d29922" : "var(--text-secondary)" }}>
-                              {formatSize(cat.sizeMB)}
-                            </span>
+                            <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                              {activeAnalysis.totalReclaimableMB > 0 && cat.reclaimable && (
+                                <span style={{ fontSize: 8, color: "var(--text-muted)" }}>
+                                  {Math.round((cat.sizeMB / activeAnalysis.totalReclaimableMB) * 100)}%
+                                </span>
+                              )}
+                              <span style={{ fontSize: 11, fontWeight: 600, color: cat.sizeMB > 500 ? "#d29922" : "var(--text-secondary)" }}>
+                                {formatSize(cat.sizeMB)}
+                              </span>
+                            </div>
                           </div>
                           <div style={{ fontSize: 9, color: "var(--text-muted)", marginTop: 1 }}>{cat.description}</div>
+                          {/* Proportion bar */}
+                          {cat.sizeMB > 0 && (
+                            <div style={{ height: 3, background: "var(--bg-tertiary)", borderRadius: 2, marginTop: 3, overflow: "hidden" }}>
+                              <div style={{
+                                height: "100%", borderRadius: 2, transition: "width 0.3s ease",
+                                width: `${Math.min(100, (cat.sizeMB / (activeAnalysis.categories[0]?.sizeMB || 1)) * 100)}%`,
+                                background: cat.reclaimable ? "#3fb950" : "var(--text-muted)", opacity: 0.6,
+                              }} />
+                            </div>
+                          )}
                         </div>
                       </div>
 

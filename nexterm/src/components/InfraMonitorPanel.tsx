@@ -774,7 +774,7 @@ export function InfraMonitorPanel() {
             ) : v === "compare" ? (
               <span style={{ display: "inline-flex", alignItems: "center", gap: 3 }}>
                 <ArrowUpDown size={10} />
-                Compare
+                {t("infra.compare")}
               </span>
             ) : t(`infra.${v}`)}
             {v === "alerts" && unacknowledgedAlerts.length > 0 && (
@@ -1768,7 +1768,8 @@ function CompareView({
     return (
       <div style={{ textAlign: "center", padding: 30, color: "var(--text-muted)", fontSize: 12 }}>
         <Activity size={28} style={{ marginBottom: 8, opacity: 0.3 }} />
-        <div>Start monitoring servers to compare metrics.</div>
+        <div>{t("infra.startMonitoring")}</div>
+        <div style={{ fontSize: 10, marginTop: 4, opacity: 0.6 }}>{t("infra.connectFirst")}</div>
       </div>
     );
   }
@@ -1907,8 +1908,8 @@ function SettingsView({
               <span style={{ width: 40, textTransform: "uppercase", fontSize: 10, color: "var(--text-muted)" }}>
                 {metric}
               </span>
-              <label style={{ fontSize: 10, display: "flex", alignItems: "center", gap: 4 }}>
-                Warn:
+              <label style={{ fontSize: 10, display: "flex", alignItems: "center", gap: 4, color: "var(--accent-warning)" }}>
+                {t("infra.warn")}:
                 <input
                   type="number"
                   value={thresholds[wKey]}
@@ -1917,9 +1918,10 @@ function SettingsView({
                   min={0}
                   max={100}
                 />
+                <span style={{ color: "var(--text-muted)", fontSize: 9 }}>%</span>
               </label>
-              <label style={{ fontSize: 10, display: "flex", alignItems: "center", gap: 4 }}>
-                Crit:
+              <label style={{ fontSize: 10, display: "flex", alignItems: "center", gap: 4, color: "var(--accent-error)" }}>
+                {t("infra.crit")}:
                 <input
                   type="number"
                   value={thresholds[cKey]}
@@ -1928,18 +1930,19 @@ function SettingsView({
                   min={0}
                   max={100}
                 />
+                <span style={{ color: "var(--text-muted)", fontSize: 9 }}>%</span>
               </label>
             </div>
           );
         })}
       </div>
 
-      <div style={{ fontSize: 10, color: "var(--text-muted)", lineHeight: 1.5 }}>
-        <strong>Anomaly Detection:</strong> Automatic — alerts when a metric spikes above mean + 2sigma even if below fixed thresholds.
-        <br />
-        <strong>Cross-Server Correlation:</strong> Shown when 2+ servers alert within 30 seconds.
-        <br />
-        <strong>Timeline:</strong> All events (alerts, actions, connections) are logged to the global timeline.
+      <div style={{ fontSize: 10, color: "var(--text-muted)", lineHeight: 1.5, marginTop: 4, padding: "6px 8px", background: "var(--bg-primary)", borderRadius: "var(--radius-sm)" }}>
+        <strong>{t("infra.overview")}:</strong> {t("infra.anomalyDesc")}
+        <br /><br />
+        <strong>{t("infra.alerts")}:</strong> {t("infra.correlationDesc")}
+        <br /><br />
+        <strong>{t("infra.timeline")}:</strong> {t("infra.timelineDesc")}
       </div>
     </div>
   );

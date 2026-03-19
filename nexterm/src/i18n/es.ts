@@ -237,6 +237,7 @@ export const es: Record<string, any> = {
     timeline: "Linea de Tiempo",
     alerts: "Alertas",
     disk: "Disco",
+    compare: "Comparar",
     settings: "Configuracion",
     monitored: "monitoreado(s)",
     polling: "Sondeo",

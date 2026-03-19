@@ -22,6 +22,17 @@ const customColorLabels: { key: keyof CustomThemeColors; label: string }[] = [
   { key: "terminalCursor", label: "Cursor" },
 ];
 
+const defaultCustomColors: CustomThemeColors = {
+  bgPrimary: "#1a1b2e",
+  bgSecondary: "#16182d",
+  textPrimary: "#e0e0f0",
+  accentPrimary: "#7c5cff",
+  accentSecondary: "#00d9a3",
+  terminalBg: "#1a1b2e",
+  terminalFg: "#e0e0f0",
+  terminalCursor: "#7c5cff",
+};
+
 export function TitleBar() {
   const theme = useAppStore((s) => s.theme);
   const setTheme = useAppStore((s) => s.setTheme);
@@ -116,6 +127,32 @@ export function TitleBar() {
                     <span style={{ fontSize: 9, color: "var(--text-muted)", fontFamily: "monospace" }}>{customTheme[key]}</span>
                   </div>
                 ))}
+                <div style={{ display: "flex", gap: 4, marginTop: 8, borderTop: "1px solid var(--border-subtle)", paddingTop: 8 }}>
+                  <button
+                    onClick={() => setPickerOpen(false)}
+                    style={{
+                      flex: 1, padding: "4px 8px", fontSize: 10, fontWeight: 600, cursor: "pointer",
+                      background: "var(--accent-primary)", color: "white", border: "none",
+                      borderRadius: "var(--radius-sm)", fontFamily: "inherit",
+                    }}
+                  >
+                    Apply
+                  </button>
+                  <button
+                    onClick={() => {
+                      for (const k of Object.keys(defaultCustomColors) as (keyof CustomThemeColors)[]) {
+                        setCustomThemeColor(k, defaultCustomColors[k]);
+                      }
+                    }}
+                    style={{
+                      padding: "4px 8px", fontSize: 10, cursor: "pointer",
+                      background: "var(--bg-tertiary)", color: "var(--text-secondary)",
+                      border: "1px solid var(--border-subtle)", borderRadius: "var(--radius-sm)", fontFamily: "inherit",
+                    }}
+                  >
+                    Reset
+                  </button>
+                </div>
               </div>
             )}
           </div>

@@ -109,7 +109,7 @@ export function TitleBar() {
                     <input
                       type="color"
                       value={customTheme[key]}
-                      onChange={(e) => setCustomThemeColor(key, e.target.value)}
+                      onInput={(e) => setCustomThemeColor(key, (e.target as HTMLInputElement).value)}
                       style={{ width: 22, height: 18, padding: 0, border: "1px solid var(--border-subtle)", borderRadius: 3, cursor: "pointer", background: "none" }}
                     />
                     <span style={{ fontSize: 10, color: "var(--text-secondary)", flex: 1 }}>{label}</span>

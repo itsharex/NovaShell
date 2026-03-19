@@ -28,9 +28,31 @@ function App() {
   const [paletteOpen, setPaletteOpen] = useState(false);
   const isResizing = useRef(false);
 
+  const customTheme = useAppStore((s) => s.customTheme);
+
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", theme);
-  }, [theme]);
+    // Apply custom theme CSS variables when custom theme is active
+    if (theme === "custom") {
+      const root = document.documentElement;
+      root.style.setProperty("--bg-primary", customTheme.bgPrimary);
+      root.style.setProperty("--bg-secondary", customTheme.bgSecondary);
+      root.style.setProperty("--bg-tertiary", customTheme.bgSecondary);
+      root.style.setProperty("--text-primary", customTheme.textPrimary);
+      root.style.setProperty("--accent-primary", customTheme.accentPrimary);
+      root.style.setProperty("--accent-secondary", customTheme.accentSecondary);
+      root.style.setProperty("--terminal-bg", customTheme.terminalBg);
+      root.style.setProperty("--terminal-cursor", customTheme.terminalCursor);
+      root.style.setProperty("--titlebar-bg", customTheme.bgPrimary);
+      root.style.setProperty("--sidebar-bg", customTheme.bgPrimary);
+      root.style.setProperty("--statusbar-bg", customTheme.bgPrimary);
+    } else {
+      // Clear inline styles when switching away from custom
+      const root = document.documentElement;
+      const props = ["--bg-primary", "--bg-secondary", "--bg-tertiary", "--text-primary", "--accent-primary", "--accent-secondary", "--terminal-bg", "--terminal-cursor", "--titlebar-bg", "--sidebar-bg", "--statusbar-bg"];
+      props.forEach((p) => root.style.removeProperty(p));
+    }
+  }, [theme, customTheme]);
 
   // Command Palette shortcut: Ctrl+K
   useEffect(() => {

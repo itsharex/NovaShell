@@ -146,12 +146,29 @@ const btnStyle: React.CSSProperties = {
   gap: 6,
 };
 
+function getTermColors(theme: string): Record<string, string> {
+  if (theme === "custom") {
+    const ct = useAppStore.getState().customTheme;
+    return {
+      background: ct.terminalBg, foreground: ct.terminalFg,
+      cursor: ct.terminalCursor, cursorAccent: ct.terminalBg,
+      selectionBackground: ct.accentPrimary + "66", selectionForeground: "#ffffff",
+      black: "#484f58", red: "#ff7b72", green: "#3fb950", yellow: "#d29922",
+      blue: ct.accentPrimary, magenta: "#bc8cff", cyan: ct.accentSecondary, white: "#b1bac4",
+      brightBlack: "#6e7681", brightRed: "#ffa198", brightGreen: "#56d364", brightYellow: "#e3b341",
+      brightBlue: ct.accentPrimary, brightMagenta: "#d2a8ff", brightCyan: ct.accentSecondary, brightWhite: "#f0f6fc",
+    };
+  }
+  return themeColors[theme] || themeColors.dark;
+}
+
 export function SSHPanel() {
   const sshConnections = useAppStore((s) => s.sshConnections);
   const addSSHConnection = useAppStore((s) => s.addSSHConnection);
   const updateSSHConnection = useAppStore((s) => s.updateSSHConnection);
   const removeSSHConnection = useAppStore((s) => s.removeSSHConnection);
   const theme = useAppStore((s) => s.theme);
+  const customTheme = useAppStore((s) => s.customTheme);
   const t = useT();
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -325,7 +342,7 @@ export function SSHPanel() {
       sshTermRef.current = null;
     }
 
-    const colors = themeColors[theme] || themeColors.dark;
+    const colors = getTermColors(theme);
     const terminal = new Terminal({
       fontFamily: "'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace",
       fontSize: 14,
@@ -506,10 +523,9 @@ export function SSHPanel() {
   // Update terminal theme when it changes
   useEffect(() => {
     if (sshTermRef.current) {
-      const colors = themeColors[theme] || themeColors.dark;
-      sshTermRef.current.terminal.options.theme = colors;
+      sshTermRef.current.terminal.options.theme = getTermColors(theme);
     }
-  }, [theme]);
+  }, [theme, customTheme]);
 
   // Cleanup on unmount
   useEffect(() => {

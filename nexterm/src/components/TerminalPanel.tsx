@@ -881,12 +881,26 @@ export function TerminalPanel() {
     return () => { observer.disconnect(); if (resizeTimer) clearTimeout(resizeTimer); };
   }, []);
 
+  const customTheme = useAppStore((s) => s.customTheme);
   useEffect(() => {
-    const colors = themeColors[theme] || themeColors.dark;
+    let colors: Record<string, string>;
+    if (theme === "custom") {
+      colors = {
+        background: customTheme.terminalBg, foreground: customTheme.terminalFg,
+        cursor: customTheme.terminalCursor, cursorAccent: customTheme.terminalBg,
+        selectionBackground: customTheme.accentPrimary + "66", selectionForeground: "#ffffff",
+        black: "#484f58", red: "#ff7b72", green: "#3fb950", yellow: "#d29922",
+        blue: customTheme.accentPrimary, magenta: "#bc8cff", cyan: customTheme.accentSecondary, white: "#b1bac4",
+        brightBlack: "#6e7681", brightRed: "#ffa198", brightGreen: "#56d364", brightYellow: "#e3b341",
+        brightBlue: customTheme.accentPrimary, brightMagenta: "#d2a8ff", brightCyan: customTheme.accentSecondary, brightWhite: "#f0f6fc",
+      };
+    } else {
+      colors = themeColors[theme] || themeColors.dark;
+    }
     terminalsRef.current.forEach((termRef) => {
       termRef.terminal.options.theme = colors;
     });
-  }, [theme]);
+  }, [theme, customTheme]);
 
   useEffect(() => {
     return () => {

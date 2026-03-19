@@ -1,6 +1,17 @@
 import { create } from "zustand";
 
-export type ThemeName = "dark" | "light" | "cyberpunk" | "retro" | "hacking";
+export type ThemeName = "dark" | "light" | "cyberpunk" | "retro" | "hacking" | "custom";
+
+export interface CustomThemeColors {
+  bgPrimary: string;
+  bgSecondary: string;
+  textPrimary: string;
+  accentPrimary: string;
+  accentSecondary: string;
+  terminalBg: string;
+  terminalFg: string;
+  terminalCursor: string;
+}
 export type SidebarTab = "history" | "snippets" | "preview" | "plugins" | "stats" | "ssh" | "sftp" | "servermap" | "editor" | "debug" | "ai" | "docs" | "hacking" | "infra";
 export type AppLanguage = "en" | "es";
 
@@ -290,6 +301,7 @@ export interface DiskGrowthEntry {
 // === File-based persistence (survives app updates) ===
 interface PersistedConfig {
   theme?: ThemeName;
+  customTheme?: CustomThemeColors;
   snippets?: Snippet[];
   snippetFolders?: SnippetFolder[];
   sshConnections?: Array<Omit<SSHConnection, "status" | "sessionId" | "errorMessage" | "sessionPassword">>;
@@ -321,6 +333,7 @@ function buildPersistedConfig(): PersistedConfig {
   const s = useAppStore.getState();
   return {
     theme: s.theme,
+    customTheme: s.customTheme,
     snippets: s.snippets,
     snippetFolders: s.snippetFolders,
     sshConnections: s.sshConnections.map(({ status, sessionId, errorMessage, sessionPassword, ...rest }) => rest),
@@ -379,6 +392,8 @@ interface AppState {
   theme: ThemeName;
   themesVisited: string[];
   setTheme: (theme: ThemeName) => void;
+  customTheme: CustomThemeColors;
+  setCustomThemeColor: (key: keyof CustomThemeColors, value: string) => void;
 
   language: AppLanguage;
   setLanguage: (lang: AppLanguage) => void;
@@ -593,6 +608,20 @@ export const useAppStore = create<AppState>((set, get) => ({
     scheduleSave();
     return { theme, themesVisited: visited };
   }),
+  customTheme: {
+    bgPrimary: "#1a1b2e",
+    bgSecondary: "#16182d",
+    textPrimary: "#e0e0f0",
+    accentPrimary: "#7c5cff",
+    accentSecondary: "#00d9a3",
+    terminalBg: "#1a1b2e",
+    terminalFg: "#e0e0f0",
+    terminalCursor: "#7c5cff",
+  },
+  setCustomThemeColor: (key, value) => {
+    set((s) => ({ customTheme: { ...s.customTheme, [key]: value } }));
+    scheduleSave();
+  },
 
   language: "en" as AppLanguage,
   setLanguage: (lang) => { set({ language: lang }); scheduleSave(); },
@@ -1279,6 +1308,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   _hydrateFromConfig: (config) => {
     const updates: Partial<AppState> = {};
     if (config.theme) updates.theme = config.theme;
+    if (config.customTheme) updates.customTheme = { ...get().customTheme, ...config.customTheme };
     if (config.snippets && config.snippets.length > 0) updates.snippets = config.snippets;
     if (config.snippetFolders) updates.snippetFolders = config.snippetFolders;
     if (config.plugins && config.plugins.length > 0) updates.plugins = config.plugins;

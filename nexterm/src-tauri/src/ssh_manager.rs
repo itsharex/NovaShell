@@ -163,7 +163,7 @@ impl SshSession {
             let mut buf = [0u8; 16384]; // 16KB buffer
             let mut utf8_remainder: Vec<u8> = Vec::new(); // holds incomplete UTF-8 bytes between reads
             let mut consecutive_errors: u32 = 0;
-            let max_consecutive_errors: u32 = 15;
+            let max_consecutive_errors: u32 = 60; // ~6s of transient errors before giving up
             let mut last_keepalive = Instant::now();
             let keepalive_interval = Duration::from_secs(15);
 
@@ -290,6 +290,18 @@ impl SshSession {
                             || err_str.contains("timeout");
 
                         consecutive_errors += 1;
+
+                        // Before giving up on transient errors, try keepalive to verify connection
+                        if is_transient && consecutive_errors == max_consecutive_errors / 2 {
+                            if let Ok(session) = session_clone.lock() {
+                                if session.keepalive_send().is_ok() {
+                                    // Keepalive succeeded — connection is alive, reset counter
+                                    consecutive_errors = 0;
+                                    continue;
+                                }
+                            }
+                        }
+
                         if consecutive_errors >= max_consecutive_errors {
                             if let Ok(mut b) = batch_reader.lock() {
                                 if !b.is_empty() {
@@ -301,7 +313,13 @@ impl SshSession {
                             break;
                         }
 
-                        let backoff = if is_transient { 50 } else { 10 };
+                        // Progressive backoff: start short, grow longer for persistent errors
+                        let backoff = if is_transient {
+                            // 50ms → 100ms → 200ms as errors accumulate
+                            50 + (consecutive_errors as u64 * 5).min(150)
+                        } else {
+                            10
+                        };
                         std::thread::sleep(Duration::from_millis(backoff));
                     }
                 }

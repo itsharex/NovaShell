@@ -436,7 +436,13 @@ export function SSHPanel() {
 
         const unError = await listen<string>(`ssh-error-${activeSessionId}`, (event) => {
           terminal.write(`\r\n\x1b[31m[SSH Error: ${event.payload}]\x1b[0m\r\n`);
+          terminal.write("\r\n\x1b[33m[Connection lost. Click 'Disconnect' then reconnect.]\x1b[0m\r\n");
           useAppStore.getState().addDebugLog({ level: "error", message: event.payload, source: sshSource });
+          // Mark connection as disconnected so UI shows reconnect option
+          const conn = useAppStore.getState().sshConnections.find((c) => c.sessionId === activeSessionId);
+          if (conn) {
+            useAppStore.getState().updateSSHConnection(conn.id, { status: "error", errorMessage: event.payload, sessionId: undefined });
+          }
         });
         unlisteners.push(unError);
 

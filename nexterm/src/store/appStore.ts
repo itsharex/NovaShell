@@ -212,6 +212,8 @@ export interface ServerMetrics {
   loadAvg: [number, number, number];
   topProcesses: { name: string; cpu: number; mem: number }[];
   failedServices: string[];
+  uptimeSecs: number;
+  activeConnections: number;
 }
 
 export interface InfraAlert {

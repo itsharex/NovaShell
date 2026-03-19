@@ -18,6 +18,8 @@ pub struct MetricsSnapshot {
     pub load_avg: [f64; 3],
     pub top_processes: Vec<ProcessInfo>,
     pub failed_services: Vec<String>,
+    pub uptime_secs: u64,
+    pub active_connections: u32,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -51,7 +53,7 @@ impl Drop for MonitoredServer {
     }
 }
 
-const METRICS_SCRIPT: &str = r#"echo "===CPU===" && top -bn1 2>/dev/null | grep 'Cpu(s)' | awk '{printf "%.1f", $2+$4}' && echo "===MEM===" && free 2>/dev/null | awk '/Mem:/{printf "%.1f %d %d", $3/$2*100, $3/1024, $2/1024}' && echo "===DISK===" && df / 2>/dev/null | awk 'NR==2{gsub(/%/,"",$5); printf "%s %s %s", $5, $3, $2}' && echo "===NET===" && cat /proc/net/dev 2>/dev/null | awk 'NR>2{rx+=$2;tx+=$10} END{printf "%d %d", rx, tx}' && echo "===LOAD===" && cat /proc/loadavg 2>/dev/null | cut -d' ' -f1-3 && echo "===PROCS===" && ps aux --sort=-%cpu 2>/dev/null | awk 'NR>1&&NR<=6{printf "%s %.1f %.1f\n",$11,$3,$4}' && echo "===FAILED===" && systemctl list-units --state=failed --no-pager --no-legend 2>/dev/null | head -5"#;
+const METRICS_SCRIPT: &str = r#"echo "===CPU===" && top -bn1 2>/dev/null | grep 'Cpu(s)' | awk '{printf "%.1f", $2+$4}' && echo "===MEM===" && free 2>/dev/null | awk '/Mem:/{printf "%.1f %d %d", $3/$2*100, $3/1024, $2/1024}' && echo "===DISK===" && df / 2>/dev/null | awk 'NR==2{gsub(/%/,"",$5); printf "%s %s %s", $5, $3, $2}' && echo "===NET===" && cat /proc/net/dev 2>/dev/null | awk 'NR>2{rx+=$2;tx+=$10} END{printf "%d %d", rx, tx}' && echo "===LOAD===" && cat /proc/loadavg 2>/dev/null | cut -d' ' -f1-3 && echo "===PROCS===" && ps aux --sort=-%cpu 2>/dev/null | awk 'NR>1&&NR<=6{printf "%s %.1f %.1f\n",$11,$3,$4}' && echo "===FAILED===" && systemctl list-units --state=failed --no-pager --no-legend 2>/dev/null | head -5 && echo "===UPTIME===" && cat /proc/uptime 2>/dev/null | awk '{printf "%d", $1}' && echo "===CONNS===" && ss -tun 2>/dev/null | tail -n+2 | wc -l"#;
 
 fn parse_metrics(output: &str) -> MetricsSnapshot {
     let mut snapshot = MetricsSnapshot {
@@ -69,6 +71,8 @@ fn parse_metrics(output: &str) -> MetricsSnapshot {
         load_avg: [0.0, 0.0, 0.0],
         top_processes: Vec::new(),
         failed_services: Vec::new(),
+        uptime_secs: 0,
+        active_connections: 0,
     };
 
     let mut section = "";
@@ -129,10 +133,15 @@ fn parse_metrics(output: &str) -> MetricsSnapshot {
             }
             "===FAILED===" => {
                 if !trimmed.is_empty() {
-                    // Extract service name (first word)
                     let name = trimmed.split_whitespace().next().unwrap_or(trimmed);
                     snapshot.failed_services.push(name.to_string());
                 }
+            }
+            "===UPTIME===" => {
+                snapshot.uptime_secs = trimmed.parse().unwrap_or(0);
+            }
+            "===CONNS===" => {
+                snapshot.active_connections = trimmed.trim().parse().unwrap_or(0);
             }
             _ => {}
         }

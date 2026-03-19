@@ -305,12 +305,21 @@ function ServerCard({
             </div>
           )}
 
-          {/* Top Processes */}
-          {m.topProcesses.length > 0 && (
-            <div style={{ marginTop: 6, fontSize: 10, color: "var(--text-muted)" }}>
-              Top: {m.topProcesses.slice(0, 3).map((p) => `${p.name.split("/").pop()} ${p.cpu}%`).join(" | ")}
-            </div>
-          )}
+          {/* Uptime + Connections + Top Processes */}
+          <div style={{ marginTop: 6, display: "flex", gap: 8, fontSize: 10, color: "var(--text-muted)", flexWrap: "wrap" }}>
+            {m.uptimeSecs > 0 && (
+              <span title="Server uptime">
+                Up: {m.uptimeSecs >= 86400 ? `${Math.floor(m.uptimeSecs / 86400)}d ` : ""}
+                {`${Math.floor((m.uptimeSecs % 86400) / 3600)}h ${Math.floor((m.uptimeSecs % 3600) / 60)}m`}
+              </span>
+            )}
+            {m.activeConnections > 0 && (
+              <span title="Active network connections">Conns: {m.activeConnections}</span>
+            )}
+            {m.topProcesses.length > 0 && (
+              <span>Top: {m.topProcesses.slice(0, 3).map((p) => `${p.name.split("/").pop()} ${p.cpu}%`).join(" | ")}</span>
+            )}
+          </div>
 
           {/* Failed services warning */}
           {m.failedServices.length > 0 && (
@@ -552,6 +561,8 @@ export function InfraMonitorPanel() {
               mem: p.mem || 0,
             })),
             failedServices: raw.failed_services || [],
+            uptimeSecs: raw.uptime_secs || 0,
+            activeConnections: raw.active_connections || 0,
           };
           addInfraMetrics(connId, snapshot);
           // Update performance baseline every 10th sample
@@ -966,6 +977,8 @@ function TimelineView({
   onClear: () => void;
 }) {
   const t = useT();
+  const [filter, setFilter] = useState<string>("all");
+
   if (timeline.length === 0) {
     return (
       <div style={{ textAlign: "center", padding: 30, color: "var(--text-muted)", fontSize: 12 }}>
@@ -976,9 +989,11 @@ function TimelineView({
     );
   }
 
+  const filtered = filter === "all" ? timeline : timeline.filter((e) => e.type === filter);
+
   // Group events by date
   const grouped: Record<string, InfraTimelineEvent[]> = {};
-  for (const event of timeline) {
+  for (const event of filtered) {
     const dateKey = new Date(event.timestamp).toLocaleDateString();
     if (!grouped[dateKey]) grouped[dateKey] = [];
     grouped[dateKey].push(event);
@@ -997,12 +1012,29 @@ function TimelineView({
     info: <Activity size={10} style={{ color: "#58a6ff" }} />,
   };
 
+  // Count per type for filter badges
+  const counts: Record<string, number> = { alert: 0, action: 0, connection: 0, metric: 0 };
+  for (const e of timeline) { counts[e.type] = (counts[e.type] || 0) + 1; }
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
-      <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 6 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6, alignItems: "center" }}>
+        {/* Filter buttons */}
+        <div style={{ display: "flex", gap: 3 }}>
+          {[{ key: "all", label: "All", color: "var(--text-secondary)" }, { key: "alert", label: "Alerts", color: "#ff7b72" }, { key: "action", label: "Actions", color: "#58a6ff" }, { key: "connection", label: "Connect", color: "#3fb950" }].map(({ key, label, color }) => (
+            <button key={key} onClick={() => setFilter(key)}
+              style={{
+                ...btnStyle, fontSize: 9, padding: "2px 6px",
+                background: filter === key ? color : "var(--bg-tertiary)",
+                color: filter === key ? "#fff" : "var(--text-muted)",
+                borderRadius: 8, border: "none",
+              }}>
+              {label} {key !== "all" && counts[key] > 0 ? `(${counts[key]})` : ""}
+            </button>
+          ))}
+        </div>
         <button onClick={onClear} style={{ ...btnStyle, fontSize: 10 }} title="Clear timeline">
           <Trash2 size={10} />
-          <span style={{ marginLeft: 4 }}>Clear</span>
         </button>
       </div>
 
@@ -1072,8 +1104,38 @@ function AlertsView({
     );
   }
 
+  const unacked = alerts.filter((a) => !a.acknowledged);
+  const criticalCount = unacked.filter((a) => a.severity === "critical").length;
+  const warningCount = unacked.filter((a) => a.severity === "warning").length;
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+      {/* Alert summary bar */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "4px 0" }}>
+        <div style={{ display: "flex", gap: 8, fontSize: 10 }}>
+          {criticalCount > 0 && (
+            <span style={{ color: "#ff7b72", fontWeight: 600 }}>
+              <XCircle size={10} style={{ verticalAlign: "middle" }} /> {criticalCount} critical
+            </span>
+          )}
+          {warningCount > 0 && (
+            <span style={{ color: "#d29922", fontWeight: 600 }}>
+              <AlertTriangle size={10} style={{ verticalAlign: "middle" }} /> {warningCount} warning
+            </span>
+          )}
+          {unacked.length === 0 && (
+            <span style={{ color: "#3fb950" }}>All acknowledged</span>
+          )}
+        </div>
+        {unacked.length > 0 && (
+          <button
+            onClick={() => unacked.forEach((a) => onAcknowledge(a.id))}
+            style={{ ...btnStyle, fontSize: 9, padding: "2px 8px" }}
+          >
+            <CheckCircle size={10} /> Ack All ({unacked.length})
+          </button>
+        )}
+      </div>
       {alerts.slice(0, 50).map((alert) => (
         <div
           key={alert.id}

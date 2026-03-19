@@ -124,9 +124,17 @@ async function fetchAllReleaseNotes(currentVersion: string, targetVersion: strin
 // Build fallback notes from the updater body when GitHub API fails
 function buildFallbackNotes(version: string, body: string): VersionNote[] {
   if (!body || !body.trim()) return [];
+
+  // Skip known generic/redirect messages
+  const lower = body.toLowerCase();
+  if (lower.includes("see release notes for details") || lower.includes("see changelog") ||
+      lower.includes("check github") || lower.includes("visit github")) {
+    // Generic redirect — don't try to parse, return empty so the inline fallback shows
+    return [];
+  }
+
   const highlights = extractHighlights(body);
   if (highlights.length === 0) {
-    // Try to extract any meaningful lines from the body
     const lines = body.split("\n").map((l) => l.trim()).filter((l) =>
       l.length > 10 && l.length < 120 && !l.startsWith("#") && !l.startsWith("|") &&
       !l.toLowerCase().includes("download") && !l.toLowerCase().includes("installer")

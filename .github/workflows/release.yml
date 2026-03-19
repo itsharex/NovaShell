@@ -211,6 +211,8 @@ jobs:
 
       - name: Generate latest.json for Tauri updater
         shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           VERSION="${{ steps.version.outputs.version }}"
           TAG="${GITHUB_REF_NAME}"
@@ -285,10 +287,23 @@ jobs:
           echo "MAC INTEL: $MACOS_INTEL_TAR (sig: ${#MACOS_INTEL_SIG} chars)"
           echo "LINUX: $LINUX_APPIMAGE (sig: ${#LINUX_SIG} chars)"
 
-          # Build JSON with jq
+          # Fetch real release notes from the tag's body on GitHub
+          RELEASE_NOTES=""
+          RELEASE_NOTES=$(gh api "repos/${REPO}/releases/tags/${TAG}" --jq '.body // ""' 2>/dev/null || echo "")
+          if [ -z "$RELEASE_NOTES" ]; then
+            # Fallback: extract from git tag annotation or commit message
+            RELEASE_NOTES=$(git tag -l --format='%(contents)' "${TAG}" 2>/dev/null | head -50 || echo "")
+          fi
+          if [ -z "$RELEASE_NOTES" ]; then
+            RELEASE_NOTES="Bug fixes, performance improvements, and new features."
+          fi
+          # Truncate to 2000 chars to keep JSON manageable
+          RELEASE_NOTES=$(echo "$RELEASE_NOTES" | head -c 2000)
+
+          # Build JSON with jq — notes now contains REAL release content
           jq -n \
             --arg version "$VERSION" \
-            --arg notes "NovaShell ${TAG} — see release notes for details." \
+            --arg notes "$RELEASE_NOTES" \
             --arg pub_date "$DATE" \
             --arg win_sig "$WIN_NSIS_SIG" \
             --arg win_url "${BASE_URL}/${WIN_NSIS}" \

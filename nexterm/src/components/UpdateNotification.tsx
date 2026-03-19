@@ -41,70 +41,102 @@ function extractHighlights(body: string): string[] {
   if (!body || typeof body !== "string") return [];
   const highlights: string[] = [];
 
-  // Remove downloads/footer sections
+  // Remove downloads/footer sections and tables
   const cleaned = body
     .replace(/## Downloads[\s\S]*$/i, "")
+    .replace(/### Downloads[\s\S]*$/i, "")
     .replace(/---[\s\S]*$/i, "")
+    .replace(/\|[^|]+\|[^|]+\|[^|]+\|[^\n]*\n/g, "") // Remove table rows
+    .replace(/\|[-\s:]+\|[-\s:]+\|[^\n]*\n/g, "") // Remove table separators
     .trim();
 
   for (const line of cleaned.split("\n")) {
     const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("```") || trimmed.startsWith("|")) continue;
 
-    // ### Section headers → use as highlight
-    if (trimmed.startsWith("### ")) {
-      const title = trimmed.replace(/^###\s*/, "").trim();
-      if (title && !title.toLowerCase().includes("download")) {
+    // ## or ### Section headers → use as highlight
+    if (/^#{2,3}\s/.test(trimmed)) {
+      const title = trimmed.replace(/^#+\s*/, "").trim();
+      if (title && title.length > 3 && !title.toLowerCase().includes("download") && !title.toLowerCase().includes("summary")) {
         highlights.push(title);
       }
     }
     // - **Bold item** → extract the bold part as a highlight
-    else if (trimmed.startsWith("- **")) {
+    else if (trimmed.startsWith("- **") || trimmed.startsWith("* **")) {
       const match = trimmed.match(/\*\*(.+?)\*\*/);
       if (match) {
-        // Get the bold text + the rest after ** as context
-        const rest = trimmed.slice(trimmed.indexOf("**", trimmed.indexOf("**") + 2) + 2).replace(/^\s*[—\-:]\s*/, "").trim();
-        const text = rest ? `${match[1]} — ${rest.slice(0, 80)}` : match[1];
+        const afterBold = trimmed.slice(trimmed.indexOf("**", trimmed.indexOf("**") + 2) + 2).replace(/^\s*[—\-:]\s*/, "").trim();
+        const text = afterBold && afterBold.length > 3 ? `${match[1]} — ${afterBold.slice(0, 80)}` : match[1];
         highlights.push(text);
       }
     }
     // - Regular bullet → use if short enough and meaningful
-    else if (trimmed.startsWith("- ") && !trimmed.startsWith("- *")) {
+    else if (/^[-*]\s/.test(trimmed)) {
       const text = trimmed.slice(2).trim();
-      if (text.length > 5 && text.length < 100) {
+      if (text.length > 5 && text.length < 120 && !text.startsWith("`")) {
         highlights.push(text);
       }
     }
   }
 
-  // Cap at 5 highlights per version to keep it concise
-  return highlights.slice(0, 5);
+  // Cap at 6 highlights per version to show enough context
+  return highlights.slice(0, 6);
 }
 
-// Fetch all intermediate release notes from GitHub API
+// Cache for GitHub release notes — avoids repeated API calls / rate limits
+let releaseNotesCache: { key: string; notes: VersionNote[] } | null = null;
+
+// Fetch all intermediate release notes from GitHub API (with retry)
 async function fetchAllReleaseNotes(currentVersion: string, targetVersion: string): Promise<VersionNote[]> {
-  try {
-    const res = await fetch("https://api.github.com/repos/FomoDonkey/NovaShell/releases?per_page=20");
-    if (!res.ok) return [];
-    const releases: Array<{ tag_name: string; name: string; body: string }> = await res.json();
+  const cacheKey = `${currentVersion}->${targetVersion}`;
+  if (releaseNotesCache && releaseNotesCache.key === cacheKey) return releaseNotesCache.notes;
 
-    const notes: VersionNote[] = [];
-    for (const rel of releases) {
-      const ver = rel.tag_name.replace(/^v/, "");
-      // Include versions that are > currentVersion AND <= targetVersion
-      if (compareSemver(ver, currentVersion) > 0 && compareSemver(ver, targetVersion) <= 0) {
-        const highlights = extractHighlights(rel.body || "");
-        // Extract title from release name (e.g. "v2.4.0 — Sub-folders" → "Sub-folders")
-        const title = (rel.name || rel.tag_name).replace(/^v?\d+\.\d+\.\d+\s*[—\-:]\s*/, "").trim() || rel.tag_name;
-        notes.push({ version: ver, title, highlights });
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const res = await fetch("https://api.github.com/repos/FomoDonkey/NovaShell/releases?per_page=30");
+      if (!res.ok) { if (attempt === 0) { await new Promise((r) => setTimeout(r, 1500)); continue; } return []; }
+      const releases: Array<{ tag_name: string; name: string; body: string }> = await res.json();
+
+      const notes: VersionNote[] = [];
+      for (const rel of releases) {
+        const ver = rel.tag_name.replace(/^v/, "");
+        // Include versions that are > currentVersion AND <= targetVersion
+        if (compareSemver(ver, currentVersion) > 0 && compareSemver(ver, targetVersion) <= 0) {
+          const highlights = extractHighlights(rel.body || "");
+          const title = (rel.name || rel.tag_name).replace(/^v?\d+\.\d+\.\d+\s*[—\-:]\s*/, "").trim() || rel.tag_name;
+          if (highlights.length > 0 || title) {
+            notes.push({ version: ver, title, highlights });
+          }
+        }
       }
-    }
 
-    // Sort newest first
-    notes.sort((a, b) => compareSemver(b.version, a.version));
-    return notes;
-  } catch {
-    return [];
+      notes.sort((a, b) => compareSemver(b.version, a.version));
+      releaseNotesCache = { key: cacheKey, notes };
+      return notes;
+    } catch {
+      if (attempt === 0) { await new Promise((r) => setTimeout(r, 1500)); continue; }
+      return [];
+    }
   }
+  return [];
+}
+
+// Build fallback notes from the updater body when GitHub API fails
+function buildFallbackNotes(version: string, body: string): VersionNote[] {
+  if (!body || !body.trim()) return [];
+  const highlights = extractHighlights(body);
+  if (highlights.length === 0) {
+    // Try to extract any meaningful lines from the body
+    const lines = body.split("\n").map((l) => l.trim()).filter((l) =>
+      l.length > 10 && l.length < 120 && !l.startsWith("#") && !l.startsWith("|") &&
+      !l.toLowerCase().includes("download") && !l.toLowerCase().includes("installer")
+    );
+    if (lines.length > 0) {
+      return [{ version, title: `v${version}`, highlights: lines.slice(0, 5) }];
+    }
+  }
+  const title = body.split("\n").find((l) => l.startsWith("## "))?.replace(/^##\s*/, "").trim() || `v${version}`;
+  return highlights.length > 0 ? [{ version, title, highlights }] : [];
 }
 
 export const UpdateNotification = memo(function UpdateNotification() {
@@ -124,9 +156,14 @@ export const UpdateNotification = memo(function UpdateNotification() {
       const update = await check();
 
       if (update) {
-        // Fetch all intermediate release notes in background
+        // Fetch all intermediate release notes — with fallback to updater body
         const currentVer = typeof APP_VERSION === "string" ? APP_VERSION : "0.0.0";
-        const allNotes = await fetchAllReleaseNotes(currentVer, update.version);
+        let allNotes = await fetchAllReleaseNotes(currentVer, update.version);
+
+        // If GitHub API failed, build notes from the updater body
+        if (allNotes.length === 0 && update.body) {
+          allNotes = buildFallbackNotes(update.version, update.body);
+        }
 
         setStatus({
           phase: "available",
@@ -315,16 +352,18 @@ export const UpdateNotification = memo(function UpdateNotification() {
                       )}
                     </div>
                   ))}
-                  {/* Fallback: if GitHub API failed, show the body from the updater */}
-                  {status.allNotes.length === 0 && status.body && (
-                    <p style={{ fontSize: 10.5, color: "var(--text-secondary)", margin: 0, lineHeight: 1.5, whiteSpace: "pre-wrap" }}>
-                      {status.body
-                        .replace(/## Downloads[\s\S]*$/i, "")
-                        .replace(/---[\s\S]*$/i, "")
-                        .replace(/^## /gm, "")
-                        .trim()
-                        .slice(0, 400)}
-                    </p>
+                  {/* Fallback: if no structured notes available */}
+                  {status.allNotes.length === 0 && (
+                    <div style={{ fontSize: 10.5, color: "var(--text-secondary)", lineHeight: 1.5 }}>
+                      <div style={{ display: "flex", gap: 5, marginBottom: 2 }}>
+                        <span style={{ color: "var(--accent-secondary)", flexShrink: 0 }}>&#10003;</span>
+                        <span>Bug fixes and improvements</span>
+                      </div>
+                      <div style={{ display: "flex", gap: 5, marginBottom: 2 }}>
+                        <span style={{ color: "var(--accent-secondary)", flexShrink: 0 }}>&#10003;</span>
+                        <span>Performance and stability enhancements</span>
+                      </div>
+                    </div>
                   )}
                 </div>
               </>

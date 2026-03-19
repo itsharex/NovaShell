@@ -1119,7 +1119,27 @@ function AlertsView({
 // ──── Disk Analyzer View (CCleaner-style) ────
 
 // Safe scan: -xdev prevents crossing filesystem boundaries, timeout prevents hangs on huge dirs
-const DISK_SCAN_SCRIPT = `echo '===PARTITIONS===' && df -hT 2>/dev/null | grep -E '^/dev/' && echo '===LARGEST===' && timeout 10s du -xmd1 / 2>/dev/null | sort -rn | head -15 && echo '===LOGS===' && du -sm /var/log 2>/dev/null | awk '{print $1}' && echo '===CACHE===' && du -sm /var/cache 2>/dev/null | awk '{print $1}' && echo '===TMP===' && du -sm /tmp /var/tmp 2>/dev/null | awk '{s+=$1} END {print s+0}' && echo '===JOURNAL===' && journalctl --disk-usage 2>/dev/null | grep -oP '[\\d.]+[GMKT]' | head -1 && echo '===PKGCACHE===' && (du -sm /var/cache/apt/archives 2>/dev/null || du -sm /var/cache/yum 2>/dev/null || du -sm /var/cache/dnf 2>/dev/null || echo '0') | awk '{print $1}' && echo '===DOCKER===' && (docker system df --format '{{.Size}}' 2>/dev/null | head -1 || echo '0') && echo '===OLDKERNELS===' && (dpkg -l 'linux-image-*' 2>/dev/null | grep '^ii' | wc -l || rpm -q kernel 2>/dev/null | wc -l || echo '0') && echo '===SNAPS===' && (du -sm /var/lib/snapd/snaps 2>/dev/null | awk '{print $1}' || echo '0') && echo '===COREDUMPS===' && (du -sm /var/lib/systemd/coredump 2>/dev/null | awk '{print $1}' || echo '0') && echo '===LOGFILES===' && timeout 5s find /var/log -xdev -type f \\( -name '*.gz' -o -name '*.old' -o -name '*.1' -o -name '*.bz2' -o -name '*.xz' \\) 2>/dev/null | wc -l && echo '===TMPFILES===' && timeout 5s find /tmp -xdev -type f -mtime +7 2>/dev/null | wc -l`;
+const DISK_SCAN_SCRIPT = [
+  "echo '===PARTITIONS===' && df -hT 2>/dev/null | grep -E '^/dev/'",
+  "echo '===LARGEST===' && timeout 10s du -xmd1 / 2>/dev/null | sort -rn | head -15",
+  "echo '===LOGS===' && du -sm /var/log 2>/dev/null | awk '{print $1}'",
+  "echo '===CACHE===' && du -sm /var/cache 2>/dev/null | awk '{print $1}'",
+  "echo '===TMP===' && du -sm /tmp /var/tmp 2>/dev/null | awk '{s+=$1} END {print s+0}'",
+  "echo '===JOURNAL===' && journalctl --disk-usage 2>/dev/null | grep -oP '[\\\\d.]+[GMKT]' | head -1",
+  "echo '===PKGCACHE===' && (du -sm /var/cache/apt/archives 2>/dev/null || du -sm /var/cache/yum 2>/dev/null || du -sm /var/cache/dnf 2>/dev/null || echo '0') | awk '{print $1}'",
+  "echo '===DOCKER===' && (docker system df --format '{{.Size}}' 2>/dev/null | head -1 || echo '0')",
+  "echo '===OLDKERNELS===' && (dpkg -l 'linux-image-*' 2>/dev/null | grep '^ii' | wc -l || rpm -q kernel 2>/dev/null | wc -l || echo '0')",
+  "echo '===SNAPS===' && (du -sm /var/lib/snapd/snaps 2>/dev/null | awk '{print $1}' || echo '0')",
+  "echo '===COREDUMPS===' && (du -sm /var/lib/systemd/coredump 2>/dev/null | awk '{print $1}' || echo '0')",
+  "echo '===LOGFILES===' && timeout 5s find /var/log -xdev -type f \\\\( -name '*.gz' -o -name '*.old' -o -name '*.1' -o -name '*.bz2' -o -name '*.xz' \\\\) 2>/dev/null | wc -l",
+  "echo '===TMPFILES===' && timeout 5s find /tmp -xdev -type f -mtime +7 2>/dev/null | wc -l",
+  // New categories
+  "echo '===NPMCACHE===' && (du -sm ~/.npm 2>/dev/null | awk '{print $1}' || echo '0')",
+  "echo '===PIPCACHE===' && (du -sm ~/.cache/pip 2>/dev/null | awk '{print $1}' || echo '0')",
+  "echo '===THUMBNAILS===' && (du -sm ~/.cache/thumbnails 2>/dev/null | awk '{print $1}' || echo '0')",
+  "echo '===TRASH===' && (du -sm ~/.local/share/Trash 2>/dev/null | awk '{print $1}' || echo '0')",
+  "echo '===YARNCACHE===' && (du -sm ~/.cache/yarn 2>/dev/null | awk '{print $1}' || echo '0')",
+].join(" && ");
 
 function parseSizeToMB(s: string): number {
   if (!s) return 0;
@@ -1187,6 +1207,11 @@ function parseDiskScanOutput(output: string, connectionId: string): DiskAnalysis
   const coredumpMB = parseFloat(values["===COREDUMPS==="] || "0") || 0;
   const rotatedLogFiles = parseInt(values["===LOGFILES==="] || "0") || 0;
   const oldTmpFiles = parseInt(values["===TMPFILES==="] || "0") || 0;
+  const npmCacheMB = parseFloat(values["===NPMCACHE==="] || "0") || 0;
+  const pipCacheMB = parseFloat(values["===PIPCACHE==="] || "0") || 0;
+  const thumbnailsMB = parseFloat(values["===THUMBNAILS==="] || "0") || 0;
+  const trashMB = parseFloat(values["===TRASH==="] || "0") || 0;
+  const yarnCacheMB = parseFloat(values["===YARNCACHE==="] || "0") || 0;
 
   // Build cleanup categories with preview and per-category actions
   if (logsMB > 10) {
@@ -1271,7 +1296,63 @@ function parseDiskScanOutput(output: string, connectionId: string): DiskAnalysis
       id: "snaps", name: "Snap Packages", icon: "package", sizeMB: snapsMB,
       items: 0, reclaimable: false,
       previewCmd: "snap list 2>/dev/null",
+      actions: [
+        { label: "List revisions", cmd: "snap list --all 2>/dev/null | awk '/disabled/{print $1, $3}'" },
+      ],
       description: "Snap package data — remove unused snaps manually",
+    });
+  }
+  // Dev caches (npm, yarn, pip)
+  const devCacheMB = npmCacheMB + pipCacheMB + yarnCacheMB;
+  if (devCacheMB > 50) {
+    const parts = [];
+    if (npmCacheMB > 0) parts.push(`npm ${Math.round(npmCacheMB)}MB`);
+    if (yarnCacheMB > 0) parts.push(`yarn ${Math.round(yarnCacheMB)}MB`);
+    if (pipCacheMB > 0) parts.push(`pip ${Math.round(pipCacheMB)}MB`);
+    categories.push({
+      id: "devcache", name: "Dev Caches", icon: "code", sizeMB: devCacheMB,
+      items: parts.length, reclaimable: true,
+      cleanCmd: "npm cache clean --force 2>/dev/null; rm -rf ~/.cache/yarn 2>/dev/null; rm -rf ~/.cache/pip 2>/dev/null && echo 'Dev caches cleaned'",
+      previewCmd: "echo '=== npm ===' && du -sh ~/.npm 2>/dev/null && echo '=== yarn ===' && du -sh ~/.cache/yarn 2>/dev/null && echo '=== pip ===' && du -sh ~/.cache/pip 2>/dev/null",
+      actions: [
+        { label: "npm cache", cmd: "npm cache ls 2>/dev/null | wc -l && echo 'cached packages' && du -sh ~/.npm 2>/dev/null" },
+        { label: "pip cache", cmd: "pip cache info 2>/dev/null || du -sh ~/.cache/pip 2>/dev/null" },
+      ],
+      description: parts.join(", "),
+    });
+  }
+  // User Trash
+  if (trashMB > 20) {
+    categories.push({
+      id: "trash", name: "User Trash", icon: "trash", sizeMB: trashMB,
+      items: 0, reclaimable: true,
+      cleanCmd: "rm -rf ~/.local/share/Trash/files/* ~/.local/share/Trash/info/* 2>/dev/null && echo 'Trash emptied'",
+      previewCmd: "ls -lhS ~/.local/share/Trash/files/ 2>/dev/null | head -20",
+      description: "Files in user trash bin",
+    });
+  }
+  // Thumbnail cache
+  if (thumbnailsMB > 30) {
+    categories.push({
+      id: "thumbnails", name: "Thumbnail Cache", icon: "image", sizeMB: thumbnailsMB,
+      items: 0, reclaimable: true,
+      cleanCmd: "rm -rf ~/.cache/thumbnails/* 2>/dev/null && echo 'Thumbnails cleared'",
+      previewCmd: "du -sh ~/.cache/thumbnails/*/ 2>/dev/null",
+      description: "Cached image thumbnails — will regenerate on demand",
+    });
+  }
+  // Old kernels (make reclaimable on Debian-based)
+  if (oldKernels > 2) {
+    categories.push({
+      id: "oldkernels", name: "Old Kernels", icon: "cpu", sizeMB: 0,
+      items: oldKernels - 1, reclaimable: oldKernels > 2,
+      cleanCmd: "apt-get autoremove --purge -y 2>/dev/null || dnf remove --oldinstallonly -y 2>/dev/null && echo 'Old kernels removed'",
+      previewCmd: "dpkg -l 'linux-image-*' 2>/dev/null | grep '^ii' || rpm -q kernel 2>/dev/null",
+      actions: [
+        { label: "Current kernel", cmd: "uname -r" },
+        { label: "All installed", cmd: "dpkg -l 'linux-image-*' 2>/dev/null | grep '^ii' | awk '{print $2, $3}' || rpm -q kernel 2>/dev/null" },
+      ],
+      description: `${oldKernels - 1} old kernel(s) can be removed (keeping current)`,
     });
   }
 
@@ -1530,6 +1611,32 @@ function DiskAnalyzerView({
               )}
             </div>
           )}
+
+          {/* Disk Summary Bar */}
+          {(() => {
+            const totalGB = activeAnalysis.partitions.reduce((s, p) => s + p.totalGB, 0);
+            const usedGB = activeAnalysis.partitions.reduce((s, p) => s + p.usedGB, 0);
+            const freeGB = totalGB - usedGB;
+            const usedPct = totalGB > 0 ? (usedGB / totalGB) * 100 : 0;
+            const reclaimGB = activeAnalysis.totalReclaimableMB / 1024;
+            const barColor = usedPct >= 90 ? "#ff7b72" : usedPct >= 75 ? "#d29922" : "#3fb950";
+            return (
+              <div style={{ background: "var(--bg-secondary)", borderRadius: "var(--radius-md)", border: "1px solid var(--border-subtle)", padding: "10px 12px" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, marginBottom: 6 }}>
+                  <span style={{ fontWeight: 600 }}>Total: {totalGB.toFixed(1)} GB</span>
+                  <span>Used: <span style={{ color: barColor, fontWeight: 600 }}>{usedGB.toFixed(1)} GB ({usedPct.toFixed(0)}%)</span></span>
+                  <span>Free: <span style={{ color: "#3fb950", fontWeight: 600 }}>{freeGB.toFixed(1)} GB</span></span>
+                  {reclaimGB > 0.01 && <span>Reclaimable: <span style={{ color: "var(--accent-primary)", fontWeight: 600 }}>{reclaimGB.toFixed(1)} GB</span></span>}
+                </div>
+                <div style={{ height: 8, background: "var(--bg-tertiary)", borderRadius: 4, overflow: "hidden", display: "flex" }}>
+                  <div style={{ width: `${usedPct}%`, height: "100%", background: barColor, borderRadius: 4, transition: "width 0.5s ease" }} />
+                  {reclaimGB > 0.01 && (
+                    <div style={{ width: `${(reclaimGB / totalGB) * 100}%`, height: "100%", background: "var(--accent-primary)", opacity: 0.5 }} />
+                  )}
+                </div>
+              </div>
+            );
+          })()}
 
           {/* Partitions */}
           <div style={{ background: "var(--bg-secondary)", borderRadius: "var(--radius-md)", border: "1px solid var(--border-subtle)", padding: 12 }}>

@@ -1426,7 +1426,8 @@ function DiskAnalyzerView({
   const [scanning, setScanning] = useState<string | null>(null);
   const [selectedServer, setSelectedServer] = useState<string | null>(null);
   const [cleaningId, setCleaningId] = useState<string | null>(null);
-  const [cleanConfirm, setCleanConfirm] = useState<{ catId: string; cmd: string; name: string } | null>(null);
+  const [cleanConfirm, setCleanConfirm] = useState<{ catId: string; cmd: string; name: string; warning?: string } | null>(null);
+  const [batchConfirm, setBatchConfirm] = useState(false);
   const [cmdOutput, setCmdOutput] = useState<{ title: string; text: string } | null>(null);
   const [selectedClean, setSelectedClean] = useState<Set<string>>(new Set());
   const [expandedCat, setExpandedCat] = useState<string | null>(null);
@@ -1786,13 +1787,30 @@ function DiskAnalyzerView({
                               }} />
                             {cat.reclaimable && cat.cleanCmd && (
                               cleanConfirm?.catId === cat.id ? (
-                                <>
-                                  <ActionBtn label={t("disk.confirmClean")} danger onClick={() => runClean(activeConn, cat.id, cat.cleanCmd!, cat.name)} />
-                                  <ActionBtn label="Cancel" onClick={() => setCleanConfirm(null)} />
-                                </>
+                                <div style={{ display: "flex", flexDirection: "column", gap: 4, width: "100%" }}>
+                                  {cleanConfirm.warning && (
+                                    <div style={{ fontSize: 9, color: "#ffb347", background: "rgba(255,179,71,0.1)", padding: "4px 6px", borderRadius: 3, display: "flex", alignItems: "center", gap: 4 }}>
+                                      <AlertTriangle size={10} style={{ flexShrink: 0 }} />
+                                      <span>{cleanConfirm.warning}</span>
+                                    </div>
+                                  )}
+                                  <div style={{ display: "flex", gap: 3 }}>
+                                    <ActionBtn label={t("disk.confirmClean")} danger onClick={() => runClean(activeConn, cat.id, cat.cleanCmd!, cat.name)} />
+                                    <ActionBtn label="Cancel" onClick={() => setCleanConfirm(null)} />
+                                  </div>
+                                </div>
                               ) : (
                                 <ActionBtn label={t("disk.clean")} icon={<Eraser size={10} />}
-                                  onClick={() => setCleanConfirm({ catId: cat.id, cmd: cat.cleanCmd!, name: cat.name })} />
+                                  onClick={() => {
+                                    const warnings: Record<string, string> = {
+                                      docker: "This will remove ALL unused containers, networks, and dangling images. Running containers are safe.",
+                                      oldkernels: "This will permanently remove old kernel packages. Current running kernel is always kept.",
+                                      trash: "This will permanently empty the trash. Files cannot be recovered after this.",
+                                      devcache: "This will clear npm, yarn, and pip download caches. Packages will re-download on next install.",
+                                      journal: "This will delete system logs older than 7 days. Recent logs are preserved.",
+                                    };
+                                    setCleanConfirm({ catId: cat.id, cmd: cat.cleanCmd!, name: cat.name, warning: warnings[cat.id] });
+                                  }} />
                               )
                             )}
                           </div>
@@ -1809,22 +1827,40 @@ function DiskAnalyzerView({
                   marginTop: 8, padding: "8px 10px",
                   background: "rgba(63,185,80,0.08)", border: "1px solid rgba(63,185,80,0.2)",
                   borderRadius: "var(--radius-sm)",
-                  display: "flex", alignItems: "center", justifyContent: "space-between",
                 }}>
-                  <div>
-                    <div style={{ fontSize: 11, fontWeight: 600, color: "#3fb950" }}>
-                      {selectedClean.size} selected — ~{formatSize(selectedTotal)}
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                    <div>
+                      <div style={{ fontSize: 11, fontWeight: 600, color: "#3fb950" }}>
+                        {selectedClean.size} {t("disk.selected")} — ~{formatSize(selectedTotal)}
+                      </div>
+                      <div style={{ fontSize: 9, color: "var(--text-muted)" }}>
+                        {activeAnalysis.categories.filter((c) => selectedClean.has(c.id)).map((c) => c.name).join(", ")}
+                      </div>
                     </div>
-                    <div style={{ fontSize: 9, color: "var(--text-muted)" }}>
-                      {activeAnalysis.categories.filter((c) => selectedClean.has(c.id)).map((c) => c.name).join(", ")}
-                    </div>
+                    {!batchConfirm ? (
+                      <ActionBtn
+                        label={t("disk.cleanSelected")}
+                        icon={<Eraser size={10} />}
+                        onClick={() => setBatchConfirm(true)}
+                      />
+                    ) : (
+                      <div style={{ display: "flex", gap: 3 }}>
+                        <ActionBtn
+                          label={cleaningId === "__batch__" ? "Cleaning..." : t("disk.confirmClean")}
+                          danger
+                          icon={cleaningId === "__batch__" ? <RefreshCw size={10} style={{ animation: "spin 1s linear infinite" }} /> : <Eraser size={10} />}
+                          onClick={() => { setBatchConfirm(false); runCleanSelected(activeConn, activeAnalysis); }}
+                        />
+                        <ActionBtn label="Cancel" onClick={() => setBatchConfirm(false)} />
+                      </div>
+                    )}
                   </div>
-                  <ActionBtn
-                    label={cleaningId === "__batch__" ? "Cleaning..." : t("disk.cleanSelected")}
-                    danger
-                    icon={cleaningId === "__batch__" ? <RefreshCw size={10} style={{ animation: "spin 1s linear infinite" }} /> : <Eraser size={10} />}
-                    onClick={() => runCleanSelected(activeConn, activeAnalysis)}
-                  />
+                  {batchConfirm && (
+                    <div style={{ fontSize: 9, color: "#ffb347", background: "rgba(255,179,71,0.1)", padding: "4px 6px", borderRadius: 3, marginTop: 6, display: "flex", alignItems: "center", gap: 4 }}>
+                      <AlertTriangle size={10} style={{ flexShrink: 0 }} />
+                      <span>This will permanently delete files from {selectedClean.size} categories (~{formatSize(selectedTotal)}). This action cannot be undone.</span>
+                    </div>
+                  )}
                 </div>
               )}
             </div>

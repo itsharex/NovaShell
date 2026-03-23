@@ -1,6 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod ai_manager;
+mod collab_manager;
 mod hacking_manager;
 mod infra_monitor;
 mod keychain_manager;
@@ -14,7 +15,7 @@ mod system_info;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::sync::{Mutex, RwLock};
-use tauri::State;
+use tauri::{Manager, State};
 use std::time::UNIX_EPOCH;
 
 pub struct AppState {
@@ -27,6 +28,8 @@ pub struct AppState {
     pub log_manager: Mutex<log_manager::LogManager>,
     pub session_doc_manager: Mutex<session_doc_manager::SessionDocManager>,
     pub infra_monitors: Mutex<infra_monitor::InfraMonitors>,
+    pub collab_host_sessions: Mutex<HashMap<String, std::sync::Arc<collab_manager::CollabSession>>>,
+    pub collab_client_sessions: Mutex<HashMap<String, std::sync::Arc<collab_manager::CollabClient>>>,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -1615,6 +1618,244 @@ fn chrono_timestamp() -> String {
     format!("{}", now)
 }
 
+// ──────────── Collaborative Terminal Commands ────────────
+
+#[tauri::command]
+async fn collab_start_hosting(
+    session_id: String,
+    host_name: String,
+    cols: u16,
+    rows: u16,
+    state: State<'_, AppState>,
+    app_handle: tauri::AppHandle,
+) -> Result<collab_manager::CollabHostInfo, String> {
+    // Enable collab broadcast on the PTY session and get the receiver
+    let (pty_rx, scrollback) = {
+        let sessions = state.sessions.lock()
+            .map_err(|e| format!("Session lock error: {}", e))?;
+        let pty = sessions.get(&session_id)
+            .ok_or_else(|| format!("PTY session '{}' not found", session_id))?;
+        let rx = pty.enable_collab();
+        let sb = pty.get_scrollback();
+        (rx, sb)
+    };
+
+    // Create and start the collab session
+    let mut collab = collab_manager::CollabSession::new(
+        session_id.clone(),
+        host_name,
+        pty_rx,
+        cols,
+        rows,
+    );
+
+    let info = match collab.start(app_handle.clone(), scrollback).await {
+        Ok(info) => info,
+        Err(e) => {
+            // Rollback: disable collab on the PTY since server failed to start
+            let sessions = state.sessions.lock()
+                .map_err(|e| format!("Session lock error: {}", e))?;
+            if let Some(pty) = sessions.get(&session_id) {
+                pty.disable_collab();
+            }
+            return Err(e);
+        }
+    };
+
+    // Register guest input handler — when a guest with FullControl types,
+    // forward their input to the PTY
+    let sid_for_input = session_id.clone();
+    let event_name = format!("collab-guest-input-{}", session_id);
+    let app_for_listen_call = app_handle.clone();
+    let app_inside_closure = app_handle.clone();
+
+    // Use Tauri event listener to forward guest input to PTY
+    use tauri::Listener;
+    app_for_listen_call.listen(event_name, move |event| {
+        // Parse the payload as a proper JSON string to handle all escape sequences
+        let unescaped = match serde_json::from_str::<String>(event.payload()) {
+            Ok(s) => s,
+            Err(_) => return,
+        };
+        if unescaped.is_empty() { return; }
+        let state_ref = app_inside_closure.state::<AppState>();
+        let sessions = match state_ref.sessions.lock() {
+            Ok(s) => s,
+            Err(_) => return,
+        };
+        if let Some(session) = sessions.get(&sid_for_input) {
+            let _ = session.write(unescaped.as_bytes());
+        }
+    });
+
+    // Store the collab session (wrapped in Arc)
+    {
+        let mut collab_sessions = state.collab_host_sessions.lock()
+            .map_err(|e| format!("Collab lock error: {}", e))?;
+        collab_sessions.insert(session_id, std::sync::Arc::new(collab));
+    }
+
+    Ok(info)
+}
+
+#[tauri::command]
+async fn collab_stop_hosting(
+    session_id: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    // Disable collab broadcast on the PTY session
+    {
+        let sessions = state.sessions.lock()
+            .map_err(|e| format!("Session lock error: {}", e))?;
+        if let Some(pty) = sessions.get(&session_id) {
+            pty.disable_collab();
+        }
+    }
+
+    // Remove and drop the collab session (triggers stop)
+    let removed = {
+        let mut collab_sessions = state.collab_host_sessions.lock()
+            .map_err(|e| format!("Collab lock error: {}", e))?;
+        collab_sessions.remove(&session_id)
+    };
+    if let Some(session) = removed {
+        session.stop();
+    }
+    Ok(())
+}
+
+#[tauri::command]
+async fn collab_join_session(
+    host_address: String,
+    session_code: String,
+    guest_name: String,
+    state: State<'_, AppState>,
+    app_handle: tauri::AppHandle,
+) -> Result<collab_manager::CollabJoinInfo, String> {
+    let (client, join_info) = collab_manager::CollabClient::connect(
+        &host_address,
+        &session_code,
+        &guest_name,
+        app_handle,
+    ).await?;
+
+    let collab_id = client.collab_id.clone();
+    {
+        let mut clients = state.collab_client_sessions.lock()
+            .map_err(|e| format!("Collab lock error: {}", e))?;
+        clients.insert(collab_id, std::sync::Arc::new(client));
+    }
+
+    Ok(join_info)
+}
+
+#[tauri::command]
+async fn collab_leave_session(
+    collab_id: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let removed = {
+        let mut clients = state.collab_client_sessions.lock()
+            .map_err(|e| format!("Collab lock error: {}", e))?;
+        clients.remove(&collab_id)
+    };
+    if let Some(client) = removed {
+        client.disconnect().await;
+    }
+    Ok(())
+}
+
+#[tauri::command]
+async fn collab_send_input(
+    collab_id: String,
+    data: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let client = {
+        let clients = state.collab_client_sessions.lock()
+            .map_err(|e| format!("Collab lock error: {}", e))?;
+        clients.get(&collab_id).cloned()
+            .ok_or_else(|| format!("Collab session '{}' not found", collab_id))?
+    };
+    client.send_input(data).await
+}
+
+#[tauri::command]
+async fn collab_send_chat(
+    session_id: String,
+    content: String,
+    sender_name: String,
+    is_host: bool,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    if is_host {
+        let session = {
+            let collab_sessions = state.collab_host_sessions.lock()
+                .map_err(|e| format!("Collab lock error: {}", e))?;
+            collab_sessions.get(&session_id).cloned()
+                .ok_or_else(|| format!("Collab host session '{}' not found", session_id))?
+        };
+        session.host_chat(content, &sender_name).await
+    } else {
+        let client = {
+            let clients = state.collab_client_sessions.lock()
+                .map_err(|e| format!("Collab lock error: {}", e))?;
+            clients.get(&session_id).cloned()
+                .ok_or_else(|| format!("Collab client session '{}' not found", session_id))?
+        };
+        client.send_chat(content, &sender_name).await
+    }
+}
+
+#[tauri::command]
+async fn collab_set_permission(
+    session_id: String,
+    guest_id: String,
+    permission: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let perm = match permission.as_str() {
+        "FullControl" => collab_manager::CollabPermission::FullControl,
+        _ => collab_manager::CollabPermission::ReadOnly,
+    };
+    let session = {
+        let collab_sessions = state.collab_host_sessions.lock()
+            .map_err(|e| format!("Collab lock error: {}", e))?;
+        collab_sessions.get(&session_id).cloned()
+            .ok_or_else(|| format!("Collab session '{}' not found", session_id))?
+    };
+    session.set_permission(&guest_id, perm).await
+}
+
+#[tauri::command]
+async fn collab_kick_guest(
+    session_id: String,
+    guest_id: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let session = {
+        let collab_sessions = state.collab_host_sessions.lock()
+            .map_err(|e| format!("Collab lock error: {}", e))?;
+        collab_sessions.get(&session_id).cloned()
+            .ok_or_else(|| format!("Collab session '{}' not found", session_id))?
+    };
+    session.kick_guest(&guest_id).await
+}
+
+#[tauri::command]
+async fn collab_get_users(
+    session_id: String,
+    state: State<'_, AppState>,
+) -> Result<Vec<collab_manager::CollabUserInfo>, String> {
+    let session = {
+        let collab_sessions = state.collab_host_sessions.lock()
+            .map_err(|e| format!("Collab lock error: {}", e))?;
+        collab_sessions.get(&session_id).cloned()
+            .ok_or_else(|| format!("Collab session '{}' not found", session_id))?
+    };
+    Ok(session.get_users().await)
+}
+
 // ──────────── Infrastructure Monitor Commands ────────────
 
 #[tauri::command]
@@ -1686,6 +1927,8 @@ fn main() {
             log_manager: Mutex::new(log_manager::LogManager::new()),
             session_doc_manager: Mutex::new(session_doc_manager::SessionDocManager::new()),
             infra_monitors: Mutex::new(infra_monitor::InfraMonitors::new()),
+            collab_host_sessions: Mutex::new(HashMap::new()),
+            collab_client_sessions: Mutex::new(HashMap::new()),
         })
         .invoke_handler(tauri::generate_handler![
             get_available_shells,
@@ -1770,6 +2013,15 @@ fn main() {
             infra_monitor_start,
             infra_monitor_stop,
             infra_monitor_stop_all,
+            collab_start_hosting,
+            collab_stop_hosting,
+            collab_join_session,
+            collab_leave_session,
+            collab_send_input,
+            collab_send_chat,
+            collab_set_permission,
+            collab_kick_guest,
+            collab_get_users,
         ])
         .run(tauri::generate_context!())
         .expect("error while running NovaShell");

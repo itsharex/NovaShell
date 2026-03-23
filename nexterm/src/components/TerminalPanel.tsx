@@ -12,6 +12,7 @@ import { parseTerminalOutput } from "./DebugPanel";
 import { scanForSecurityEvents } from "../utils/hackingAlerts";
 import type { SnippetRunMode } from "../store/appStore";
 import { isServerNavCommand, parseServerNavCommand, resolveServer, getConnectionCredentials, navigateToServer, listServers } from "../utils/serverNavigation";
+import { CollabOverlay } from "./CollabOverlay";
 import { useT } from "../i18n";
 
 let tauriCore: { invoke: typeof import("@tauri-apps/api/core")["invoke"] } | null = null;
@@ -574,6 +575,63 @@ export function TerminalPanel() {
         const { listen } = await getTauriEvent();
 
         const tab = useAppStore.getState().tabs.find((t) => t.id === tabId);
+
+        // ──── Collab Guest Mode ────
+        // If this tab is a guest collab session, use collab data flow instead of PTY
+        if (tab?.shellType === "collab-guest" && tab.sessionId) {
+          const collabId = tab.sessionId;
+          const collabSession = useAppStore.getState().collabSessions[collabId];
+
+          // Apply terminal size from host
+          if (collabSession?.terminalSize) {
+            terminal.resize(collabSession.terminalSize.cols, collabSession.terminalSize.rows);
+          }
+
+          // Listen for scrollback (initial sync)
+          const unlistenScrollback = await listen<string>(
+            `collab-scrollback-${collabId}`,
+            (event) => { terminal.write(event.payload); }
+          );
+          unlisteners.push(unlistenScrollback);
+
+          // Listen for real-time PTY data from host
+          const unlistenData = await listen<string>(
+            `collab-pty-data-${collabId}`,
+            (event) => { terminal.write(event.payload); }
+          );
+          unlisteners.push(unlistenData);
+
+          // Listen for resize events from host
+          const unlistenResize = await listen<{ cols: number; rows: number }>(
+            `collab-resize-${collabId}`,
+            (event) => {
+              terminal.resize(event.payload.cols, event.payload.rows);
+            }
+          );
+          unlisteners.push(unlistenResize);
+
+          // Forward keyboard input to host via collab_send_input
+          const collabInputDisposable = terminal.onData((data) => {
+            invoke("collab_send_input", { collabId, data }).catch(() => {});
+          });
+          disposables.push(collabInputDisposable);
+
+          sessionId = collabId;
+          liveSession.id = collabId;
+          liveSession.type = "pty"; // Not a real PTY, but same cleanup path
+
+          terminal.write("\x1b[36m[NovaShell]\x1b[0m Connected to collaborative session\r\n");
+
+          terminalsRef.current.set(tabId, {
+            terminal, fitAddon, searchAddon,
+            sessionId: collabId,
+            sessionType: "pty",
+            disposables, unlisteners,
+          });
+          return; // Skip normal PTY initialization
+        }
+
+        // ──── Normal PTY Mode ────
         // shellType now stores the full path from get_available_shells
         const defaultShell = navigator.platform.startsWith("Win") ? "powershell.exe" : "/bin/bash";
         const shellPath = tab?.shellType || defaultShell;
@@ -850,15 +908,23 @@ export function TerminalPanel() {
       // Unsubscribe event listeners before closing PTY
       ref.unlisteners.forEach((fn) => fn());
       ref.disposables.forEach((d) => d.dispose());
-      // Close PTY session, then dispose terminal after PTY is cleaned up
+      // Close PTY/SSH/Collab session, then dispose terminal after cleanup
       const sid = ref.sessionId;
       if (sid) {
-        const closeCmd = ref.sessionType === "ssh" ? "ssh_disconnect" : "close_pty_session";
-        getTauriCore().then(({ invoke }) => {
-          invoke(closeCmd, { sessionId: sid }).catch(() => {});
-        }).catch(() => {}).finally(() => {
-          ref.terminal.dispose();
-        });
+        // Check if this is a collab guest session
+        const collabSession = useAppStore.getState().collabSessions[sid];
+        if (collabSession?.role === "guest") {
+          useAppStore.getState().leaveCollabSession(sid).finally(() => {
+            ref.terminal.dispose();
+          });
+        } else {
+          const closeCmd = ref.sessionType === "ssh" ? "ssh_disconnect" : "close_pty_session";
+          getTauriCore().then(({ invoke }) => {
+            invoke(closeCmd, { sessionId: sid }).catch(() => {});
+          }).catch(() => {}).finally(() => {
+            ref.terminal.dispose();
+          });
+        }
       } else {
         ref.terminal.dispose();
       }
@@ -909,10 +975,16 @@ export function TerminalPanel() {
         ref.disposables.forEach((d) => d.dispose());
         ref.unlisteners.forEach((fn) => fn());
         if (ref.sessionId) {
-          const closeCmd = ref.sessionType === "ssh" ? "ssh_disconnect" : "close_pty_session";
-          getTauriCore().then(({ invoke }) => {
-            invoke(closeCmd, { sessionId: ref.sessionId });
-          }).catch(() => {});
+          // Check if this is a collab guest session
+          const collabSession = useAppStore.getState().collabSessions[ref.sessionId];
+          if (collabSession?.role === "guest") {
+            useAppStore.getState().leaveCollabSession(ref.sessionId).catch(() => {});
+          } else {
+            const closeCmd = ref.sessionType === "ssh" ? "ssh_disconnect" : "close_pty_session";
+            getTauriCore().then(({ invoke }) => {
+              invoke(closeCmd, { sessionId: ref.sessionId });
+            }).catch(() => {});
+          }
         }
         ref.terminal.dispose();
       });
@@ -961,13 +1033,18 @@ export function TerminalPanel() {
           <div
             key={tab.id}
             className={`terminal-instance ${tab.id !== activeTabId && splitMode === "none" ? "hidden" : ""}`}
-            ref={(el) => {
-              if (el && !containersRef.current.has(tab.id)) {
-                containersRef.current.set(tab.id, el);
-                initTerminal(tab.id, el);
-              }
-            }}
-          />
+          >
+            <CollabOverlay tabId={tab.id} />
+            <div
+              style={{ flex: 1, minHeight: 0 }}
+              ref={(el) => {
+                if (el && !containersRef.current.has(tab.id)) {
+                  containersRef.current.set(tab.id, el);
+                  initTerminal(tab.id, el);
+                }
+              }}
+            />
+          </div>
         ))}
       </div>
     </div>

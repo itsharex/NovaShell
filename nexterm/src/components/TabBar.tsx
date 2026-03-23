@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { createPortal } from "react-dom";
-import { Plus, X } from "lucide-react";
+import { Plus, X, Users, Share2 } from "lucide-react";
 import { useAppStore } from "../store/appStore";
 import { useT } from "../i18n";
 
@@ -75,9 +75,10 @@ export function TabBar() {
           className={`tab ${tab.id === activeTabId ? "active" : ""}`}
           onClick={() => setActiveTab(tab.id)}
         >
-          <span className="tab-icon" style={{ fontSize: 10, fontWeight: 700 }}>
+          <span className="tab-icon" style={{ fontSize: 10, fontWeight: 700, display: "inline-flex", alignItems: "center", gap: 3 }}>
             {(() => {
               const s = tab.shellType.toLowerCase();
+              if (s === "collab-guest") return <Users size={10} style={{ color: "#3fb950" }} />;
               if (s.includes("powershell")) return "PS";
               if (s.includes("cmd")) return ">_";
               if (s.includes("zsh")) return "%";
@@ -85,6 +86,15 @@ export function TabBar() {
               if (s.includes("wsl")) return "~";
               if (s.includes("bash")) return "$";
               return ">_";
+            })()}
+            {/* Show sharing indicator if this tab is being hosted */}
+            {(() => {
+              const collabSessions = useAppStore.getState().collabSessions;
+              const hostSession = tab.sessionId ? collabSessions[tab.sessionId] : null;
+              if (hostSession?.role === "host" && hostSession.status === "active") {
+                return <Share2 size={8} style={{ color: "#58a6ff" }} />;
+              }
+              return null;
             })()}
           </span>
           <span>{tab.title}</span>

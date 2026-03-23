@@ -5,6 +5,7 @@ use std::sync::{Arc, Condvar, Mutex};
 use std::thread::JoinHandle;
 use std::time::Duration;
 use tauri::Emitter;
+use tokio::sync::broadcast;
 
 pub struct PtySession {
     master: Arc<Mutex<Box<dyn MasterPty + Send>>>,
@@ -12,6 +13,11 @@ pub struct PtySession {
     _reader_thread: Option<JoinHandle<()>>,
     _flusher_thread: Option<JoinHandle<()>>,
     running: Arc<AtomicBool>,
+    /// Optional broadcast sender for collab — set when sharing this session.
+    /// The reader/flusher threads check this and fan out data when Some.
+    collab_tx: Arc<Mutex<Option<broadcast::Sender<String>>>>,
+    /// Rolling scrollback buffer for late-joining collab guests (last 64KB).
+    scrollback: Arc<Mutex<String>>,
 }
 
 impl Drop for PtySession {
@@ -153,12 +159,19 @@ impl PtySession {
             }
         });
 
+        // Collab broadcast + scrollback (initialized empty, set later if sharing)
+        let collab_tx: Arc<Mutex<Option<broadcast::Sender<String>>>> =
+            Arc::new(Mutex::new(None));
+        let scrollback: Arc<Mutex<String>> = Arc::new(Mutex::new(String::new()));
+
         // Flusher thread: waits for data signal, then emits batch
         // Uses Condvar instead of 16ms spin-loop — zero CPU when idle
         let running_flusher = Arc::clone(&running);
         let batch_flusher = Arc::clone(&batch);
         let data_ready_flusher = Arc::clone(&data_ready);
         let flush_event = format!("pty-data-{}", sid);
+        let collab_tx_flusher = Arc::clone(&collab_tx);
+        let scrollback_flusher = Arc::clone(&scrollback);
 
         let flusher_thread = std::thread::spawn(move || {
             loop {
@@ -177,7 +190,31 @@ impl PtySession {
 
                 if let Ok(mut b) = batch_flusher.lock() {
                     if !b.is_empty() {
-                        let _ = app_handle.emit(&flush_event, std::mem::take(&mut *b));
+                        let data = std::mem::take(&mut *b);
+
+                        // Fan out to collab broadcast if active
+                        if let Ok(ctx) = collab_tx_flusher.lock() {
+                            if let Some(ref tx) = *ctx {
+                                let _ = tx.send(data.clone());
+                            }
+                        }
+
+                        // Append to scrollback buffer (keep last 64KB)
+                        if let Ok(mut sb) = scrollback_flusher.lock() {
+                            sb.push_str(&data);
+                            if sb.len() > 65536 {
+                                let mut trim = sb.len() - 65536;
+                                // Ensure trim lands on a valid UTF-8 boundary
+                                while trim < sb.len() && !sb.is_char_boundary(trim) {
+                                    trim += 1;
+                                }
+                                if trim < sb.len() {
+                                    *sb = sb[trim..].to_string();
+                                }
+                            }
+                        }
+
+                        let _ = app_handle.emit(&flush_event, data);
                     }
                 }
             }
@@ -189,6 +226,8 @@ impl PtySession {
             _reader_thread: Some(reader_thread),
             _flusher_thread: Some(flusher_thread),
             running,
+            collab_tx,
+            scrollback,
         })
     }
 
@@ -210,5 +249,31 @@ impl PtySession {
             pixel_height: 0,
         })?;
         Ok(())
+    }
+
+    // ──── Collab support ────
+
+    /// Enable collab broadcasting. Returns a receiver for the collab server.
+    pub fn enable_collab(&self) -> broadcast::Receiver<String> {
+        let (tx, rx) = broadcast::channel::<String>(256);
+        if let Ok(mut ctx) = self.collab_tx.lock() {
+            *ctx = Some(tx);
+        }
+        rx
+    }
+
+    /// Disable collab broadcasting.
+    pub fn disable_collab(&self) {
+        if let Ok(mut ctx) = self.collab_tx.lock() {
+            *ctx = None;
+        }
+    }
+
+    /// Get the current scrollback buffer content.
+    pub fn get_scrollback(&self) -> String {
+        self.scrollback
+            .lock()
+            .map(|sb| sb.clone())
+            .unwrap_or_default()
     }
 }

@@ -1,6 +1,6 @@
 [package]
 name = "novaterm"
-version = "2.5.5"
+version = "2.6.0"
 description = "NovaShell - Modern Terminal Emulator"
 authors = ["NovaShell Team"]
 license = "MIT"
@@ -26,7 +26,10 @@ ssh2 = "0.9"
 socket2 = "0.5"
 keyring = "2"
 reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
-tokio = { version = "1", features = ["rt"] }
+tokio = { version = "1", features = ["rt", "net", "sync", "macros", "time"] }
+tokio-tungstenite = "0.24"
+futures-util = { version = "0.3", default-features = false, features = ["sink"] }
+rand = "0.8"
 
 [features]
 default = ["custom-protocol"]

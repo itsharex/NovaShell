@@ -9,6 +9,7 @@ import {
   Rows3,
   Square,
   Server,
+  Users,
 } from "lucide-react";
 import { useAppStore } from "../store/appStore";
 import { useT } from "../i18n";
@@ -215,6 +216,21 @@ export function StatusBar() {
             );
           }
           return null;
+        })()}
+        {(() => {
+          const sessions = Object.values(useAppStore.getState().collabSessions);
+          const activeCollab = sessions.find((s) => s.status === "active");
+          if (!activeCollab) return null;
+          const isHost = activeCollab.role === "host";
+          const guestCount = activeCollab.users.filter((u) => !u.is_host).length;
+          return (
+            <div className="statusbar-item" style={{ color: "#58a6ff" }}>
+              <Users size={11} />
+              <span style={{ fontWeight: 600 }}>
+                {isHost ? `Collab: ${guestCount}` : `Guest: ${activeCollab.hostName}`}
+              </span>
+            </div>
+          );
         })()}
         {infraAlertCount > 0 && (
           <div className="statusbar-item" style={{ color: "#ff7b72" }}>

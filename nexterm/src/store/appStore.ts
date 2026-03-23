@@ -12,7 +12,7 @@ export interface CustomThemeColors {
   terminalFg: string;
   terminalCursor: string;
 }
-export type SidebarTab = "history" | "snippets" | "preview" | "plugins" | "stats" | "ssh" | "sftp" | "servermap" | "editor" | "debug" | "ai" | "docs" | "hacking" | "infra";
+export type SidebarTab = "history" | "snippets" | "preview" | "plugins" | "stats" | "ssh" | "sftp" | "servermap" | "editor" | "debug" | "ai" | "docs" | "hacking" | "infra" | "collab";
 export type AppLanguage = "en" | "es";
 
 // === Hacking Mode Types ===
@@ -300,6 +300,39 @@ export interface DiskGrowthEntry {
   timestamp: number;
 }
 
+// === Collaborative Terminal Types ===
+export type CollabRole = "host" | "guest";
+export type CollabPermission = "ReadOnly" | "FullControl";
+
+export interface CollabUser {
+  id: string;
+  name: string;
+  permission: CollabPermission;
+  is_host: boolean;
+}
+
+export interface CollabChatMessage {
+  id: string;
+  sender: string;
+  content: string;
+  timestamp: number;
+}
+
+export interface CollabSessionInfo {
+  id: string;                   // PTY session ID (host) or collab_id (guest)
+  tabId: string;
+  role: CollabRole;
+  sessionCode: string;
+  hostAddress: string;
+  port: number;
+  hostName: string;
+  users: CollabUser[];
+  chatMessages: CollabChatMessage[];
+  status: "connecting" | "active" | "disconnected" | "error";
+  errorMessage?: string;
+  terminalSize?: { cols: number; rows: number };
+}
+
 // === File-based persistence (survives app updates) ===
 interface PersistedConfig {
   theme?: ThemeName;
@@ -578,6 +611,21 @@ interface AppState {
   diskPreviousScans: Record<string, { dirs: Record<string, number>; timestamp: number }>;
   setDiskAnalysis: (connectionId: string, analysis: DiskAnalysis) => void;
   clearDiskAnalysis: (connectionId: string) => void;
+
+  // Collaborative Terminal
+  collabSessions: Record<string, CollabSessionInfo>;
+  startCollabHosting: (tabId: string, sessionId: string, hostName: string, cols: number, rows: number) => Promise<void>;
+  stopCollabHosting: (sessionId: string) => Promise<void>;
+  joinCollabSession: (hostAddress: string, code: string, guestName: string) => Promise<string>;
+  leaveCollabSession: (collabId: string) => Promise<void>;
+  collabSendChat: (sessionId: string, content: string, senderName: string, isHost: boolean) => Promise<void>;
+  collabSetPermission: (sessionId: string, guestId: string, permission: CollabPermission) => Promise<void>;
+  collabKickGuest: (sessionId: string, guestId: string) => Promise<void>;
+  addCollabChatMessage: (sessionId: string, msg: CollabChatMessage) => void;
+  updateCollabUsers: (sessionId: string, users: CollabUser[]) => void;
+  addCollabUser: (sessionId: string, user: CollabUser) => void;
+  removeCollabUser: (sessionId: string, userId: string) => void;
+  removeCollabSession: (sessionId: string) => void;
 
   // Hydration from config file
   _hydrateFromConfig: (config: PersistedConfig) => void;
@@ -1305,6 +1353,227 @@ export const useAppStore = create<AppState>((set, get) => ({
   clearDiskAnalysis: (connectionId) => set((s) => {
     const { [connectionId]: _, ...rest } = s.diskAnalyses;
     return { diskAnalyses: rest };
+  }),
+
+  // ──── Collaborative Terminal ────
+  collabSessions: {},
+
+  startCollabHosting: async (tabId, sessionId, hostName, cols, rows) => {
+    try {
+      const { invoke } = await import("@tauri-apps/api/core");
+      const info = await invoke<{ session_code: string; port: number; local_ips: string[] }>(
+        "collab_start_hosting",
+        { sessionId, hostName, cols, rows }
+      );
+      set((s) => ({
+        collabSessions: {
+          ...s.collabSessions,
+          [sessionId]: {
+            id: sessionId,
+            tabId,
+            role: "host",
+            sessionCode: info.session_code,
+            hostAddress: info.local_ips[0] || "127.0.0.1",
+            port: info.port,
+            hostName,
+            users: [{ id: "host", name: hostName, permission: "FullControl", is_host: true }],
+            chatMessages: [],
+            status: "active",
+            terminalSize: { cols, rows },
+          },
+        },
+      }));
+    } catch (e) {
+      throw e;
+    }
+  },
+
+  stopCollabHosting: async (sessionId) => {
+    try {
+      const { invoke } = await import("@tauri-apps/api/core");
+      await invoke("collab_stop_hosting", { sessionId });
+    } catch {}
+    set((s) => {
+      const { [sessionId]: _, ...rest } = s.collabSessions;
+      return { collabSessions: rest };
+    });
+  },
+
+  joinCollabSession: async (hostAddress, code, guestName) => {
+    const { invoke } = await import("@tauri-apps/api/core");
+    const info = await invoke<{
+      collab_id: string;
+      host_name: string;
+      permission: string;
+      users: CollabUser[];
+      terminal_size: [number, number];
+    }>("collab_join_session", { hostAddress, sessionCode: code, guestName });
+
+    const collabId = info.collab_id;
+
+    // Create a new tab for the guest session
+    tabCounter++;
+    const tabId = `tab-${tabCounter}`;
+
+    set((s) => ({
+      tabs: [...s.tabs, {
+        id: tabId,
+        title: `Collab: ${info.host_name || "Host"}`,
+        shellType: "collab-guest",
+        sessionId: collabId,  // Store collabId as sessionId for reference
+      }],
+      activeTabId: tabId,
+      collabSessions: {
+        ...s.collabSessions,
+        [collabId]: {
+          id: collabId,
+          tabId,
+          role: "guest",
+          sessionCode: code,
+          hostAddress,
+          port: 0,
+          hostName: info.host_name,
+          users: info.users,
+          chatMessages: [],
+          status: "active",
+          terminalSize: { cols: info.terminal_size[0], rows: info.terminal_size[1] },
+        },
+      },
+    }));
+    return collabId;
+  },
+
+  leaveCollabSession: async (collabId) => {
+    try {
+      const { invoke } = await import("@tauri-apps/api/core");
+      await invoke("collab_leave_session", { collabId });
+    } catch {}
+    set((s) => {
+      const { [collabId]: _, ...rest } = s.collabSessions;
+      return { collabSessions: rest };
+    });
+  },
+
+  collabSendChat: async (sessionId, content, senderName, isHost) => {
+    const { invoke } = await import("@tauri-apps/api/core");
+    await invoke("collab_send_chat", { sessionId, content, senderName, isHost });
+    // Add to local state immediately (both host and guest see their own message)
+    const msg: CollabChatMessage = {
+      id: crypto.randomUUID(),
+      sender: senderName,
+      content,
+      timestamp: Date.now(),
+    };
+    set((s) => {
+      const session = s.collabSessions[sessionId];
+      if (!session) return s;
+      return {
+        collabSessions: {
+          ...s.collabSessions,
+          [sessionId]: {
+            ...session,
+            chatMessages: [...session.chatMessages, msg].slice(-200),
+          },
+        },
+      };
+    });
+  },
+
+  collabSetPermission: async (sessionId, guestId, permission) => {
+    const { invoke } = await import("@tauri-apps/api/core");
+    await invoke("collab_set_permission", { sessionId, guestId, permission });
+    set((s) => {
+      const session = s.collabSessions[sessionId];
+      if (!session) return s;
+      return {
+        collabSessions: {
+          ...s.collabSessions,
+          [sessionId]: {
+            ...session,
+            users: session.users.map((u) =>
+              u.id === guestId ? { ...u, permission } : u
+            ),
+          },
+        },
+      };
+    });
+  },
+
+  collabKickGuest: async (sessionId, guestId) => {
+    const { invoke } = await import("@tauri-apps/api/core");
+    await invoke("collab_kick_guest", { sessionId, guestId });
+    set((s) => {
+      const session = s.collabSessions[sessionId];
+      if (!session) return s;
+      return {
+        collabSessions: {
+          ...s.collabSessions,
+          [sessionId]: {
+            ...session,
+            users: session.users.filter((u) => u.id !== guestId),
+          },
+        },
+      };
+    });
+  },
+
+  addCollabChatMessage: (sessionId, msg) => set((s) => {
+    const session = s.collabSessions[sessionId];
+    if (!session) return s;
+    return {
+      collabSessions: {
+        ...s.collabSessions,
+        [sessionId]: {
+          ...session,
+          chatMessages: [...session.chatMessages, msg].slice(-200),
+        },
+      },
+    };
+  }),
+
+  updateCollabUsers: (sessionId, users) => set((s) => {
+    const session = s.collabSessions[sessionId];
+    if (!session) return s;
+    return {
+      collabSessions: {
+        ...s.collabSessions,
+        [sessionId]: { ...session, users },
+      },
+    };
+  }),
+
+  addCollabUser: (sessionId, user) => set((s) => {
+    const session = s.collabSessions[sessionId];
+    if (!session) return s;
+    if (session.users.find((u) => u.id === user.id)) return s;
+    return {
+      collabSessions: {
+        ...s.collabSessions,
+        [sessionId]: {
+          ...session,
+          users: [...session.users, user],
+        },
+      },
+    };
+  }),
+
+  removeCollabUser: (sessionId, userId) => set((s) => {
+    const session = s.collabSessions[sessionId];
+    if (!session) return s;
+    return {
+      collabSessions: {
+        ...s.collabSessions,
+        [sessionId]: {
+          ...session,
+          users: session.users.filter((u) => u.id !== userId),
+        },
+      },
+    };
+  }),
+
+  removeCollabSession: (sessionId) => set((s) => {
+    const { [sessionId]: _, ...rest } = s.collabSessions;
+    return { collabSessions: rest };
   }),
 
   _hydrateFromConfig: (config) => {

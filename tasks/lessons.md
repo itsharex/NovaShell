@@ -179,3 +179,24 @@
 - Unsigned compiled `.exe` files in project root trigger Windows Defender false positives
 - Add `*.exe`, `*.msi`, `*.dmg`, etc. to `.gitignore` to prevent accidental commits
 - Advise users to add project directory to Windows Defender exclusions
+
+## Collaborative Terminal Architecture
+- WebSocket server embedded in Tauri Rust backend (tokio-tungstenite) — no external server needed
+- PTY data broadcast uses tokio::sync::broadcast channel with 256-message buffer
+- Flusher thread (not reader) feeds the broadcast channel — same thread that emits Tauri events
+- Scrollback ring buffer (64KB) in PtySession for late-joining guests
+- Session codes are 6-char alphanumeric (ABCDEFGHJKLMNPQRSTUVWXYZ23456789 — no ambiguous chars)
+- Guest input forwarded via Tauri event listener (collab-guest-input-{sid}) to PtySession.write()
+- Rate limiting: 5 failed auth attempts per IP → 60s cooldown
+- Permission enforcement is server-side in Rust — read-only guests' PtyInput messages are silently dropped
+- Guest tabs use shellType "collab-guest" to distinguish from normal PTY/SSH tabs
+- Cleanup: collab guest tabs call leaveCollabSession instead of close_pty_session
+- futures-util "stream" feature doesn't exist — use only "sink" for SplitSink
+- Scrollback ring buffer trim MUST use is_char_boundary() to avoid panicking on multi-byte UTF-8
+- When enabling collab on PTY, must rollback (disable_collab) if WebSocket server fails to start
+- Manual JSON unescaping (\r, \n, etc.) misses \uXXXX and \b/\f — use serde_json::from_str::<String>() instead
+- Async event listener setup in React useEffect needs a `cancelled` flag to prevent registering listeners after cleanup
+- Guest chat messages must be added to local state immediately (not just host) for instant feedback
+- Rate limiting HashMap entries must be periodically cleaned up to prevent memory leak
+- Component unmount cleanup must distinguish collab-guest tabs from normal PTY tabs
+- std::sync::MutexGuard across .await is a compile error in Tauri commands — use Arc + clone pattern

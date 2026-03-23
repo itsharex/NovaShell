@@ -586,6 +586,8 @@ body {
   position: absolute;
   inset: 0;
   padding: 8px;
+  display: flex;
+  flex-direction: column;
 }
 
 .terminal-instance.hidden {

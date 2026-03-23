@@ -208,7 +208,26 @@
 - [x] TerminalPanel: fix fetchSuggestions debounce timer not cleared on early return
 - [x] TypeScript + Rust compilation verified
 
+## Completed (Collaborative Terminal Sessions)
+- [x] Rust: collab_manager.rs — WebSocket server, auth, broadcast, session management, guest client
+- [x] Rust: pty_manager.rs — broadcast::Sender hook + 64KB scrollback ring buffer
+- [x] Rust: main.rs — 9 new Tauri commands (start/stop hosting, join/leave, chat, permissions, kick, users)
+- [x] Rust: Cargo.toml — tokio-tungstenite, futures-util, rand dependencies
+- [x] Store: CollabSessionInfo, CollabUser, CollabChatMessage types
+- [x] Store: 12 collab actions (host/join/leave/chat/permissions/kick/users)
+- [x] Store: SidebarTab "collab" added
+- [x] CollabPanel.tsx — Lobby/Host/Guest/Chat views, event listeners for all collab events
+- [x] CollabOverlay.tsx — Sharing/connected indicator strip on terminal tabs
+- [x] TerminalPanel.tsx — Guest mode data flow (collab events instead of PTY), cleanup handling
+- [x] Sidebar.tsx — Collab tab with Users icon, lazy-loaded CollabPanel
+- [x] StatusBar.tsx — Collab indicator (host: guest count, guest: host name)
+- [x] TabBar.tsx — Users icon for guest tabs, Share2 icon for hosted tabs
+- [x] i18n: 20+ collab keys in en.ts and es.ts
+- [x] CSS: terminal-instance flex layout for overlay support
+- [x] TypeScript compilation verified
+
 ## Pending
+- [ ] Test Collaborative Terminal with two NovaShell instances on LAN
 - [ ] Test Cross-Server Navigation with real SSH servers
 - [ ] Test Infrastructure Monitor with real SSH servers
 - [ ] Test Debug Copilot AI analysis with live Ollama

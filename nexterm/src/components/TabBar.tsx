@@ -25,6 +25,7 @@ export function TabBar() {
   const addTab = useAppStore((s) => s.addTab);
   const closeTab = useAppStore((s) => s.closeTab);
   const setActiveTab = useAppStore((s) => s.setActiveTab);
+  const collabSessions = useAppStore((s) => s.collabSessions);
   const [showShellMenu, setShowShellMenu] = useState(false);
   const [menuPos, setMenuPos] = useState({ top: 0, left: 0 });
   const [availableShells, setAvailableShells] = useState<ShellInfo[]>([]);
@@ -88,14 +89,10 @@ export function TabBar() {
               return ">_";
             })()}
             {/* Show sharing indicator if this tab is being hosted */}
-            {(() => {
-              const collabSessions = useAppStore.getState().collabSessions;
-              const hostSession = tab.sessionId ? collabSessions[tab.sessionId] : null;
-              if (hostSession?.role === "host" && hostSession.status === "active") {
-                return <Share2 size={8} style={{ color: "#58a6ff" }} />;
-              }
-              return null;
-            })()}
+            {tab.sessionId && collabSessions[tab.sessionId]?.role === "host" &&
+              collabSessions[tab.sessionId]?.status === "active" && (
+              <Share2 size={8} style={{ color: "#58a6ff" }} />
+            )}
           </span>
           <span>{tab.title}</span>
           {tabs.length > 1 && (

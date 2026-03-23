@@ -10,6 +10,21 @@ use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{broadcast, Mutex as TokioMutex, RwLock as TokioRwLock};
 use tokio_tungstenite::tungstenite::Message;
 
+/// Send a WebSocket message with a timeout to prevent blocking the lock holder.
+/// Returns true if send succeeded, false if it timed out or failed.
+async fn send_with_timeout(
+    tx: &mut futures_util::stream::SplitSink<
+        tokio_tungstenite::WebSocketStream<TcpStream>,
+        Message,
+    >,
+    msg: Message,
+) -> bool {
+    match tokio::time::timeout(Duration::from_secs(2), tx.send(msg)).await {
+        Ok(Ok(())) => true,
+        _ => false, // Timeout or send error — skip this guest
+    }
+}
+
 // ──────────── Protocol Messages ────────────
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -407,10 +422,7 @@ impl CollabSession {
                     {
                         let mut g = guests_conn.write().await;
                         for other in g.values_mut() {
-                            let _ = other
-                                .tx
-                                .send(Message::Text(join_json.clone().into()))
-                                .await;
+                            send_with_timeout(&mut other.tx, Message::Text(join_json.clone().into())).await;
                         }
                     }
 
@@ -448,8 +460,8 @@ impl CollabSession {
                                         let json = serde_json::to_string(&msg).unwrap();
                                         let mut g = guests_conn.write().await;
                                         if let Some(guest) = g.get_mut(&guest_id) {
-                                            if guest.tx.send(Message::Text(json.into())).await.is_err() {
-                                                break; // Guest disconnected
+                                            if !send_with_timeout(&mut guest.tx, Message::Text(json.into())).await {
+                                                break; // Guest disconnected or send timed out
                                             }
                                         } else {
                                             break; // Guest was kicked
@@ -501,7 +513,7 @@ impl CollabSession {
                                                     let mut g = guests_conn.write().await;
                                                     for (gid, guest) in g.iter_mut() {
                                                         if *gid != guest_id {
-                                                            let _ = guest.tx.send(Message::Text(chat_json.clone().into())).await;
+                                                            send_with_timeout(&mut guest.tx, Message::Text(chat_json.clone().into())).await;
                                                         }
                                                     }
                                                 }
@@ -514,7 +526,7 @@ impl CollabSession {
                                             Ok(CollabMessage::Heartbeat) => {
                                                 let mut g = guests_conn.write().await;
                                                 if let Some(guest) = g.get_mut(&guest_id) {
-                                                    let _ = guest.tx.send(Message::Text(
+                                                    send_with_timeout(&mut guest.tx, Message::Text(
                                                         serde_json::to_string(&CollabMessage::Pong).unwrap().into()
                                                     )).await;
                                                 }
@@ -540,7 +552,7 @@ impl CollabSession {
                         };
                         let left_json = serde_json::to_string(&left_msg).unwrap();
                         for other in g.values_mut() {
-                            let _ = other.tx.send(Message::Text(left_json.clone().into())).await;
+                            send_with_timeout(&mut other.tx, Message::Text(left_json.clone().into())).await;
                         }
                     }
 
@@ -578,12 +590,12 @@ impl CollabSession {
         let json = serde_json::to_string(&msg).unwrap();
 
         // Notify the specific guest
-        let _ = guest.tx.send(Message::Text(json.clone().into())).await;
+        send_with_timeout(&mut guest.tx, Message::Text(json.clone().into())).await;
 
         // Notify all other guests
         for (gid, g) in guests.iter_mut() {
             if gid != guest_id {
-                let _ = g.tx.send(Message::Text(json.clone().into())).await;
+                send_with_timeout(&mut g.tx, Message::Text(json.clone().into())).await;
             }
         }
 
@@ -597,13 +609,10 @@ impl CollabSession {
             let msg = CollabMessage::Kicked {
                 reason: "Kicked by host".to_string(),
             };
-            let _ = guest
-                .tx
-                .send(Message::Text(
-                    serde_json::to_string(&msg).unwrap().into(),
-                ))
-                .await;
-            let _ = guest.tx.close().await;
+            send_with_timeout(&mut guest.tx, Message::Text(
+                serde_json::to_string(&msg).unwrap().into(),
+            )).await;
+            let _ = tokio::time::timeout(Duration::from_secs(1), guest.tx.close()).await;
 
             // Notify remaining guests
             let left_msg = CollabMessage::UserLeft {
@@ -611,10 +620,7 @@ impl CollabSession {
             };
             let left_json = serde_json::to_string(&left_msg).unwrap();
             for other in guests.values_mut() {
-                let _ = other
-                    .tx
-                    .send(Message::Text(left_json.clone().into()))
-                    .await;
+                send_with_timeout(&mut other.tx, Message::Text(left_json.clone().into())).await;
             }
             Ok(())
         } else {
@@ -642,7 +648,7 @@ impl CollabSession {
         let json = serde_json::to_string(&chat_msg).unwrap();
         let mut guests = self.guests.write().await;
         for guest in guests.values_mut() {
-            let _ = guest.tx.send(Message::Text(json.clone().into())).await;
+            send_with_timeout(&mut guest.tx, Message::Text(json.clone().into())).await;
         }
         Ok(())
     }
@@ -653,7 +659,7 @@ impl CollabSession {
         let json = serde_json::to_string(&msg).unwrap();
         let mut guests = self.guests.write().await;
         for guest in guests.values_mut() {
-            let _ = guest.tx.send(Message::Text(json.clone().into())).await;
+            send_with_timeout(&mut guest.tx, Message::Text(json.clone().into())).await;
         }
     }
 

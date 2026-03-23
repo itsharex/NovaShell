@@ -23,6 +23,7 @@ export function StatusBar() {
   const splitMode = useAppStore((s) => s.splitMode);
   const hackingMode = useAppStore((s) => s.hackingMode);
   const sshConnections = useAppStore((s) => s.sshConnections);
+  const collabSessions = useAppStore((s) => s.collabSessions);
   const language = useAppStore((s) => s.language);
   // Stable function refs — read from getState() to avoid selector re-renders
   const setSystemStats = useAppStore.getState().setSystemStats;
@@ -218,8 +219,7 @@ export function StatusBar() {
           return null;
         })()}
         {(() => {
-          const sessions = Object.values(useAppStore.getState().collabSessions);
-          const activeCollab = sessions.find((s) => s.status === "active");
+          const activeCollab = Object.values(collabSessions).find((s) => s.status === "active");
           if (!activeCollab) return null;
           const isHost = activeCollab.role === "host";
           const guestCount = activeCollab.users.filter((u) => !u.is_host).length;

@@ -326,6 +326,7 @@ export interface CollabSessionInfo {
   hostAddress: string;
   port: number;
   hostName: string;
+  guestName?: string;           // Only for guest sessions — the local user's display name
   users: CollabUser[];
   chatMessages: CollabChatMessage[];
   status: "connecting" | "active" | "disconnected" | "error";
@@ -1433,6 +1434,7 @@ export const useAppStore = create<AppState>((set, get) => ({
           hostAddress,
           port: 0,
           hostName: info.host_name,
+          guestName,
           users: info.users,
           chatMessages: [],
           status: "active",

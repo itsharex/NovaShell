@@ -30,6 +30,7 @@ pub struct AppState {
     pub infra_monitors: Mutex<infra_monitor::InfraMonitors>,
     pub collab_host_sessions: Mutex<HashMap<String, std::sync::Arc<collab_manager::CollabSession>>>,
     pub collab_client_sessions: Mutex<HashMap<String, std::sync::Arc<collab_manager::CollabClient>>>,
+    pub collab_listener_ids: Mutex<HashMap<String, tauri::EventId>>,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -1671,7 +1672,7 @@ async fn collab_start_hosting(
 
     // Use Tauri event listener to forward guest input to PTY
     use tauri::Listener;
-    app_for_listen_call.listen(event_name, move |event| {
+    let listener_id = app_for_listen_call.listen(event_name, move |event| {
         // Parse the payload as a proper JSON string to handle all escape sequences
         let unescaped = match serde_json::from_str::<String>(event.payload()) {
             Ok(s) => s,
@@ -1688,6 +1689,13 @@ async fn collab_start_hosting(
         }
     });
 
+    // Store the listener ID for cleanup
+    {
+        let mut listeners = state.collab_listener_ids.lock()
+            .map_err(|e| format!("Listener lock error: {}", e))?;
+        listeners.insert(session_id.clone(), listener_id);
+    }
+
     // Store the collab session (wrapped in Arc)
     {
         let mut collab_sessions = state.collab_host_sessions.lock()
@@ -1702,6 +1710,7 @@ async fn collab_start_hosting(
 async fn collab_stop_hosting(
     session_id: String,
     state: State<'_, AppState>,
+    app_handle: tauri::AppHandle,
 ) -> Result<(), String> {
     // Disable collab broadcast on the PTY session
     {
@@ -1709,6 +1718,16 @@ async fn collab_stop_hosting(
             .map_err(|e| format!("Session lock error: {}", e))?;
         if let Some(pty) = sessions.get(&session_id) {
             pty.disable_collab();
+        }
+    }
+
+    // Remove and cleanup the event listener
+    {
+        use tauri::Listener;
+        let mut listeners = state.collab_listener_ids.lock()
+            .map_err(|e| format!("Listener lock error: {}", e))?;
+        if let Some(id) = listeners.remove(&session_id) {
+            app_handle.unlisten(id);
         }
     }
 
@@ -1929,6 +1948,7 @@ fn main() {
             infra_monitors: Mutex::new(infra_monitor::InfraMonitors::new()),
             collab_host_sessions: Mutex::new(HashMap::new()),
             collab_client_sessions: Mutex::new(HashMap::new()),
+            collab_listener_ids: Mutex::new(HashMap::new()),
         })
         .invoke_handler(tauri::generate_handler![
             get_available_shells,

@@ -494,7 +494,7 @@ function ChatPanel({ session, isHost }: { session: CollabSessionInfo; isHost: bo
   const t = useT();
 
   const hostUser = session.users.find((u) => u.is_host);
-  const senderName = isHost ? (hostUser?.name || "Host") : "Guest";
+  const senderName = isHost ? (hostUser?.name || "Host") : (session.guestName || "Guest");
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });

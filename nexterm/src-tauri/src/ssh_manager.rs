@@ -8,6 +8,46 @@ use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 use tauri::Emitter;
 
+/// Configure preferred algorithms on an SSH session for maximum server compatibility.
+/// Must be called BEFORE session.handshake().
+fn configure_ssh_algorithms(session: &Session) {
+    // Key exchange — broad range: modern elliptic-curve + legacy DH groups
+    let _ = session.method_pref(
+        ssh2::MethodType::Kex,
+        "ecdh-sha2-nistp256,ecdh-sha2-nistp384,ecdh-sha2-nistp521,\
+         diffie-hellman-group-exchange-sha256,diffie-hellman-group14-sha256,\
+         diffie-hellman-group16-sha512,diffie-hellman-group18-sha512,\
+         diffie-hellman-group14-sha1,diffie-hellman-group-exchange-sha1,\
+         diffie-hellman-group1-sha1",
+    );
+    // Host key types
+    let _ = session.method_pref(
+        ssh2::MethodType::HostKey,
+        "ssh-ed25519,ecdsa-sha2-nistp256,ecdsa-sha2-nistp384,ecdsa-sha2-nistp521,\
+         rsa-sha2-512,rsa-sha2-256,ssh-rsa",
+    );
+    // Ciphers (client → server)
+    let _ = session.method_pref(
+        ssh2::MethodType::CryptCs,
+        "aes256-ctr,aes192-ctr,aes128-ctr,aes256-cbc,aes192-cbc,aes128-cbc,3des-cbc",
+    );
+    // Ciphers (server → client)
+    let _ = session.method_pref(
+        ssh2::MethodType::CryptSc,
+        "aes256-ctr,aes192-ctr,aes128-ctr,aes256-cbc,aes192-cbc,aes128-cbc,3des-cbc",
+    );
+    // MAC (client → server)
+    let _ = session.method_pref(
+        ssh2::MethodType::MacCs,
+        "hmac-sha2-256,hmac-sha2-512,hmac-sha1",
+    );
+    // MAC (server → client)
+    let _ = session.method_pref(
+        ssh2::MethodType::MacSc,
+        "hmac-sha2-256,hmac-sha2-512,hmac-sha1",
+    );
+}
+
 pub struct SshSession {
     session: Arc<Mutex<Session>>,
     channel: Arc<Mutex<ssh2::Channel>>,
@@ -76,6 +116,7 @@ impl SshSession {
 
         session.set_tcp_stream(tcp);
         session.set_timeout(15000); // 15s timeout for SSH operations
+        configure_ssh_algorithms(&session);
         session.handshake()
             .map_err(|e| format!("SSH handshake failed: {}", e))?;
 
@@ -448,6 +489,7 @@ impl LogStream {
         let mut session = Session::new().map_err(|e| format!("Session error: {}", e))?;
         session.set_tcp_stream(tcp);
         session.set_timeout(15000);
+        configure_ssh_algorithms(&session);
         session.handshake().map_err(|e| format!("Handshake failed: {}", e))?;
         session.set_keepalive(true, 30);
 
@@ -559,6 +601,7 @@ pub fn test_ssh_connection(
 
     session.set_tcp_stream(tcp);
     session.set_timeout(10000);
+    configure_ssh_algorithms(&session);
     session.handshake()
         .map_err(|e| format!("Handshake failed: {}", e))?;
 
@@ -620,6 +663,7 @@ pub fn exec_command(
 
     session.set_tcp_stream(tcp);
     session.set_timeout(15000);
+    configure_ssh_algorithms(&session);
     session.handshake()
         .map_err(|e| format!("Handshake failed: {}", e))?;
 

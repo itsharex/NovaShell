@@ -478,12 +478,22 @@ export function SSHPanel() {
           }, 50);
         });
 
-        // Initial resize
+        // Initial resize — also forces shell redraw when reconnecting
+        // to an existing session (the terminal was disposed while away,
+        // so a fresh xterm has no output). Changing cols briefly triggers
+        // SIGWINCH on the remote shell, which redraws the prompt.
         invoke("ssh_resize", {
           sessionId: activeSessionId,
-          cols: terminal.cols,
+          cols: Math.max(1, terminal.cols - 1),
           rows: terminal.rows,
         });
+        setTimeout(() => {
+          invoke("ssh_resize", {
+            sessionId: activeSessionId,
+            cols: terminal.cols,
+            rows: terminal.rows,
+          }).catch(() => {});
+        }, 80);
 
         unlisteners.push(() => dataDisposable.dispose());
         unlisteners.push(() => resizeDisposable.dispose());

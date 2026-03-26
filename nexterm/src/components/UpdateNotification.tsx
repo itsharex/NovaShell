@@ -153,6 +153,7 @@ export const UpdateNotification = memo(function UpdateNotification() {
   const [minimized, setMinimized] = useState(false);
   const dismissTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const updateInstalledRef = useRef(false);
+  const pendingUpdateRef = useRef<any>(null);
   const t = useT();
 
   const checkForUpdates = useCallback(async (silent = true) => {
@@ -209,7 +210,10 @@ export const UpdateNotification = memo(function UpdateNotification() {
 
       let lastProgress = 0;
       let totalSize = 0;
-      await update.downloadAndInstall((event) => {
+
+      // Download only — do NOT install yet (on Windows/NSIS the installer
+      // cannot replace the running exe; we install + exit atomically later)
+      await update.download((event) => {
         if (event.event === "Started") {
           lastProgress = 0;
           totalSize = event.data.contentLength ?? 0;
@@ -223,6 +227,7 @@ export const UpdateNotification = memo(function UpdateNotification() {
         }
       });
 
+      pendingUpdateRef.current = update;
       updateInstalledRef.current = true;
       setStatus({ phase: "ready" });
     } catch (e) {
@@ -232,10 +237,21 @@ export const UpdateNotification = memo(function UpdateNotification() {
 
   const relaunchApp = useCallback(async () => {
     try {
-      const { relaunch } = await getProcess();
-      await relaunch();
+      // Install the previously downloaded update, then exit so the
+      // NSIS installer can replace files and restart the app.
+      if (pendingUpdateRef.current) {
+        await pendingUpdateRef.current.install();
+      }
+      const { exit } = await getProcess();
+      await exit(0);
     } catch (e) {
-      setStatus({ phase: "error", message: `Relaunch failed: ${String(e)}` });
+      // Fallback: try relaunch if install+exit failed
+      try {
+        const { relaunch } = await getProcess();
+        await relaunch();
+      } catch (e2) {
+        setStatus({ phase: "error", message: `Relaunch failed: ${String(e2)}` });
+      }
     }
   }, []);
 

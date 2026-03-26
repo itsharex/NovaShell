@@ -16,6 +16,23 @@
 - Passwords must never be persisted to disk (only in-memory during session)
 - localStorage stores connection configs without sensitive data
 - sessionPassword field excluded from localStorage serialization alongside status/sessionId/errorMessage
+- libssh2 key exchange can fail with "Unable to exchange encryption keys" if server only supports algorithms not in default offer list
+- Fix: call session.method_pref() for Kex, HostKey, CryptCs, CryptSc, MacCs, MacSc BEFORE session.handshake()
+- Must include both modern (ecdh-sha2-nistp*, curve25519) and legacy (diffie-hellman-group14-sha1) algorithms for maximum compatibility
+- The configure_ssh_algorithms() helper must be called in ALL 4 handshake sites (SshSession::new, LogStream::new, test_ssh_connection, exec_command)
+
+## Auto-Update (Tauri v2 NSIS)
+- On Windows, downloadAndInstall() runs the NSIS installer while the exe is locked — the installer can fail silently
+- Fix: use update.download() (download only), then update.install() + exit(0) on "Restart Now"
+- install() spawns the NSIS installer and exit(0) releases the exe lock so the installer can replace files
+- relaunch() starts the OLD binary before the installer finishes — do NOT use relaunch() for NSIS updates
+- Fallback: if install+exit fails, try relaunch() as last resort
+
+## SSH Terminal Reconnection
+- When SSHPanel unmounts (user navigates away), the xterm Terminal is disposed but the SSH session keeps running
+- When user comes back and clicks "Open Terminal", a new Terminal is created but has no previous output — shows black screen
+- Fix: force shell redraw via double-resize — change cols by 1, wait 80ms, restore correct cols — triggers SIGWINCH
+- SIGWINCH causes the remote shell to redraw its prompt, so the terminal shows content immediately
 
 ## Performance Optimization
 - sysinfo::System::new_all() is expensive - create once in AppState and reuse with targeted refresh_cpu/refresh_memory/refresh_processes

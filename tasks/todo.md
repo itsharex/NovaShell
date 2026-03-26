@@ -226,6 +226,12 @@
 - [x] CSS: terminal-instance flex layout for overlay support
 - [x] TypeScript compilation verified
 
+## Completed (v2.6.1 Bug Fixes)
+- [x] Fix auto-update: separate download() from install(), use exit(0) so NSIS can replace files
+- [x] Fix SSH handshake: configure_ssh_algorithms() with broad kex/hostkey/cipher/mac preferences before handshake
+- [x] Fix SSH terminal black screen on reopen: double-resize trick to trigger SIGWINCH shell redraw
+- [x] TypeScript + Rust compilation verified
+
 ## Pending
 - [ ] Test Collaborative Terminal with two NovaShell instances on LAN
 - [ ] Test Cross-Server Navigation with real SSH servers

@@ -40,7 +40,6 @@ export default defineConfig({
             '@codemirror/lang-markdown', '@codemirror/lang-sql', '@codemirror/lang-rust',
             '@codemirror/lang-cpp', '@codemirror/lang-java', '@codemirror/lang-php',
             '@codemirror/lang-xml', '@codemirror/lang-go', '@codemirror/lang-sass',
-            '@codemirror/legacy-modes',
           ],
           'vendor-pdf': ['pdf-lib', 'pdfjs-dist'],
         },

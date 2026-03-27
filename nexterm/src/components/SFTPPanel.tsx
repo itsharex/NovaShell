@@ -24,6 +24,7 @@ import {
 import { useAppStore } from "../store/appStore";
 import { useT } from "../i18n";
 import type { SSHConnection } from "../store/appStore";
+import { formatSize } from "../utils/fileColors";
 
 let tauriCoreCache: typeof import("@tauri-apps/api/core") | null = null;
 async function getTauriCore() {
@@ -90,12 +91,7 @@ const btnStyle: React.CSSProperties = {
   gap: 6,
 };
 
-function formatSize(bytes: number): string {
-  if (bytes === 0) return "0 B";
-  const units = ["B", "KB", "MB", "GB", "TB"];
-  const i = Math.floor(Math.log(bytes) / Math.log(1024));
-  return `${(bytes / Math.pow(1024, i)).toFixed(i > 0 ? 1 : 0)} ${units[i]}`;
-}
+// formatSize imported from ../utils/fileColors
 
 function formatPermissions(perm: number): string {
   const octal = (perm & 0o777).toString(8);
@@ -103,7 +99,7 @@ function formatPermissions(perm: number): string {
 }
 
 export function SFTPPanel() {
-  const { sshConnections } = useAppStore();
+  const sshConnections = useAppStore((s) => s.sshConnections);
   const t = useT();
   const [view, setView] = useState<SFTPView>("connections");
   const [sftpSessionId, setSftpSessionId] = useState<string | null>(null);
@@ -1036,7 +1032,7 @@ function SFTPExplorer({
                       {entry.name}
                     </span>
                     {!entry.is_dir && (
-                      <span style={{ fontSize: 9, color: "var(--text-muted)", flexShrink: 0 }}>{formatSize(entry.size)}</span>
+                      <span style={{ fontSize: 9, color: "var(--text-muted)", flexShrink: 0 }}>{formatSize(entry.size, true)}</span>
                     )}
                   </div>
                 );
@@ -1140,7 +1136,7 @@ function SFTPExplorer({
                         <button onClick={(e) => { e.stopPropagation(); openInEditor(entry); }} style={{ background: "none", border: "none", color: "var(--accent-primary)", cursor: "pointer", padding: 1 }} title="Edit in Editor">
                           <Edit3 size={10} />
                         </button>
-                        <span style={{ fontSize: 9, color: "var(--text-muted)", flexShrink: 0 }}>{formatSize(entry.size)}</span>
+                        <span style={{ fontSize: 9, color: "var(--text-muted)", flexShrink: 0 }}>{formatSize(entry.size, true)}</span>
                       </>
                     )}
                     <button onClick={(e) => { e.stopPropagation(); setRenameTarget({ path: entry.path, name: entry.name }); }} style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", padding: 1 }} title="Rename">
@@ -1169,7 +1165,7 @@ function SFTPExplorer({
                 {statusIcon(t.status)}
                 {t.direction === "upload" ? <Upload size={9} style={{ color: "var(--accent-primary)" }} /> : <Download size={9} style={{ color: "var(--accent-secondary)" }} />}
                 <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "var(--text-primary)" }}>{t.filename}</span>
-                {t.size !== undefined && <span style={{ color: "var(--text-muted)", flexShrink: 0 }}>{formatSize(t.size)}</span>}
+                {t.size !== undefined && <span style={{ color: "var(--text-muted)", flexShrink: 0 }}>{formatSize(t.size!, true)}</span>}
                 {t.error && <span style={{ color: "var(--accent-error)", flexShrink: 0 }} title={t.error}>err</span>}
               </div>
             ))}

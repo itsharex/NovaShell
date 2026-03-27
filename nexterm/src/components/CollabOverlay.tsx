@@ -1,3 +1,4 @@
+import { memo } from "react";
 import { Users, Eye, Keyboard, Share2 } from "lucide-react";
 import { useAppStore } from "../store/appStore";
 import { useT } from "../i18n";
@@ -5,28 +6,25 @@ import { useT } from "../i18n";
 /**
  * Overlay shown on top of terminal tabs that have an active collab session.
  * Shows a subtle indicator strip — no intrusion on terminal UX.
+ * Memoized + targeted selectors to avoid re-renders from unrelated state.
  */
-export function CollabOverlay({ tabId }: { tabId: string }) {
-  const collabSessions = useAppStore((s) => s.collabSessions);
-  const tabs = useAppStore((s) => s.tabs);
+export const CollabOverlay = memo(function CollabOverlay({ tabId }: { tabId: string }) {
+  // Targeted selector: only re-render when this specific tab or its collab session changes
+  const session = useAppStore((s) => {
+    const tab = s.tabs.find((t) => t.id === tabId);
+    if (!tab) return null;
+    const hostSession = tab.sessionId ? s.collabSessions[tab.sessionId] : null;
+    const guestSession = Object.values(s.collabSessions).find(
+      (cs) => cs.tabId === tabId && cs.role === "guest"
+    );
+    return hostSession || guestSession || null;
+  });
   const t = useT();
 
-  const tab = tabs.find((t) => t.id === tabId);
-  if (!tab) return null;
-
-  // Check if this tab is hosting (sessionId matches a host collab)
-  const hostSession = tab.sessionId ? collabSessions[tab.sessionId] : null;
-  // Check if this tab is a guest session
-  const guestSession = Object.values(collabSessions).find(
-    (s) => s.tabId === tabId && s.role === "guest"
-  );
-
-  const session = hostSession || guestSession;
   if (!session || session.status !== "active") return null;
 
   const isHost = session.role === "host";
   const guestCount = session.users.filter((u) => !u.is_host).length;
-  // For guest overlay, check if ANY guest has FullControl (could be us)
   const hasControl = !isHost && session.users.some(
     (u) => !u.is_host && u.permission === "FullControl"
   );
@@ -75,4 +73,4 @@ export function CollabOverlay({ tabId }: { tabId: string }) {
       )}
     </div>
   );
-}
+});

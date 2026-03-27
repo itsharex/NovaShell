@@ -4,6 +4,7 @@ use std::io::{Read, Write};
 use std::net::TcpStream;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
+use crate::ssh_manager;
 
 pub struct SftpSession {
     session: Arc<Mutex<Session>>,
@@ -67,6 +68,7 @@ impl SftpSession {
 
         session.set_tcp_stream(tcp.try_clone().map_err(|e| e.to_string())?);
         session.set_timeout(15000);
+        ssh_manager::configure_ssh_algorithms(&session);
         session
             .handshake()
             .map_err(|e| format!("SSH handshake failed: {}", e))?;
@@ -114,16 +116,20 @@ impl SftpSession {
         F: FnOnce(&ssh2::Sftp) -> Result<T, String>,
     {
         let guard = self.sftp.lock().map_err(|e| format!("SFTP lock error: {}", e))?;
-        match guard.as_ref() {
-            Some(sftp) => f(sftp),
-            None => {
-                // Fallback: create a new subsystem if somehow the cached one is gone
-                drop(guard);
-                let session = self.session.lock().map_err(|e| format!("Session lock error: {}", e))?;
-                let sftp = session.sftp().map_err(|e| format!("SFTP subsystem error: {}", e))?;
-                f(&sftp)
-            }
+        if let Some(ref sftp) = *guard {
+            return f(sftp);
         }
+        // Fallback: create a new subsystem and cache it for reuse
+        drop(guard);
+        let session = self.session.lock().map_err(|e| format!("Session lock error: {}", e))?;
+        let sftp = session.sftp().map_err(|e| format!("SFTP subsystem error: {}", e))?;
+        let result = f(&sftp);
+        // Store back into cache
+        drop(session);
+        if let Ok(mut guard) = self.sftp.lock() {
+            *guard = Some(sftp);
+        }
+        result
     }
 
     pub fn list_dir(&self, path: &str) -> Result<Vec<RemoteFileEntry>, String> {
@@ -166,89 +172,80 @@ impl SftpSession {
 
     pub fn download_file(&self, remote_path: &str, local_path: &str) -> Result<u64, String> {
         let normalized_remote = normalize_remote_path(remote_path);
-        let session = self
-            .session
-            .lock()
-            .map_err(|e| format!("Session lock error: {}", e))?;
-        let sftp = session
-            .sftp()
-            .map_err(|e| format!("SFTP subsystem error: {}", e))?;
+        let local_path_owned = local_path.to_string();
 
-        let mut remote_file = sftp
-            .open(Path::new(&normalized_remote))
-            .map_err(|e| format!("Cannot open remote file {}: {}", normalized_remote, e))?;
+        self.with_sftp(|sftp| {
+            let mut remote_file = sftp
+                .open(Path::new(&normalized_remote))
+                .map_err(|e| format!("Cannot open remote file {}: {}", normalized_remote, e))?;
 
-        // Create parent directories if needed
-        if let Some(parent) = Path::new(local_path).parent() {
-            std::fs::create_dir_all(parent)
-                .map_err(|e| format!("Cannot create local dir: {}", e))?;
-        }
+            // Create parent directories if needed
+            if let Some(parent) = Path::new(&local_path_owned).parent() {
+                std::fs::create_dir_all(parent)
+                    .map_err(|e| format!("Cannot create local dir: {}", e))?;
+            }
 
-        let mut local_file = std::fs::File::create(local_path)
-            .map_err(|e| format!("Cannot create local file {}: {}", local_path, e))?;
+            let mut local_file = std::fs::File::create(&local_path_owned)
+                .map_err(|e| format!("Cannot create local file {}: {}", local_path_owned, e))?;
 
-        let mut buf = [0u8; 32768];
-        let mut total: u64 = 0;
+            let mut buf = [0u8; 32768];
+            let mut total: u64 = 0;
 
-        let result: Result<u64, String> = (|| {
+            let result: Result<u64, String> = (|| {
+                loop {
+                    match remote_file.read(&mut buf) {
+                        Ok(0) => break,
+                        Ok(n) => {
+                            local_file
+                                .write_all(&buf[..n])
+                                .map_err(|e| format!("Write error: {}", e))?;
+                            total += n as u64;
+                        }
+                        Err(e) => return Err(format!("Read error: {}", e)),
+                    }
+                }
+                Ok(total)
+            })();
+
+            if result.is_err() {
+                drop(local_file);
+                let _ = std::fs::remove_file(&local_path_owned);
+            }
+
+            result
+        })
+    }
+
+    pub fn upload_file(&self, local_path: &str, remote_path: &str) -> Result<u64, String> {
+        let normalized_remote = normalize_remote_path(remote_path);
+        let local_path_owned = local_path.to_string();
+
+        self.with_sftp(|sftp| {
+            let mut local_file = std::fs::File::open(&local_path_owned)
+                .map_err(|e| format!("Cannot open local file {}: {}", local_path_owned, e))?;
+
+            let mut remote_file = sftp
+                .create(Path::new(&normalized_remote))
+                .map_err(|e| format!("Cannot create remote file {}: {}", normalized_remote, e))?;
+
+            let mut buf = [0u8; 32768];
+            let mut total: u64 = 0;
+
             loop {
-                match remote_file.read(&mut buf) {
+                match local_file.read(&mut buf) {
                     Ok(0) => break,
                     Ok(n) => {
-                        local_file
+                        remote_file
                             .write_all(&buf[..n])
-                            .map_err(|e| format!("Write error: {}", e))?;
+                            .map_err(|e| format!("Upload write error: {}", e))?;
                         total += n as u64;
                     }
                     Err(e) => return Err(format!("Read error: {}", e)),
                 }
             }
+
             Ok(total)
-        })();
-
-        if result.is_err() {
-            // Clean up partial file on failure
-            drop(local_file);
-            let _ = std::fs::remove_file(local_path);
-        }
-
-        result
-    }
-
-    pub fn upload_file(&self, local_path: &str, remote_path: &str) -> Result<u64, String> {
-        let normalized_remote = normalize_remote_path(remote_path);
-        let session = self
-            .session
-            .lock()
-            .map_err(|e| format!("Session lock error: {}", e))?;
-        let sftp = session
-            .sftp()
-            .map_err(|e| format!("SFTP subsystem error: {}", e))?;
-
-        let mut local_file = std::fs::File::open(local_path)
-            .map_err(|e| format!("Cannot open local file {}: {}", local_path, e))?;
-
-        let mut remote_file = sftp
-            .create(Path::new(&normalized_remote))
-            .map_err(|e| format!("Cannot create remote file {}: {}", normalized_remote, e))?;
-
-        let mut buf = [0u8; 32768];
-        let mut total: u64 = 0;
-
-        loop {
-            match local_file.read(&mut buf) {
-                Ok(0) => break,
-                Ok(n) => {
-                    remote_file
-                        .write_all(&buf[..n])
-                        .map_err(|e| format!("Upload write error: {}", e))?;
-                    total += n as u64;
-                }
-                Err(e) => return Err(format!("Read error: {}", e)),
-            }
-        }
-
-        Ok(total)
+        })
     }
 
     pub fn mkdir(&self, path: &str) -> Result<(), String> {
@@ -307,34 +304,29 @@ impl SftpSession {
 
     pub fn read_text_file(&self, remote_path: &str, max_size: u64) -> Result<String, String> {
         let normalized = normalize_remote_path(remote_path);
-        let session = self
-            .session
-            .lock()
-            .map_err(|e| format!("Session lock error: {}", e))?;
-        let sftp = session
-            .sftp()
-            .map_err(|e| format!("SFTP subsystem error: {}", e))?;
 
-        let stat = sftp
-            .stat(Path::new(&normalized))
-            .map_err(|e| format!("Cannot stat {}: {}", normalized, e))?;
+        self.with_sftp(|sftp| {
+            let stat = sftp
+                .stat(Path::new(&normalized))
+                .map_err(|e| format!("Cannot stat {}: {}", normalized, e))?;
 
-        if stat.size.unwrap_or(0) > max_size {
-            return Err(format!(
-                "File too large ({}B > {}B)",
-                stat.size.unwrap_or(0),
-                max_size
-            ));
-        }
+            if stat.size.unwrap_or(0) > max_size {
+                return Err(format!(
+                    "File too large ({}B > {}B)",
+                    stat.size.unwrap_or(0),
+                    max_size
+                ));
+            }
 
-        let mut file = sftp
-            .open(Path::new(&normalized))
-            .map_err(|e| format!("Cannot open {}: {}", normalized, e))?;
+            let mut file = sftp
+                .open(Path::new(&normalized))
+                .map_err(|e| format!("Cannot open {}: {}", normalized, e))?;
 
-        let mut content = String::new();
-        file.read_to_string(&mut content)
-            .map_err(|e| format!("Read error: {}", e))?;
-        Ok(content)
+            let mut content = String::new();
+            file.read_to_string(&mut content)
+                .map_err(|e| format!("Read error: {}", e))?;
+            Ok(content)
+        })
     }
 
     pub fn home_dir(&self) -> Result<String, String> {
@@ -349,16 +341,15 @@ impl SftpSession {
     /// Write text content to a remote file (create or overwrite)
     pub fn write_text_file(&self, remote_path: &str, content: &str) -> Result<(), String> {
         let normalized = normalize_remote_path(remote_path);
-        let session = self.session.lock()
-            .map_err(|e| format!("Session lock error: {}", e))?;
-        let sftp = session.sftp()
-            .map_err(|e| format!("SFTP subsystem error: {}", e))?;
+        let content_bytes = content.as_bytes().to_vec();
 
-        let mut file = sftp.create(Path::new(&normalized))
-            .map_err(|e| format!("Cannot create {}: {}", normalized, e))?;
-        file.write_all(content.as_bytes())
-            .map_err(|e| format!("Write error: {}", e))?;
-        Ok(())
+        self.with_sftp(|sftp| {
+            let mut file = sftp.create(Path::new(&normalized))
+                .map_err(|e| format!("Cannot create {}: {}", normalized, e))?;
+            file.write_all(&content_bytes)
+                .map_err(|e| format!("Write error: {}", e))?;
+            Ok(())
+        })
     }
 
     pub fn is_connected(&self) -> bool {

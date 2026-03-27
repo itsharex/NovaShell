@@ -209,7 +209,8 @@ impl PtySession {
                                     trim += 1;
                                 }
                                 if trim < sb.len() {
-                                    *sb = sb[trim..].to_string();
+                                    // Use drain() to avoid allocating a new String
+                                    sb.drain(..trim);
                                 }
                             }
                         }

@@ -874,11 +874,11 @@ export const useAppStore = create<AppState>((set, get) => ({
     // Combine stats + metrics history in a single set() to avoid double re-render
     const maxPoints = 60;
     const cpuArr = s.metricsHistory.cpu.length >= maxPoints
-      ? [...s.metricsHistory.cpu.slice(1), stats.cpu]
-      : [...s.metricsHistory.cpu, stats.cpu];
+      ? s.metricsHistory.cpu.slice(1).concat(stats.cpu)
+      : s.metricsHistory.cpu.concat(stats.cpu);
     const memArr = s.metricsHistory.memory.length >= maxPoints
-      ? [...s.metricsHistory.memory.slice(1), stats.memoryPercent]
-      : [...s.metricsHistory.memory, stats.memoryPercent];
+      ? s.metricsHistory.memory.slice(1).concat(stats.memoryPercent)
+      : s.metricsHistory.memory.concat(stats.memoryPercent);
     return { systemStats: stats, metricsHistory: { cpu: cpuArr, memory: memArr } };
   }),
 
@@ -886,11 +886,11 @@ export const useAppStore = create<AppState>((set, get) => ({
   addMetricsSnapshot: (cpu, memory) => set((s) => {
     const maxPoints = 60;
     const cpuArr = s.metricsHistory.cpu.length >= maxPoints
-      ? [...s.metricsHistory.cpu.slice(1), cpu]
-      : [...s.metricsHistory.cpu, cpu];
+      ? s.metricsHistory.cpu.slice(1).concat(cpu)
+      : s.metricsHistory.cpu.concat(cpu);
     const memArr = s.metricsHistory.memory.length >= maxPoints
-      ? [...s.metricsHistory.memory.slice(1), memory]
-      : [...s.metricsHistory.memory, memory];
+      ? s.metricsHistory.memory.slice(1).concat(memory)
+      : s.metricsHistory.memory.concat(memory);
     return { metricsHistory: { cpu: cpuArr, memory: memArr } };
   }),
 

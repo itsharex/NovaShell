@@ -57,6 +57,25 @@
 - Canvas screenshot capture (compositing multiple canvas layers + blob + base64) on every command is a hidden performance killer — GPU readback is expensive and base64 strings consume memory. Only capture on demand.
 - `crypto.randomUUID()` is fast but not free — for high-frequency IDs like debug log entries, a simple incrementing counter is sufficient and zero-cost.
 
+## Session - Performance Round 5: Deep Optimization Pass 2 (2026-03-27)
+- ALL Tauri commands that call SSH/SFTP network I/O MUST use `spawn_blocking`. Tauri dispatches sync commands on a thread pool and async commands on Tokio — both block if the underlying I/O is synchronous. This includes sftp_connect, ssh_connect, and every SFTP operation.
+- Port scanning and environment detection (wmic on Windows) are also blocking and should not run on the main command thread.
+- Navigation listeners (ssh-exit, ssh-error) accumulate in the `unlisteners` array across server hops. Track them separately and clean on each new navigation to prevent leak.
+- Debug buffer keys are the tab title — when a tab's title changes during server navigation, the old buffer key is orphaned. Always delete the old key before updating the title.
+- Zustand selectors like `(s) => s.array.filter(...).length` only cause re-renders when the returned NUMBER changes, not when the array reference changes. This is a cheap way to subscribe to derived counts without subscribing to the full array.
+- Action functions from Zustand (e.g., `addSnippet`, `removeSnippet`) are stable references that never change. Reading them via `useAppStore.getState()` once is safe and eliminates unnecessary subscription overhead.
+
+## Session - Performance Round 4: Deep Optimization (2026-03-27)
+- `useAppStore()` with destructuring `const { x } = useAppStore()` is equivalent to no selector — subscribes to ALL state. Must always use `useAppStore((s) => s.x)`.
+- `useMemo` with `useAppStore.getState()` inside is an anti-pattern: the memoized value won't update when store changes, only when the deps array changes. Use a reactive selector instead.
+- `ssh2::exec_command` is blocking (TCP+SSH handshake). Never call it directly in an async Tauri command — wrap in `tokio::task::spawn_blocking()` to avoid starving the Tokio runtime.
+- Compound shell commands (`echo DELIM; cmd1; echo DELIM; cmd2`) over a single SSH session are far cheaper than opening multiple SSH connections (saves 3+ TCP+SSH handshakes per call).
+- `String::drain(..n)` modifies in-place without allocating, while `sb[n..].to_string()` allocates a new String. For hot paths like scrollback trimming, drain() is significantly better.
+- `Mutex<bool>` for a simple running flag is overkill — `AtomicBool` with `Ordering::Relaxed` is lock-free and sufficient for stop signals.
+- SFTP `session.sftp()` creates a new subsystem channel each time. Cache the `Sftp` handle and reuse it for all operations in the same session.
+- `std::thread::scope` enables easy parallelization of independent work items (like port scanning) with automatic lifetime management.
+- `read_to_string()` with no size cap on SSH command output can cause OOM if the remote command produces unbounded output. Always add a read cap.
+
 ## Session - SSH transport read fix (2026-03-17)
 - Calling `session.keepalive_send()` on every WouldBlock/TimedOut (every ~100ms) floods the server with keepalive packets and can cause it to drop the connection ("transport read" error). Use a time-based interval (15s).
 - `session.set_timeout()` is shared state between reader thread and write method — changing it in write() creates a race condition. Use retries with the existing timeout instead of temporarily increasing it.

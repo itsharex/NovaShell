@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo, useRef } from "react";
+import { useEffect, useState, useRef } from "react";
 import {
   GitBranch,
   Clock,
@@ -31,11 +31,8 @@ export function StatusBar() {
   const setSplitMode = useAppStore.getState().setSplitMode;
   const addTab = useAppStore.getState().addTab;
   const setLanguage = useAppStore.getState().setLanguage;
-  // Computed values — useMemo to avoid recalc on unrelated changes
-  const activeNavStack = useMemo(() => {
-    const s = useAppStore.getState();
-    return s.navigationStacks[activeTabId];
-  }, [activeTabId]);
+  // Reactive selector — updates when navigationStacks or activeTabId changes
+  const activeNavStack = useAppStore((s) => s.navigationStacks[activeTabId]);
   const executeSnippet = useAppStore((s) => s.executeSnippet);
   // Use polling for alert counts instead of reactive selectors —
   // avoids re-renders on every single alert change (high frequency)

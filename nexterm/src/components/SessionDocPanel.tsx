@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import {
   FileText,
   Sparkles,
@@ -38,11 +38,10 @@ type OllamaStatus = "checking" | "online" | "offline" | "pulling";
 
 export function SessionDocPanel() {
   const t = useT();
-  const history = useAppStore((s) => s.history);
-  const debugLogs = useAppStore((s) => s.debugLogs);
   const sessionStartTime = useAppStore((s) => s.sessionStartTime);
-  const sessionCmdCount = useMemo(() => history.filter((h) => h.timestamp >= sessionStartTime).length, [history, sessionStartTime]);
-  const sessionErrorCount = useMemo(() => debugLogs.filter((l) => l.timestamp >= sessionStartTime && l.level === "error").length, [debugLogs, sessionStartTime]);
+  // Use derived selectors to avoid subscribing to the full history/debugLogs arrays
+  const sessionCmdCount = useAppStore((s) => s.history.filter((h) => h.timestamp >= s.sessionStartTime).length);
+  const sessionErrorCount = useAppStore((s) => s.debugLogs.filter((l) => l.timestamp >= s.sessionStartTime && l.level === "error").length);
 
   const [docs, setDocs] = useState<SessionDocInfo[]>([]);
   const [viewingDoc, setViewingDoc] = useState<{ filename: string; content: string } | null>(null);
@@ -104,13 +103,14 @@ export function SessionDocPanel() {
     setError("");
     try {
       const invoke = await getInvoke();
-      // Collect only current session data (filter by sessionStartTime)
-      const sessionHistory = history
+      // Read store snapshot (not reactive — only needed at generation time)
+      const storeState = useAppStore.getState();
+      const sessionHistory = storeState.history
         .filter((h) => h.timestamp >= sessionStartTime)
         .slice(0, 50)
         .reverse(); // Chronological order
       const commands = sessionHistory.map((h) => h.command);
-      const errors = debugLogs
+      const errors = storeState.debugLogs
         .filter((l) => l.timestamp >= sessionStartTime && (l.level === "error" || l.level === "warn"))
         .slice(0, 20)
         .map((l) => `[${l.level.toUpperCase()}] ${l.message}`);
@@ -208,7 +208,7 @@ export function SessionDocPanel() {
       const invoke = await getInvoke();
       // Collect screenshots from current session history
       const screenshotMap = new Map<string, string>();
-      for (const h of history) {
+      for (const h of useAppStore.getState().history) {
         if (h.screenshot && h.timestamp >= sessionStartTime) {
           screenshotMap.set(h.command, h.screenshot);
         }
@@ -411,7 +411,7 @@ export function SessionDocPanel() {
               </>
             )}
           </button>
-          {history.length === 0 && (
+          {sessionCmdCount === 0 && (
             <div style={{ fontSize: 10, color: "var(--text-muted)", textAlign: "center", marginTop: 6 }}>
               {t("docs.runCommandsFirst")}
             </div>

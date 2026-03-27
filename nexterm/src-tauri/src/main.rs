@@ -369,15 +369,14 @@ async fn ssh_connect(
         }
     }
     let session_id = uuid::Uuid::new_v4().to_string();
-    let session = ssh_manager::SshSession::new(
-        &host,
-        port,
-        &username,
-        password.as_deref(),
-        private_key.as_deref(),
-        &session_id,
-        app_handle,
-    )?;
+    let sid = session_id.clone();
+    let session = tokio::task::spawn_blocking(move || {
+        ssh_manager::SshSession::new(
+            &host, port, &username,
+            password.as_deref(), private_key.as_deref(),
+            &sid, app_handle,
+        )
+    }).await.map_err(|e| format!("Task join error: {}", e))??;
 
     state.ssh_sessions.write()
         .map_err(|e| format!("SSH session lock error: {}", e))?
@@ -954,12 +953,14 @@ async fn ssh_exec(
     private_key: Option<String>,
     command: String,
 ) -> Result<String, String> {
-    let (stdout, _) = ssh_manager::exec_command(
-        &host, port, &username,
-        password.as_deref(), private_key.as_deref(),
-        &command,
-    )?;
-    Ok(stdout)
+    tokio::task::spawn_blocking(move || {
+        let (stdout, _) = ssh_manager::exec_command(
+            &host, port, &username,
+            password.as_deref(), private_key.as_deref(),
+            &command,
+        )?;
+        Ok(stdout)
+    }).await.map_err(|e| format!("Task join error: {}", e))?
 }
 
 #[tauri::command]
@@ -970,18 +971,40 @@ async fn server_map_scan(
     password: Option<String>,
     private_key: Option<String>,
 ) -> Result<Vec<DetectedService>, String> {
-    let exec = |cmd: &str| -> String {
+    // Run all 4 detection commands in a single SSH session via compound shell command.
+    // Uses unique delimiters to split the combined output into sections.
+    // This avoids opening 4 separate TCP+SSH connections.
+    let compound_cmd = concat!(
+        "echo '===PORTS_START==='; ss -tlnp 2>/dev/null || netstat -tlnp 2>/dev/null; ",
+        "echo '===SYSTEMD_START==='; systemctl list-units --type=service --state=running --no-pager --plain --no-legend 2>/dev/null; ",
+        "echo '===DOCKER_START==='; docker ps --format '{{.Names}}|{{.Image}}|{{.Status}}|{{.Ports}}' 2>/dev/null; ",
+        "echo '===VERSIONS_START==='; nginx -v 2>&1; apache2 -v 2>&1 | head -1; node -v 2>&1; python3 --version 2>&1; php -v 2>&1 | head -1; java -version 2>&1 | head -1; go version 2>&1; redis-server --version 2>&1; psql --version 2>&1"
+    );
+
+    let full_output = tokio::task::spawn_blocking(move || {
         ssh_manager::exec_command(
             &host, port, &username,
             password.as_deref(), private_key.as_deref(),
-            cmd,
+            compound_cmd,
         ).map(|(out, _)| out).unwrap_or_default()
-    };
+    }).await.map_err(|e| format!("Task join error: {}", e))?;
+
+    // Split the combined output into sections using delimiters
+    let sections: Vec<&str> = full_output.split("===PORTS_START===").collect();
+    let after_ports = sections.get(1).unwrap_or(&"");
+    let parts_by_systemd: Vec<&str> = after_ports.split("===SYSTEMD_START===").collect();
+    let ports_output = parts_by_systemd.first().unwrap_or(&"");
+    let after_systemd = parts_by_systemd.get(1).unwrap_or(&"");
+    let parts_by_docker: Vec<&str> = after_systemd.split("===DOCKER_START===").collect();
+    let systemd_output = parts_by_docker.first().unwrap_or(&"");
+    let after_docker = parts_by_docker.get(1).unwrap_or(&"");
+    let parts_by_versions: Vec<&str> = after_docker.split("===VERSIONS_START===").collect();
+    let docker_output = parts_by_versions.first().unwrap_or(&"");
+    let versions = parts_by_versions.get(1).unwrap_or(&"");
 
     let mut services: Vec<DetectedService> = Vec::new();
 
     // 1. Detect listening ports
-    let ports_output = exec("ss -tlnp 2>/dev/null || netstat -tlnp 2>/dev/null");
     for line in ports_output.lines().skip(1) {
         let parts: Vec<&str> = line.split_whitespace().collect();
         if parts.len() < 4 { continue; }
@@ -1008,7 +1031,6 @@ async fn server_map_scan(
     }
 
     // 2. Detect systemd services
-    let systemd_output = exec("systemctl list-units --type=service --state=running --no-pager --plain --no-legend 2>/dev/null");
     for line in systemd_output.lines() {
         let parts: Vec<&str> = line.split_whitespace().collect();
         if parts.is_empty() { continue; }
@@ -1033,7 +1055,6 @@ async fn server_map_scan(
     }
 
     // 3. Detect Docker containers
-    let docker_output = exec("docker ps --format '{{.Names}}|{{.Image}}|{{.Status}}|{{.Ports}}' 2>/dev/null");
     for line in docker_output.lines() {
         let parts: Vec<&str> = line.split('|').collect();
         if parts.len() < 3 { continue; }
@@ -1047,7 +1068,6 @@ async fn server_map_scan(
     }
 
     // 4. Get versions of common services
-    let versions = exec("nginx -v 2>&1; apache2 -v 2>&1 | head -1; node -v 2>&1; python3 --version 2>&1; php -v 2>&1 | head -1; java -version 2>&1 | head -1; go version 2>&1; redis-server --version 2>&1; psql --version 2>&1");
     for line in versions.lines() {
         let line = line.trim();
         if line.is_empty() || line.contains("not found") || line.contains("No such") { continue; }
@@ -1092,24 +1112,27 @@ async fn server_map_system_info(
 ) -> Result<ServerSystemInfo, String> {
     let cmd = r#"echo "KERNEL:$(uname -srm)"; echo "OS:$(cat /etc/os-release 2>/dev/null | grep PRETTY_NAME | cut -d= -f2 | tr -d '"' || uname -o)"; echo "UPTIME:$(uptime -p 2>/dev/null || uptime | sed 's/.*up/up/')"; echo "CPU:$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo '?')"; echo "RAM:$(free -m 2>/dev/null | awk '/Mem:/{printf "%s/%sMB", $3, $2}' || echo 'N/A')"; echo "DISK:$(df -h / 2>/dev/null | awk 'NR==2{printf "%s/%s (%s)", $3, $2, $5}' || echo 'N/A')"#;
 
-    let (out, _) = ssh_manager::exec_command(
-        &host, port, &username,
-        password.as_deref(), private_key.as_deref(), cmd,
-    )?;
+    let cmd_owned = cmd.to_string();
+    tokio::task::spawn_blocking(move || {
+        let (out, _) = ssh_manager::exec_command(
+            &host, port, &username,
+            password.as_deref(), private_key.as_deref(), &cmd_owned,
+        )?;
 
-    let mut info = ServerSystemInfo {
-        os: String::new(), kernel: String::new(), uptime: String::new(),
-        cpu_count: String::new(), ram_usage: String::new(), disk_usage: String::new(),
-    };
-    for line in out.lines() {
-        if let Some(v) = line.strip_prefix("KERNEL:") { info.kernel = v.trim().to_string(); }
-        else if let Some(v) = line.strip_prefix("OS:") { info.os = v.trim().to_string(); }
-        else if let Some(v) = line.strip_prefix("UPTIME:") { info.uptime = v.trim().to_string(); }
-        else if let Some(v) = line.strip_prefix("CPU:") { info.cpu_count = v.trim().to_string(); }
-        else if let Some(v) = line.strip_prefix("RAM:") { info.ram_usage = v.trim().to_string(); }
-        else if let Some(v) = line.strip_prefix("DISK:") { info.disk_usage = v.trim().to_string(); }
-    }
-    Ok(info)
+        let mut info = ServerSystemInfo {
+            os: String::new(), kernel: String::new(), uptime: String::new(),
+            cpu_count: String::new(), ram_usage: String::new(), disk_usage: String::new(),
+        };
+        for line in out.lines() {
+            if let Some(v) = line.strip_prefix("KERNEL:") { info.kernel = v.trim().to_string(); }
+            else if let Some(v) = line.strip_prefix("OS:") { info.os = v.trim().to_string(); }
+            else if let Some(v) = line.strip_prefix("UPTIME:") { info.uptime = v.trim().to_string(); }
+            else if let Some(v) = line.strip_prefix("CPU:") { info.cpu_count = v.trim().to_string(); }
+            else if let Some(v) = line.strip_prefix("RAM:") { info.ram_usage = v.trim().to_string(); }
+            else if let Some(v) = line.strip_prefix("DISK:") { info.disk_usage = v.trim().to_string(); }
+        }
+        Ok(info)
+    }).await.map_err(|e| format!("Task join error: {}", e))?
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -1131,49 +1154,56 @@ async fn server_map_quick_stats(
 ) -> Result<ServerQuickStats, String> {
     let cmd = r#"echo "CPU:$(top -bn1 2>/dev/null | grep 'Cpu(s)' | awk '{printf "%.1f", $2+$4}' || echo '0')"; echo "MEM:$(free 2>/dev/null | awk '/Mem:/{printf "%.1f", $3/$2*100}' || echo '0')"; echo "DISK:$(df / 2>/dev/null | awk 'NR==2{gsub(/%/,"",$5); print $5}' || echo '0')"; echo "LOAD:$(cat /proc/loadavg 2>/dev/null | cut -d' ' -f1-3 || uptime | sed 's/.*load average: //')"; echo "---PROCS---"; ps aux --sort=-%cpu 2>/dev/null | awk 'NR>1 && NR<=6{printf "%s %s%% %s\n", $11, $3, $4}'"#;
 
-    let (out, _) = ssh_manager::exec_command(
-        &host, port, &username,
-        password.as_deref(), private_key.as_deref(), cmd,
-    )?;
+    let cmd_owned = cmd.to_string();
+    tokio::task::spawn_blocking(move || {
+        let (out, _) = ssh_manager::exec_command(
+            &host, port, &username,
+            password.as_deref(), private_key.as_deref(), &cmd_owned,
+        )?;
 
-    let mut stats = ServerQuickStats {
-        cpu_percent: "0".into(), mem_percent: "0".into(),
-        disk_percent: "0".into(), load_avg: "".into(),
-        top_processes: Vec::new(),
-    };
-    let mut in_procs = false;
-    for line in out.lines() {
-        if line.contains("---PROCS---") { in_procs = true; continue; }
-        if in_procs {
-            if !line.trim().is_empty() { stats.top_processes.push(line.trim().to_string()); }
-        } else if let Some(v) = line.strip_prefix("CPU:") { stats.cpu_percent = v.trim().to_string(); }
-        else if let Some(v) = line.strip_prefix("MEM:") { stats.mem_percent = v.trim().to_string(); }
-        else if let Some(v) = line.strip_prefix("DISK:") { stats.disk_percent = v.trim().to_string(); }
-        else if let Some(v) = line.strip_prefix("LOAD:") { stats.load_avg = v.trim().to_string(); }
-    }
-    Ok(stats)
+        let mut stats = ServerQuickStats {
+            cpu_percent: "0".into(), mem_percent: "0".into(),
+            disk_percent: "0".into(), load_avg: "".into(),
+            top_processes: Vec::new(),
+        };
+        let mut in_procs = false;
+        for line in out.lines() {
+            if line.contains("---PROCS---") { in_procs = true; continue; }
+            if in_procs {
+                if !line.trim().is_empty() { stats.top_processes.push(line.trim().to_string()); }
+            } else if let Some(v) = line.strip_prefix("CPU:") { stats.cpu_percent = v.trim().to_string(); }
+            else if let Some(v) = line.strip_prefix("MEM:") { stats.mem_percent = v.trim().to_string(); }
+            else if let Some(v) = line.strip_prefix("DISK:") { stats.disk_percent = v.trim().to_string(); }
+            else if let Some(v) = line.strip_prefix("LOAD:") { stats.load_avg = v.trim().to_string(); }
+        }
+        Ok(stats)
+    }).await.map_err(|e| format!("Task join error: {}", e))?
 }
 
 // ──────────── Hacking Mode Commands ────────────
 
 #[tauri::command]
-fn hacking_detect_environment() -> hacking_manager::EnvironmentInfo {
-    hacking_manager::detect_environment()
+async fn hacking_detect_environment() -> Result<hacking_manager::EnvironmentInfo, String> {
+    tokio::task::spawn_blocking(|| hacking_manager::detect_environment())
+        .await.map_err(|e| format!("Task join error: {}", e))
 }
 
 #[tauri::command]
-fn hacking_scan_ports(target: String) -> Vec<hacking_manager::PortScanResult> {
-    hacking_manager::scan_common_ports(&target)
+async fn hacking_scan_ports(target: String) -> Result<Vec<hacking_manager::PortScanResult>, String> {
+    tokio::task::spawn_blocking(move || hacking_manager::scan_common_ports(&target))
+        .await.map_err(|e| format!("Task join error: {}", e))
 }
 
 #[tauri::command]
-fn hacking_scan_custom_ports(target: String, ports: Vec<u16>) -> Vec<hacking_manager::PortScanResult> {
-    hacking_manager::scan_ports(&target, &ports)
+async fn hacking_scan_custom_ports(target: String, ports: Vec<u16>) -> Result<Vec<hacking_manager::PortScanResult>, String> {
+    tokio::task::spawn_blocking(move || hacking_manager::scan_ports(&target, &ports))
+        .await.map_err(|e| format!("Task join error: {}", e))
 }
 
 #[tauri::command]
-fn hacking_grab_banner(host: String, port: u16) -> Option<String> {
-    hacking_manager::grab_banner(&host, port)
+async fn hacking_grab_banner(host: String, port: u16) -> Result<Option<String>, String> {
+    tokio::task::spawn_blocking(move || hacking_manager::grab_banner(&host, port))
+        .await.map_err(|e| format!("Task join error: {}", e))
 }
 
 #[tauri::command]
@@ -1283,14 +1313,13 @@ async fn sftp_connect(
         }
     }
     let session_id = uuid::Uuid::new_v4().to_string();
-    let session = sftp_manager::SftpSession::new(
-        &host,
-        port,
-        &username,
-        password.as_deref(),
-        private_key.as_deref(),
-        &session_id,
-    )?;
+    let sid = session_id.clone();
+    let session = tokio::task::spawn_blocking(move || {
+        sftp_manager::SftpSession::new(
+            &host, port, &username,
+            password.as_deref(), private_key.as_deref(), &sid,
+        )
+    }).await.map_err(|e| format!("Task join error: {}", e))??;
 
     state.sftp_sessions.lock()
         .map_err(|e| format!("SFTP session lock error: {}", e))?
@@ -1314,7 +1343,7 @@ fn sftp_disconnect(
 }
 
 #[tauri::command]
-fn sftp_list_dir(
+async fn sftp_list_dir(
     session_id: String,
     path: String,
     state: State<'_, AppState>,
@@ -1325,7 +1354,8 @@ fn sftp_list_dir(
         std::sync::Arc::clone(sessions.get(&session_id)
             .ok_or_else(|| format!("SFTP session '{}' not found", session_id))?)
     };
-    session.list_dir(&path)
+    tokio::task::spawn_blocking(move || session.list_dir(&path))
+        .await.map_err(|e| format!("Task join error: {}", e))?
 }
 
 #[tauri::command]
@@ -1341,7 +1371,8 @@ async fn sftp_download(
         std::sync::Arc::clone(sessions.get(&session_id)
             .ok_or_else(|| format!("SFTP session '{}' not found", session_id))?)
     }; // HashMap lock released here — won't block other SFTP commands during transfer
-    session.download_file(&remote_path, &local_path)
+    tokio::task::spawn_blocking(move || session.download_file(&remote_path, &local_path))
+        .await.map_err(|e| format!("Task join error: {}", e))?
 }
 
 #[tauri::command]
@@ -1357,7 +1388,8 @@ async fn sftp_upload(
         std::sync::Arc::clone(sessions.get(&session_id)
             .ok_or_else(|| format!("SFTP session '{}' not found", session_id))?)
     }; // HashMap lock released here
-    session.upload_file(&local_path, &remote_path)
+    tokio::task::spawn_blocking(move || session.upload_file(&local_path, &remote_path))
+        .await.map_err(|e| format!("Task join error: {}", e))?
 }
 
 #[tauri::command]
@@ -1373,7 +1405,8 @@ async fn sftp_download_dir(
         std::sync::Arc::clone(sessions.get(&session_id)
             .ok_or_else(|| format!("SFTP session '{}' not found", session_id))?)
     };
-    session.download_dir(&remote_path, &local_path)
+    tokio::task::spawn_blocking(move || session.download_dir(&remote_path, &local_path))
+        .await.map_err(|e| format!("Task join error: {}", e))?
 }
 
 #[tauri::command]
@@ -1389,11 +1422,12 @@ async fn sftp_upload_dir(
         std::sync::Arc::clone(sessions.get(&session_id)
             .ok_or_else(|| format!("SFTP session '{}' not found", session_id))?)
     };
-    session.upload_dir(&local_path, &remote_path)
+    tokio::task::spawn_blocking(move || session.upload_dir(&local_path, &remote_path))
+        .await.map_err(|e| format!("Task join error: {}", e))?
 }
 
 #[tauri::command]
-fn sftp_mkdir(
+async fn sftp_mkdir(
     session_id: String,
     path: String,
     state: State<'_, AppState>,
@@ -1404,11 +1438,12 @@ fn sftp_mkdir(
         std::sync::Arc::clone(sessions.get(&session_id)
             .ok_or_else(|| format!("SFTP session '{}' not found", session_id))?)
     };
-    session.mkdir(&path)
+    tokio::task::spawn_blocking(move || session.mkdir(&path))
+        .await.map_err(|e| format!("Task join error: {}", e))?
 }
 
 #[tauri::command]
-fn sftp_delete(
+async fn sftp_delete(
     session_id: String,
     path: String,
     is_dir: bool,
@@ -1420,15 +1455,13 @@ fn sftp_delete(
         std::sync::Arc::clone(sessions.get(&session_id)
             .ok_or_else(|| format!("SFTP session '{}' not found", session_id))?)
     };
-    if is_dir {
-        session.delete_dir(&path)
-    } else {
-        session.delete_file(&path)
-    }
+    tokio::task::spawn_blocking(move || {
+        if is_dir { session.delete_dir(&path) } else { session.delete_file(&path) }
+    }).await.map_err(|e| format!("Task join error: {}", e))?
 }
 
 #[tauri::command]
-fn sftp_rename(
+async fn sftp_rename(
     session_id: String,
     old_path: String,
     new_path: String,
@@ -1440,11 +1473,12 @@ fn sftp_rename(
         std::sync::Arc::clone(sessions.get(&session_id)
             .ok_or_else(|| format!("SFTP session '{}' not found", session_id))?)
     };
-    session.rename(&old_path, &new_path)
+    tokio::task::spawn_blocking(move || session.rename(&old_path, &new_path))
+        .await.map_err(|e| format!("Task join error: {}", e))?
 }
 
 #[tauri::command]
-fn sftp_home_dir(
+async fn sftp_home_dir(
     session_id: String,
     state: State<'_, AppState>,
 ) -> Result<String, String> {
@@ -1454,11 +1488,12 @@ fn sftp_home_dir(
         std::sync::Arc::clone(sessions.get(&session_id)
             .ok_or_else(|| format!("SFTP session '{}' not found", session_id))?)
     };
-    session.home_dir()
+    tokio::task::spawn_blocking(move || session.home_dir())
+        .await.map_err(|e| format!("Task join error: {}", e))?
 }
 
 #[tauri::command]
-fn sftp_read_text(
+async fn sftp_read_text(
     session_id: String,
     path: String,
     state: State<'_, AppState>,
@@ -1469,7 +1504,8 @@ fn sftp_read_text(
         std::sync::Arc::clone(sessions.get(&session_id)
             .ok_or_else(|| format!("SFTP session '{}' not found", session_id))?)
     };
-    session.read_text_file(&path, 1_048_576) // 1MB max
+    tokio::task::spawn_blocking(move || session.read_text_file(&path, 1_048_576))
+        .await.map_err(|e| format!("Task join error: {}", e))?
 }
 
 /// Save a base64 PNG screenshot to the session-docs directory, return the filename
@@ -1538,11 +1574,14 @@ async fn start_log_stream(
     app_handle: tauri::AppHandle,
 ) -> Result<String, String> {
     let stream_id = uuid::Uuid::new_v4().to_string();
-    let stream = ssh_manager::LogStream::new(
-        &host, port, &username,
-        password.as_deref(), private_key.as_deref(),
-        &command, &stream_id, app_handle,
-    )?;
+    let sid = stream_id.clone();
+    let stream = tokio::task::spawn_blocking(move || {
+        ssh_manager::LogStream::new(
+            &host, port, &username,
+            password.as_deref(), private_key.as_deref(),
+            &command, &sid, app_handle,
+        )
+    }).await.map_err(|e| format!("Task join error: {}", e))??;
     state.log_streams.lock()
         .map_err(|e| format!("Lock error: {}", e))?
         .insert(stream_id.clone(), stream);
@@ -1596,7 +1635,7 @@ fn write_file(path: String, content: String) -> Result<(), String> {
 }
 
 #[tauri::command]
-fn sftp_write_text(
+async fn sftp_write_text(
     session_id: String,
     path: String,
     content: String,
@@ -1608,7 +1647,8 @@ fn sftp_write_text(
         std::sync::Arc::clone(sessions.get(&session_id)
             .ok_or_else(|| format!("SFTP session '{}' not found", session_id))?)
     };
-    session.write_text_file(&path, &content)
+    tokio::task::spawn_blocking(move || session.write_text_file(&path, &content))
+        .await.map_err(|e| format!("Task join error: {}", e))?
 }
 
 fn chrono_timestamp() -> String {

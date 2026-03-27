@@ -5,7 +5,7 @@ import { es } from "./es";
 
 export type Lang = "en" | "es";
 
-const dictionaries: Record<Lang, Record<string, string>> = { en, es };
+const dictionaries: Record<Lang, Record<string, any>> = { en, es };
 
 // Flatten nested keys: { a: { b: "x" } } → { "a.b": "x" }
 function flatten(obj: Record<string, any>, prefix = ""): Record<string, string> {
@@ -21,10 +21,14 @@ function flatten(obj: Record<string, any>, prefix = ""): Record<string, string> 
   return result;
 }
 
-const flatDicts: Record<Lang, Record<string, string>> = {
-  en: flatten(en),
-  es: flatten(es),
-};
+// Lazy-flatten: only process each language when first accessed
+const flatDictsCache: Partial<Record<Lang, Record<string, string>>> = {};
+function getFlatDict(lang: Lang): Record<string, string> {
+  if (!flatDictsCache[lang]) {
+    flatDictsCache[lang] = flatten(dictionaries[lang]);
+  }
+  return flatDictsCache[lang]!;
+}
 
 type TFunction = (key: string, params?: Record<string, string | number>) => string;
 
@@ -35,7 +39,7 @@ export function I18nProvider({ children }: { children: ReactNode }) {
 
   const t: TFunction = useCallback(
     (key: string, params?: Record<string, string | number>) => {
-      let text = flatDicts[lang]?.[key] ?? flatDicts.en[key] ?? key;
+      let text = getFlatDict(lang)[key] ?? getFlatDict("en")[key] ?? key;
       if (params) {
         for (const [k, v] of Object.entries(params)) {
           text = text.replace(`{${k}}`, String(v));

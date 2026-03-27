@@ -72,6 +72,33 @@
   - Optimized addDebugLog: counter ID instead of crypto.randomUUID()
   - Optimized addHistory: skip slice when under 500 limit
 
+- [x] Performance Round 4: Deep optimization audit (2026-03-27)
+  - Fix SFTPPanel store destructuring causing full-app re-renders
+  - Fix StatusBar stale activeNavStack bug (useMemo+getState → reactive selector)
+  - Consolidate server_map_scan from 4 SSH connections to 1 compound command
+  - Wrap all blocking SSH calls in tokio::spawn_blocking (prevent async starvation)
+  - Fix SFTP manager: use cached SFTP channel for all ops + add missing algorithm config
+  - Replace LogStream Mutex<bool> with AtomicBool (eliminate lock contention)
+  - Optimize scrollback trim: drain() instead of to_string() allocation
+  - Parallelize port scanning with scoped threads (25x faster)
+  - Add 10MB read cap to ssh_exec (prevent OOM)
+  - Extract duplicated themeColors, EXT_COLORS, formatSize to shared utils
+  - Memoize CollabOverlay + targeted selector (reduce re-renders)
+  - Lazy-flatten i18n dictionaries (defer unused language)
+  - Add vendor-codemirror-langs and vendor-pdf manual chunks to Vite config
+  - Replace spread+slice metrics history with .concat() (fewer intermediate arrays)
+
+- [x] Performance Round 5: Deep optimization pass 2 (2026-03-27)
+  - Wrap ALL SFTP commands in spawn_blocking (11 commands: list_dir, download, upload, mkdir, delete, rename, home_dir, read_text, write_text, download_dir, upload_dir)
+  - Wrap sftp_connect, ssh_connect, start_log_stream in spawn_blocking
+  - Wrap hacking commands in spawn_blocking (detect_environment, scan_ports, scan_custom_ports, grab_banner)
+  - Fix TerminalPanel navigation listener leak: navListeners map tracks and cleans exit/error listeners per tab
+  - Fix debugBuffers orphan: clean old key before tab title change during server navigation
+  - Optimize SessionDocPanel: derived count selectors instead of subscribing to full history+debugLogs arrays
+  - Optimize SnippetsPanel: 14 action functions moved from individual selectors to getState()
+  - Optimize AlertToast: subscribe to alert count instead of full array
+  - Unify formatSize: shared util with showZero param, removed 1 duplicate from SFTPPanel
+
 ## Pending
 - [ ] Code signing for Windows (requires certificate)
 - [ ] Code signing for macOS (requires Apple Developer account)

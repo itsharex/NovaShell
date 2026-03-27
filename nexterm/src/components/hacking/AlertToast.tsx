@@ -1,27 +1,31 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { AlertTriangle, Shield, Info, X } from "lucide-react";
 import { useAppStore } from "../../store/appStore";
 import type { HackingAlert } from "../../store/appStore";
 
 export function AlertToast() {
-  const alerts = useAppStore((s) => s.hackingAlerts);
-  const dismissHackingAlert = useAppStore((s) => s.dismissHackingAlert);
+  // Only subscribe to alert count — not the full array
+  const alertCount = useAppStore((s) => s.hackingAlerts.length);
+  const dismissHackingAlert = useAppStore.getState().dismissHackingAlert;
   const [visibleAlerts, setVisibleAlerts] = useState<HackingAlert[]>([]);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Show latest 3 alerts that are less than 8 seconds old
   useEffect(() => {
+    const alerts = useAppStore.getState().hackingAlerts;
     const recent = alerts
       .filter((a) => Date.now() - a.timestamp < 8000)
       .slice(0, 3);
     setVisibleAlerts(recent);
 
+    if (timerRef.current) clearTimeout(timerRef.current);
     if (recent.length > 0) {
-      const timer = setTimeout(() => {
+      timerRef.current = setTimeout(() => {
         setVisibleAlerts((prev) => prev.filter((a) => Date.now() - a.timestamp < 8000));
       }, 8000);
-      return () => clearTimeout(timer);
     }
-  }, [alerts]);
+    return () => { if (timerRef.current) clearTimeout(timerRef.current); };
+  }, [alertCount]);
 
   if (visibleAlerts.length === 0) return null;
 

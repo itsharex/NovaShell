@@ -249,7 +249,7 @@ impl CollabSession {
                                     trim += 1;
                                 }
                                 if trim < sb.len() {
-                                    *sb = sb[trim..].to_string();
+                                    sb.drain(..trim);
                                 }
                             }
                         }

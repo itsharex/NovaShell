@@ -171,40 +171,44 @@ fn get_local_ip() -> String {
 
 pub fn scan_ports(target: &str, ports: &[u16]) -> Vec<PortScanResult> {
     let timeout = Duration::from_millis(500);
-    let mut results = Vec::new();
+    let target_owned = target.to_string();
 
-    for &port in ports {
-        let addr = format!("{}:{}", target, port);
-        let state = match TcpStream::connect_timeout(
-            &addr.parse().unwrap_or_else(|_| std::net::SocketAddr::from(([127, 0, 0, 1], port))),
-            timeout,
-        ) {
-            Ok(_stream) => "open",
-            Err(ref e) if e.kind() == std::io::ErrorKind::TimedOut => "filtered",
-            Err(_) => "closed",
-        };
+    // Parallel port scanning using scoped threads
+    let results: Vec<Option<PortScanResult>> = std::thread::scope(|s| {
+        let handles: Vec<_> = ports.iter().map(|&port| {
+            let tgt = &target_owned;
+            s.spawn(move || {
+                let addr = format!("{}:{}", tgt, port);
+                let state = match TcpStream::connect_timeout(
+                    &addr.parse().unwrap_or_else(|_| std::net::SocketAddr::from(([127, 0, 0, 1], port))),
+                    timeout,
+                ) {
+                    Ok(_stream) => "open",
+                    Err(ref e) if e.kind() == std::io::ErrorKind::TimedOut => "filtered",
+                    Err(_) => return None, // closed — skip
+                };
 
-        if state == "closed" {
-            continue; // Only report open/filtered
-        }
+                let (service, risk) = COMMON_PORTS
+                    .iter()
+                    .find(|(p, _, _)| *p == port)
+                    .map(|(_, s, r)| (s.to_string(), r.to_string()))
+                    .unwrap_or_else(|| ("Unknown".to_string(), "low".to_string()));
 
-        let (service, risk) = COMMON_PORTS
-            .iter()
-            .find(|(p, _, _)| *p == port)
-            .map(|(_, s, r)| (s.to_string(), r.to_string()))
-            .unwrap_or_else(|| ("Unknown".to_string(), "low".to_string()));
+                Some(PortScanResult {
+                    port,
+                    protocol: "TCP".to_string(),
+                    service,
+                    version: String::new(),
+                    state: state.to_string(),
+                    risk: if state == "open" { risk } else { "low".to_string() },
+                })
+            })
+        }).collect();
 
-        results.push(PortScanResult {
-            port,
-            protocol: "TCP".to_string(),
-            service: service.clone(),
-            version: String::new(), // Banner grab would go here
-            state: state.to_string(),
-            risk: if state == "open" { risk } else { "low".to_string() },
-        });
-    }
+        handles.into_iter().map(|h| h.join().unwrap_or(None)).collect()
+    });
 
-    results
+    results.into_iter().flatten().collect()
 }
 
 pub fn scan_common_ports(target: &str) -> Vec<PortScanResult> {

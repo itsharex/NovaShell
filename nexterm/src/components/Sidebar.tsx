@@ -189,25 +189,19 @@ function HistoryPanel() {
 const FOLDER_COLORS = ["#58a6ff", "#f78166", "#3fb950", "#d29922", "#bc8cff", "#ff7b72", "#79c0ff", "#7ee787"];
 
 function SnippetsPanel() {
+  // Reactive data selectors — only these trigger re-renders
   const snippets = useAppStore((s) => s.snippets);
-  const addSnippet = useAppStore((s) => s.addSnippet);
-  const removeSnippet = useAppStore((s) => s.removeSnippet);
-  const executeSnippet = useAppStore((s) => s.executeSnippet);
-  const moveSnippetToFolder = useAppStore((s) => s.moveSnippetToFolder);
   const folders = useAppStore((s) => s.snippetFolders);
-  const addFolder = useAppStore((s) => s.addSnippetFolder);
-  const removeFolder = useAppStore((s) => s.removeSnippetFolder);
-  const renameFolder = useAppStore((s) => s.renameSnippetFolder);
   const sharedSnippets = useAppStore((s) => s.sharedSnippets);
-  const loadSharedFolder = useAppStore((s) => s.loadSharedFolder);
-  const addSharedSnippet = useAppStore((s) => s.addSharedSnippet);
-  const removeSharedSnippet = useAppStore((s) => s.removeSharedSnippet);
-  const updateSharedSnippet = useAppStore((s) => s.updateSharedSnippet);
-  const addSharedSnippetFolder = useAppStore((s) => s.addSharedSnippetFolder);
   const sharedSubFolders = useAppStore((s) => s.sharedSubFolders);
-  const addSharedSubFolder = useAppStore((s) => s.addSharedSubFolder);
-  const removeSharedSubFolder = useAppStore((s) => s.removeSharedSubFolder);
-  const renameSharedSubFolder = useAppStore((s) => s.renameSharedSubFolder);
+  const executeSnippet = useAppStore((s) => s.executeSnippet);
+  // Stable action functions — read once from getState(), never change
+  const {
+    addSnippet, removeSnippet, moveSnippetToFolder,
+    addSnippetFolder: addFolder, removeSnippetFolder: removeFolder, renameSnippetFolder: renameFolder,
+    loadSharedFolder, addSharedSnippet, removeSharedSnippet, updateSharedSnippet,
+    addSharedSnippetFolder, addSharedSubFolder, removeSharedSubFolder, renameSharedSubFolder,
+  } = useAppStore.getState();
   const t = useT();
 
   const [adding, setAdding] = useState(false);

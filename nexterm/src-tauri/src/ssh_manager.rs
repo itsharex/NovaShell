@@ -10,7 +10,7 @@ use tauri::Emitter;
 
 /// Configure preferred algorithms on an SSH session for maximum server compatibility.
 /// Must be called BEFORE session.handshake().
-fn configure_ssh_algorithms(session: &Session) {
+pub fn configure_ssh_algorithms(session: &Session) {
     // Key exchange — broad range: modern elliptic-curve + legacy DH groups
     let _ = session.method_pref(
         ssh2::MethodType::Kex,
@@ -451,13 +451,13 @@ impl SshSession {
 // ──────────── Log Stream (tail -f over SSH) ────────────
 
 pub struct LogStream {
-    running: Arc<Mutex<bool>>,
+    running: Arc<AtomicBool>,
     _reader_thread: Option<JoinHandle<()>>,
 }
 
 impl Drop for LogStream {
     fn drop(&mut self) {
-        if let Ok(mut r) = self.running.lock() { *r = false; }
+        self.running.store(false, Ordering::Relaxed);
         if let Some(h) = self._reader_thread.take() { let _ = h.join(); }
     }
 }
@@ -521,7 +521,7 @@ impl LogStream {
         session.set_blocking(true);
         session.set_timeout(500); // 500ms read timeout
 
-        let running = Arc::new(Mutex::new(true));
+        let running = Arc::new(AtomicBool::new(true));
         let running_clone = Arc::clone(&running);
         let data_event = format!("log-stream-data-{}", stream_id);
 
@@ -532,7 +532,7 @@ impl LogStream {
             let flush_interval = Duration::from_millis(50); // batch log output
 
             loop {
-                if let Ok(r) = running_clone.lock() { if !*r { break; } } else { break; }
+                if !running_clone.load(Ordering::Relaxed) { break; }
                 match channel.read(&mut buf) {
                     Ok(0) => {
                         if !batch.is_empty() {
@@ -698,9 +698,26 @@ pub fn exec_command(
     channel.exec(command)
         .map_err(|e| format!("Exec error: {}", e))?;
 
+    // Read with a 10MB cap to prevent OOM from commands with unbounded output
     let mut stdout = String::new();
-    channel.read_to_string(&mut stdout)
-        .map_err(|e| format!("Read error: {}", e))?;
+    let max_read: usize = 10 * 1024 * 1024;
+    let mut buf = [0u8; 32768];
+    loop {
+        match channel.read(&mut buf) {
+            Ok(0) => break,
+            Ok(n) => {
+                match std::str::from_utf8(&buf[..n]) {
+                    Ok(s) => stdout.push_str(s),
+                    Err(_) => stdout.push_str(&String::from_utf8_lossy(&buf[..n])),
+                }
+                if stdout.len() > max_read {
+                    stdout.truncate(max_read);
+                    break;
+                }
+            }
+            Err(e) => return Err(format!("Read error: {}", e)),
+        }
+    }
 
     channel.wait_close().ok();
     let exit_code = channel.exit_status().unwrap_or(-1);

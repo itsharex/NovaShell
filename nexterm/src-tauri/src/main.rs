@@ -402,19 +402,24 @@ fn ssh_write(
 }
 
 #[tauri::command]
-fn ssh_resize(
+async fn ssh_resize(
     session_id: String,
     cols: u32,
     rows: u32,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
-    let sessions = state.ssh_sessions.read()
-        .map_err(|e| format!("SSH session lock error: {}", e))?;
-    if let Some(session) = sessions.get(&session_id) {
-        session.resize(cols, rows)
-    } else {
-        Err(format!("SSH session '{}' not found", session_id))
-    }
+    // Extract Arc refs from the session, then release the RwLock immediately
+    let (session_arc, channel_arc) = {
+        let sessions = state.ssh_sessions.read()
+            .map_err(|e| format!("SSH session lock error: {}", e))?;
+        let s = sessions.get(&session_id)
+            .ok_or_else(|| format!("SSH session '{}' not found", session_id))?;
+        s.get_resize_refs()
+    };
+    // Run the blocking resize (mutex + SSH I/O) off the async runtime
+    tokio::task::spawn_blocking(move || {
+        ssh_manager::resize_with_refs(&session_arc, &channel_arc, cols, rows)
+    }).await.map_err(|e| format!("Task join error: {}", e))?
 }
 
 #[tauri::command]

@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { useAppStore } from "../store/appStore";
 import { renderMarkdown } from "../utils/markdown";
+import { formatSize } from "../utils/fileColors";
 import { useT } from "../i18n";
 
 interface SessionDocInfo {
@@ -480,11 +481,7 @@ export function SessionDocPanel() {
   );
 }
 
-function formatSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
+// formatSize imported from ../utils/fileColors
 
 const iconBtnStyle: React.CSSProperties = {
   background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer",

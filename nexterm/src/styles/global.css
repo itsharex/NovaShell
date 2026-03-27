@@ -574,6 +574,7 @@ body {
   overflow: hidden;
   display: flex;
   flex-direction: column;
+  contain: strict;
 }
 
 .terminal-instances-container {
@@ -945,16 +946,6 @@ body {
 @keyframes pulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.5; }
-}
-
-@keyframes shimmer {
-  0% { background-position: -200% 0; }
-  100% { background-position: 200% 0; }
-}
-
-@keyframes glowPulse {
-  0%, 100% { box-shadow: 0 0 5px rgba(88, 166, 255, 0.2); }
-  50% { box-shadow: 0 0 15px rgba(88, 166, 255, 0.4); }
 }
 
 .animate-fade-in { animation: fadeIn 0.3s ease; }

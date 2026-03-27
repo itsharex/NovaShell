@@ -35,6 +35,7 @@ import {
 } from "lucide-react";
 import { useAppStore } from "../store/appStore";
 import type { SidebarTab } from "../store/appStore";
+import { formatSize, getExtColor } from "../utils/fileColors";
 import { DebugPanel } from "./DebugPanel";
 import { AIPanel } from "./AIPanel";
 import { FileExplorer } from "./FileExplorer";
@@ -980,23 +981,7 @@ function PreviewPanel() {
     loadDirectory();
   }, []);
 
-  const formatSize = (bytes: number) => {
-    if (bytes === 0) return "";
-    if (bytes < 1024) return `${bytes} B`;
-    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-  };
-
-  const getExtColor = (ext: string) => {
-    const colors: Record<string, string> = {
-      js: "#f7df1e", ts: "#3178c6", tsx: "#3178c6", jsx: "#61dafb",
-      json: "#a8b1ff", md: "#519aba", css: "#563d7c", html: "#e34f26",
-      py: "#3572A5", rs: "#dea584", go: "#00ADD8", java: "#b07219",
-      yaml: "#cb171e", yml: "#cb171e", toml: "#9c4221", csv: "#237346",
-      txt: "var(--text-muted)", log: "var(--accent-warning)",
-    };
-    return colors[ext] || "var(--text-secondary)";
-  };
+  // formatSize and getExtColor imported from ../utils/fileColors
 
   if (previewFile) {
     return (

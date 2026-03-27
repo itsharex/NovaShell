@@ -505,6 +505,7 @@ type InfraView = "overview" | "timeline" | "alerts" | "disk" | "compare" | "sett
 
 export function InfraMonitorPanel() {
   const t = useT();
+  // Reactive data selectors — only these trigger re-renders
   const sshConnections = useAppStore((s) => s.sshConnections);
   const infraMonitors = useAppStore((s) => s.infraMonitors);
   const infraAlerts = useAppStore((s) => s.infraAlerts);
@@ -512,20 +513,16 @@ export function InfraMonitorPanel() {
   const infraPollingInterval = useAppStore((s) => s.infraPollingInterval);
   const infraCompactMode = useAppStore((s) => s.infraCompactMode);
   const infraTimeline = useAppStore((s) => s.infraTimeline);
-  const addInfraMetrics = useAppStore((s) => s.addInfraMetrics);
-  const addInfraTimelineEvent = useAppStore((s) => s.addInfraTimelineEvent);
-  const acknowledgeInfraAlert = useAppStore((s) => s.acknowledgeInfraAlert);
-  const setInfraThresholds = useAppStore((s) => s.setInfraThresholds);
-  const setInfraPollingInterval = useAppStore((s) => s.setInfraPollingInterval);
-  const toggleInfraCompactMode = useAppStore((s) => s.toggleInfraCompactMode);
-  const clearInfraMonitor = useAppStore((s) => s.clearInfraMonitor);
-  const clearInfraTimeline = useAppStore((s) => s.clearInfraTimeline);
   const diskAnalyses = useAppStore((s) => s.diskAnalyses);
-  const setDiskAnalysis = useAppStore((s) => s.setDiskAnalysis);
   const activeMonitors = useAppStore((s) => s.infraActiveMonitors);
-  const addActiveMonitor = useAppStore((s) => s.addInfraActiveMonitor);
-  const removeActiveMonitor = useAppStore((s) => s.removeInfraActiveMonitor);
   const performanceBaselines = useAppStore((s) => s.performanceBaselines);
+  // Stable action functions — read once from getState(), never change
+  const {
+    addInfraMetrics, addInfraTimelineEvent, acknowledgeInfraAlert,
+    setInfraThresholds, setInfraPollingInterval, toggleInfraCompactMode,
+    clearInfraMonitor, clearInfraTimeline, setDiskAnalysis,
+    addInfraActiveMonitor: addActiveMonitor, removeInfraActiveMonitor: removeActiveMonitor,
+  } = useAppStore.getState();
 
   const [view, setView] = useState<InfraView>("overview");
   const [remediationOutput, setRemediationOutput] = useState<string | null>(null);

@@ -168,7 +168,7 @@ impl SshSession {
         // Keep session in BLOCKING mode — use read timeout for non-blocking behavior
         // This avoids the race condition of switching blocking/non-blocking between threads
         session.set_blocking(true);
-        session.set_timeout(10); // 10ms timeout — fast loop for responsive write processing
+        session.set_timeout(2); // 2ms timeout — minimal latency for write pickup while keeping CPU low
 
         let session = Arc::new(Mutex::new(session));
         let channel = Arc::new(Mutex::new(channel));
@@ -221,10 +221,15 @@ impl SshSession {
                     };
 
                     // 1. Process pending writes FIRST (input has priority)
+                    // Flush once after draining all pending writes (not per-message)
                     {
                         use std::io::Write;
+                        let mut wrote = false;
                         while let Ok(data) = write_rx.try_recv() {
                             let _ = ch.write_all(&data);
+                            wrote = true;
+                        }
+                        if wrote {
                             let _ = ch.flush();
                         }
                     }
@@ -381,7 +386,7 @@ impl SshSession {
                         Ok(l) => l,
                         Err(e) => e.into_inner(),
                     };
-                    let _ = data_ready_flusher.wait_timeout(lock, Duration::from_millis(16));
+                    let _ = data_ready_flusher.wait_timeout(lock, Duration::from_millis(8));
                 }
 
                 if !running_flusher.load(Ordering::Relaxed) {
@@ -446,6 +451,42 @@ impl SshSession {
             false
         }
     }
+
+    /// Get Arc refs for resize without borrowing self (allows use from spawn_blocking)
+    pub fn get_resize_refs(&self) -> (Arc<Mutex<Session>>, Arc<Mutex<ssh2::Channel>>) {
+        (Arc::clone(&self.session), Arc::clone(&self.channel))
+    }
+}
+
+/// Resize an SSH channel using pre-extracted Arc refs (callable from spawn_blocking)
+pub fn resize_with_refs(
+    session: &Arc<Mutex<Session>>,
+    channel: &Arc<Mutex<ssh2::Channel>>,
+    cols: u32,
+    rows: u32,
+) -> Result<(), String> {
+    let _session = session.lock()
+        .map_err(|e| format!("Session lock error: {}", e))?;
+    let mut ch = channel.lock()
+        .map_err(|e| format!("Channel lock error: {}", e))?;
+
+    let mut retries = 0;
+    loop {
+        match ch.request_pty_size(cols, rows, None, None) {
+            Ok(()) => break,
+            Err(ref e) if retries < 3 => {
+                let err_str = e.to_string();
+                if err_str.contains("EAGAIN") || err_str.contains("timeout") {
+                    retries += 1;
+                    std::thread::sleep(Duration::from_millis(10));
+                } else {
+                    return Err(format!("SSH resize error: {}", e));
+                }
+            }
+            Err(e) => return Err(format!("SSH resize error: {}", e)),
+        }
+    }
+    Ok(())
 }
 
 // ──────────── Log Stream (tail -f over SSH) ────────────

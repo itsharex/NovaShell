@@ -13,6 +13,7 @@ const InfraMonitorPanel = lazy(() => import("./InfraMonitorPanel").then(m => ({ 
 const HackingPanel = lazy(() => import("./HackingPanel").then(m => ({ default: m.HackingPanel })));
 const ServerMapPanel = lazy(() => import("./ServerMapPanel").then(m => ({ default: m.ServerMapPanel })));
 const CollabPanel = lazy(() => import("./CollabPanel").then(m => ({ default: m.CollabPanel })));
+const BackupPanel = lazy(() => import("./BackupPanel").then(m => ({ default: m.BackupPanel })));
 
 const LazyFallback = () => (
   <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: 120, color: "var(--text-muted)", fontSize: 12 }}>
@@ -33,6 +34,7 @@ export function PanelContainer({ panelType }: { panelType: PanelTabType }) {
       {panelType === "hacking" && <Suspense fallback={<LazyFallback />}><HackingPanel /></Suspense>}
       {panelType === "infra" && <Suspense fallback={<LazyFallback />}><InfraMonitorPanel /></Suspense>}
       {panelType === "collab" && <Suspense fallback={<LazyFallback />}><CollabPanel /></Suspense>}
+      {panelType === "backups" && <Suspense fallback={<LazyFallback />}><BackupPanel /></Suspense>}
     </div>
   );
 }

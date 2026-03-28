@@ -13,8 +13,47 @@ export interface CustomThemeColors {
   terminalCursor: string;
 }
 export type SidebarTab = "history" | "snippets" | "preview" | "plugins" | "stats";
-export type PanelTabType = "ssh" | "sftp" | "editor" | "ai" | "debug" | "hacking" | "infra" | "collab" | "servermap" | "docs";
+export type PanelTabType = "ssh" | "sftp" | "editor" | "ai" | "debug" | "hacking" | "infra" | "collab" | "servermap" | "docs" | "backups";
 export type AppLanguage = "en" | "es";
+
+// === Backup Manager Types ===
+export interface BackupTemplate {
+  id: string;
+  name: string;
+  category: "database" | "system" | "custom";
+  engine: string;
+  command: string;
+  description: string;
+}
+
+export interface BackupJob {
+  id: string;
+  name: string;
+  connectionId: string;
+  templateId: string | null;
+  command: string;
+  remotePath: string;
+  downloadLocal: boolean;
+  localPath: string;
+  schedule: string | null;
+  enabled: boolean;
+  lastRun: number | null;
+  lastStatus: "success" | "failed" | null;
+}
+
+export interface BackupRecord {
+  id: string;
+  jobId: string;
+  jobName: string;
+  serverName: string;
+  timestamp: number;
+  status: "success" | "failed" | "running";
+  duration: number;
+  sizeMB: number;
+  output: string;
+  error: string | null;
+  downloaded: boolean;
+}
 
 // === Hacking Mode Types ===
 export type HackingLogLevel = "recon" | "exploit" | "alert" | "info" | "success" | "danger";
@@ -349,6 +388,8 @@ interface PersistedConfig {
   language?: AppLanguage;
   customExploits?: Array<{ id: string; name: string; description: string; category: string; risk: string; commands: string[] }>;
   workspaces?: Array<{ id: string; name: string; tabCount: number; splitMode: string; sidebarTab: string }>;
+  backupJobs?: BackupJob[];
+  backupHistory?: BackupRecord[];
 }
 
 let configLoaded = false;
@@ -381,6 +422,8 @@ function buildPersistedConfig(): PersistedConfig {
     language: s.language,
     customExploits: s.customExploits.length > 0 ? s.customExploits : undefined,
     workspaces: s.workspaces.length > 0 ? s.workspaces : undefined,
+    backupJobs: s.backupJobs.length > 0 ? s.backupJobs : undefined,
+    backupHistory: s.backupHistory.length > 0 ? s.backupHistory.slice(0, 200) : undefined,
   };
 }
 
@@ -636,6 +679,15 @@ interface AppState {
   removeCollabUser: (sessionId: string, userId: string) => void;
   removeCollabSession: (sessionId: string) => void;
 
+  // Backup Manager
+  backupJobs: BackupJob[];
+  backupHistory: BackupRecord[];
+  addBackupJob: (job: Omit<BackupJob, "id" | "lastRun" | "lastStatus">) => void;
+  updateBackupJob: (id: string, updates: Partial<BackupJob>) => void;
+  removeBackupJob: (id: string) => void;
+  addBackupRecord: (record: Omit<BackupRecord, "id">) => void;
+  clearBackupHistory: () => void;
+
   // Hydration from config file
   _hydrateFromConfig: (config: PersistedConfig) => void;
 }
@@ -709,6 +761,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       ssh: "SSH", sftp: "SFTP", editor: "Editor", ai: "AI Assistant",
       debug: "Debug", hacking: "Hacking", infra: "Infra Monitor",
       collab: "Collaboration", servermap: "Server Map", docs: "Session Docs",
+      backups: "Backup Manager",
     };
     set((s) => ({
       tabs: [...s.tabs, { id, title: titles[panelType], type: panelType, shellType: "", sessionId: null }],
@@ -1609,6 +1662,36 @@ export const useAppStore = create<AppState>((set, get) => ({
     return { collabSessions: rest };
   }),
 
+  // Backup Manager
+  backupJobs: [],
+  backupHistory: [],
+
+  addBackupJob: (job) => {
+    set((s) => ({
+      backupJobs: [...s.backupJobs, { ...job, id: crypto.randomUUID(), lastRun: null, lastStatus: null }],
+    }));
+    scheduleSave();
+  },
+  updateBackupJob: (id, updates) => {
+    set((s) => ({
+      backupJobs: s.backupJobs.map((j) => j.id === id ? { ...j, ...updates } : j),
+    }));
+    scheduleSave();
+  },
+  removeBackupJob: (id) => {
+    set((s) => ({ backupJobs: s.backupJobs.filter((j) => j.id !== id) }));
+    scheduleSave();
+  },
+  addBackupRecord: (record) => {
+    set((s) => {
+      const history = [{ ...record, id: crypto.randomUUID() }, ...s.backupHistory];
+      if (history.length > 500) history.length = 500;
+      return { backupHistory: history };
+    });
+    scheduleSave();
+  },
+  clearBackupHistory: () => { set({ backupHistory: [] }); scheduleSave(); },
+
   _hydrateFromConfig: (config) => {
     const updates: Partial<AppState> = {};
     if (config.theme) updates.theme = config.theme;
@@ -1622,6 +1705,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (config.language) updates.language = config.language;
     if (config.customExploits && config.customExploits.length > 0) updates.customExploits = config.customExploits;
     if (config.workspaces && config.workspaces.length > 0) updates.workspaces = config.workspaces;
+    if (config.backupJobs?.length) updates.backupJobs = config.backupJobs;
+    if (config.backupHistory?.length) updates.backupHistory = config.backupHistory;
     if (config.sshConnections && config.sshConnections.length > 0) {
       updates.sshConnections = config.sshConnections.map((c) => ({
         ...c,

@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { createPortal } from "react-dom";
 import {
   Plus, X, Users, Share2, Monitor, FolderSync, Activity, Terminal,
-  Edit3, Bug, Sparkles, FileText, Shield, Gauge, LayoutGrid,
+  Edit3, Bug, Sparkles, FileText, Shield, Gauge, LayoutGrid, HardDrive,
 } from "lucide-react";
 import { useAppStore } from "../store/appStore";
 import type { PanelTabType } from "../store/appStore";
@@ -28,6 +28,7 @@ const panelIconMap: Record<PanelTabType, React.ReactNode> = {
   docs: <FileText size={14} />,
   hacking: <Shield size={14} />,
   infra: <Gauge size={14} />,
+  backups: <HardDrive size={14} />,
 };
 
 const panelTabIconMap: Record<PanelTabType, React.ReactNode> = {
@@ -41,6 +42,7 @@ const panelTabIconMap: Record<PanelTabType, React.ReactNode> = {
   docs: <FileText size={10} />,
   hacking: <Shield size={10} />,
   infra: <Gauge size={10} />,
+  backups: <HardDrive size={10} />,
 };
 
 interface MenuGroup {
@@ -65,6 +67,7 @@ const menuGroups: MenuGroup[] = [
       { type: "debug", label: "Debug", desc: "Logs & analysis" },
       { type: "ai", label: "AI Assistant", desc: "Local AI chat" },
       { type: "docs", label: "Session Docs", desc: "Documentation" },
+      { type: "backups", label: "Backup Manager", desc: "Server backups" },
     ],
   },
   {

@@ -866,16 +866,22 @@ function SFTPExplorer({
   };
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", height: "100%", gap: 0 }}>
+    <div className="sftp-explorer">
       {/* Header */}
-      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8, flexShrink: 0 }}>
-        <button onClick={onDisconnect} style={{ ...btnStyle, background: "var(--bg-tertiary)", color: "var(--text-secondary)", padding: "4px 8px" }}>
-          <X size={12} /> {t("common.back")}
+      <div className="sftp-header">
+        <button onClick={onDisconnect} style={{ ...btnStyle, background: "var(--bg-tertiary)", color: "var(--text-secondary)", padding: "5px 10px", borderRadius: "var(--radius-md)" }}>
+          <ArrowLeft size={12} />
         </button>
-        <span style={{ fontSize: 12, fontWeight: 600, color: "var(--text-primary)", flex: 1 }}>{connName}</span>
-        <span style={{ width: 8, height: 8, borderRadius: "50%", background: "var(--accent-secondary)" }} />
-        <button onClick={onDisconnect} style={{ ...btnStyle, background: "var(--accent-error)", color: "white", padding: "4px 8px" }}>
-          <Square size={12} />
+        <div className="sftp-header-title">
+          <Server size={15} style={{ color: "var(--accent-secondary)" }} />
+          {connName}
+          <span className="sftp-status-badge">
+            <span className="sftp-status-dot" />
+            Connected
+          </span>
+        </div>
+        <button onClick={onDisconnect} style={{ ...btnStyle, background: "rgba(248,81,73,0.12)", color: "var(--accent-error)", padding: "5px 10px", borderRadius: "var(--radius-md)" }}>
+          <Square size={12} /> Disconnect
         </button>
       </div>
 
@@ -937,74 +943,51 @@ function SFTPExplorer({
       )}
 
       {/* Transfer buttons */}
-      <div style={{ display: "flex", gap: 4, marginBottom: 6, flexShrink: 0 }}>
+      <div className="sftp-actions-bar">
         <button
           onClick={handleUpload}
           disabled={selectedLocal.size === 0 || transferring}
-          style={{
-            ...btnStyle, flex: 1, justifyContent: "center",
-            background: selectedLocal.size > 0 && !transferring ? "var(--accent-primary)" : "var(--bg-active)",
-            color: selectedLocal.size > 0 && !transferring ? "white" : "var(--text-muted)",
-            padding: "4px 8px", fontSize: 11,
-          }}
+          className={`sftp-action-btn ${selectedLocal.size > 0 && !transferring ? "upload" : "inactive"}`}
           title="Upload selected local files to remote"
         >
-          <Upload size={12} /> {t("common.upload")} ({selectedLocal.size})
+          <Upload size={14} /> {t("common.upload")} {selectedLocal.size > 0 && `(${selectedLocal.size})`}
         </button>
         <button
           onClick={handleDownload}
           disabled={selectedRemote.size === 0 || transferring}
-          style={{
-            ...btnStyle, flex: 1, justifyContent: "center",
-            background: selectedRemote.size > 0 && !transferring ? "var(--accent-secondary)" : "var(--bg-active)",
-            color: selectedRemote.size > 0 && !transferring ? "white" : "var(--text-muted)",
-            padding: "4px 8px", fontSize: 11,
-          }}
+          className={`sftp-action-btn ${selectedRemote.size > 0 && !transferring ? "download" : "inactive"}`}
           title="Download selected remote files to local"
         >
-          <Download size={12} /> {t("common.download")} ({selectedRemote.size})
+          <Download size={14} /> {t("common.download")} {selectedRemote.size > 0 && `(${selectedRemote.size})`}
         </button>
       </div>
 
       {/* Dual panels */}
-      <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 4, minHeight: 0 }}>
+      <div className="sftp-panels">
         {/* LOCAL PANEL */}
         <div
-          style={{
-            flex: 1, display: "flex", flexDirection: "column",
-            border: `2px solid ${dragOver === "local" ? "var(--accent-primary)" : activePanel === "local" ? "var(--accent-primary)" : "var(--border-subtle)"}`,
-            borderRadius: "var(--radius-sm)", overflow: "hidden", minHeight: 0,
-            background: dragOver === "local" ? "rgba(88,166,255,0.05)" : undefined,
-          }}
+          className={`sftp-panel ${activePanel === "local" ? "active" : ""} ${dragOver === "local" ? "drag-over" : ""}`}
           onClick={() => setActivePanel("local")}
           onMouseEnter={() => handlePanelMouseEnter("local")}
           onMouseLeave={() => handlePanelMouseLeave("local")}
         >
-          <div style={{
-            display: "flex", alignItems: "center", gap: 4, padding: "4px 6px",
-            background: "var(--bg-tertiary)", borderBottom: "1px solid var(--border-subtle)", flexShrink: 0,
-          }}>
-            <span style={{ fontSize: 9, fontWeight: 700, color: "var(--accent-primary)", textTransform: "uppercase", letterSpacing: 1 }}>{t("sftp.local")}</span>
-            <button onClick={localGoUp} style={{ background: "none", border: "none", color: "var(--text-secondary)", cursor: "pointer", padding: 2 }} title="Go up">
-              <ArrowLeft size={11} />
-            </button>
-            <button onClick={() => loadLocal(localPath)} style={{ background: "none", border: "none", color: "var(--text-secondary)", cursor: "pointer", padding: 2 }} title="Refresh">
-              <RefreshCw size={11} />
-            </button>
-            <div style={{ flex: 1, fontSize: 9, color: "var(--text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", direction: "rtl", textAlign: "left" }}>
-              {localPath}
-            </div>
+          <div className="sftp-panel-header">
+            <span className="sftp-panel-label local">{t("sftp.local")}</span>
+            <button onClick={localGoUp} className="sftp-panel-btn" title="Go up"><ArrowLeft size={12} /></button>
+            <button onClick={() => loadLocal(localPath)} className="sftp-panel-btn" title="Refresh"><RefreshCw size={12} /></button>
+            <div className="sftp-panel-path">{localPath}</div>
           </div>
-          <div style={{ flex: 1, overflowY: "auto", minHeight: 0 }} className="hacking-log-container">
+          <div className="sftp-file-list">
             {localLoading ? (
-              <div style={{ textAlign: "center", padding: 12, color: "var(--text-muted)", fontSize: 11 }}>
-                <Loader2 size={14} style={{ animation: "spin 1s linear infinite" }} />
+              <div style={{ textAlign: "center", padding: 20, color: "var(--text-muted)" }}>
+                <Loader2 size={16} style={{ animation: "spin 1s linear infinite" }} />
               </div>
             ) : localError ? (
-              <div style={{ padding: 8, fontSize: 10, color: "var(--accent-error)" }}>{localError}</div>
+              <div style={{ padding: 10, fontSize: 11, color: "var(--accent-error)" }}>{localError}</div>
             ) : (
               localFiles.map((entry) => {
                 const isSelected = selectedLocal.has(entry.path);
+                const isDragTarget = isDragging && dragOverFolder === entry.path && entry.is_dir;
                 return (
                   <div
                     key={entry.path}
@@ -1013,27 +996,15 @@ function SFTPExplorer({
                     onMouseLeave={handleEntryMouseLeaveDrag}
                     onClick={() => toggleLocalSelect(entry.path)}
                     onDoubleClick={() => navigateLocal(entry)}
-                    style={{
-                      display: "flex", alignItems: "center", gap: 6, padding: "3px 6px",
-                      cursor: isDragging && dragSide === "local" ? "grabbing" : "grab",
-                      background: isDragging && dragOverFolder === entry.path && entry.is_dir
-                        ? "rgba(88,166,255,0.3)"
-                        : isSelected ? "rgba(88,166,255,0.15)" : "transparent",
-                      opacity: isDragging && dragSide === "local" && isSelected ? 0.5 : 1,
-                      borderBottom: "1px solid var(--border-subtle)", fontSize: 11,
-                    }}
+                    className={`sftp-file-row ${isSelected ? "selected" : ""} ${isDragTarget ? "drag-target" : ""} ${isDragging && dragSide === "local" && isSelected ? "dragging" : ""}`}
+                    style={{ cursor: isDragging && dragSide === "local" ? "grabbing" : "grab" }}
                   >
-                    {entry.is_dir ? (
-                      <Folder size={12} style={{ color: "var(--accent-primary)", flexShrink: 0 }} />
-                    ) : (
-                      <File size={12} style={{ color: "var(--text-muted)", flexShrink: 0 }} />
-                    )}
-                    <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "var(--text-primary)" }}>
-                      {entry.name}
-                    </span>
-                    {!entry.is_dir && (
-                      <span style={{ fontSize: 9, color: "var(--text-muted)", flexShrink: 0 }}>{formatSize(entry.size, true)}</span>
-                    )}
+                    {entry.is_dir
+                      ? <Folder size={14} style={{ color: "var(--accent-primary)", flexShrink: 0 }} />
+                      : <File size={14} style={{ color: "var(--text-muted)", flexShrink: 0 }} />
+                    }
+                    <span className="sftp-file-name">{entry.name}</span>
+                    {!entry.is_dir && <span className="sftp-file-meta">{formatSize(entry.size, true)}</span>}
                   </div>
                 );
               })
@@ -1043,36 +1014,18 @@ function SFTPExplorer({
 
         {/* REMOTE PANEL */}
         <div
-          style={{
-            flex: 1, display: "flex", flexDirection: "column",
-            border: `2px solid ${dragOver === "remote" ? "var(--accent-secondary)" : activePanel === "remote" ? "var(--accent-primary)" : "var(--border-subtle)"}`,
-            borderRadius: "var(--radius-sm)", overflow: "hidden", minHeight: 0,
-            background: dragOver === "remote" ? "rgba(63,185,80,0.05)" : undefined,
-          }}
+          className={`sftp-panel ${activePanel === "remote" ? "active" : ""} ${dragOver === "remote" ? "drag-over" : ""}`}
           onClick={() => setActivePanel("remote")}
           onMouseEnter={() => handlePanelMouseEnter("remote")}
           onMouseLeave={() => handlePanelMouseLeave("remote")}
         >
-          <div style={{
-            display: "flex", alignItems: "center", gap: 4, padding: "4px 6px",
-            background: "var(--bg-tertiary)", borderBottom: "1px solid var(--border-subtle)", flexShrink: 0,
-          }}>
-            <span style={{ fontSize: 9, fontWeight: 700, color: "var(--accent-secondary)", textTransform: "uppercase", letterSpacing: 1 }}>Remote</span>
-            <button onClick={remoteGoUp} style={{ background: "none", border: "none", color: "var(--text-secondary)", cursor: "pointer", padding: 2 }} title="Go up">
-              <ArrowLeft size={11} />
-            </button>
-            <button onClick={() => loadRemote(remotePath)} style={{ background: "none", border: "none", color: "var(--text-secondary)", cursor: "pointer", padding: 2 }} title="Refresh">
-              <RefreshCw size={11} />
-            </button>
-            <button onClick={() => setShowNewFolder(!showNewFolder)} style={{ background: "none", border: "none", color: "var(--text-secondary)", cursor: "pointer", padding: 2 }} title="New folder">
-              <FolderPlus size={11} />
-            </button>
-            <button onClick={handleDeleteRemote} disabled={selectedRemote.size === 0} style={{ background: "none", border: "none", color: selectedRemote.size > 0 ? "var(--accent-error)" : "var(--text-muted)", cursor: selectedRemote.size > 0 ? "pointer" : "default", padding: 2 }} title="Delete selected">
-              <Trash2 size={11} />
-            </button>
-            <div style={{ flex: 1, fontSize: 9, color: "var(--text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", direction: "rtl", textAlign: "left" }}>
-              {remotePath}
-            </div>
+          <div className="sftp-panel-header">
+            <span className="sftp-panel-label remote">Remote</span>
+            <button onClick={remoteGoUp} className="sftp-panel-btn" title="Go up"><ArrowLeft size={12} /></button>
+            <button onClick={() => loadRemote(remotePath)} className="sftp-panel-btn" title="Refresh"><RefreshCw size={12} /></button>
+            <button onClick={() => setShowNewFolder(!showNewFolder)} className="sftp-panel-btn" title="New folder"><FolderPlus size={12} /></button>
+            <button onClick={handleDeleteRemote} disabled={selectedRemote.size === 0} className="sftp-panel-btn danger" title="Delete selected"><Trash2 size={12} /></button>
+            <div className="sftp-panel-path">{remotePath}</div>
           </div>
 
           {showNewFolder && (
@@ -1091,16 +1044,17 @@ function SFTPExplorer({
             </div>
           )}
 
-          <div style={{ flex: 1, overflowY: "auto", minHeight: 0 }} className="hacking-log-container">
+          <div className="sftp-file-list">
             {remoteLoading ? (
-              <div style={{ textAlign: "center", padding: 12, color: "var(--text-muted)", fontSize: 11 }}>
-                <Loader2 size={14} style={{ animation: "spin 1s linear infinite" }} />
+              <div style={{ textAlign: "center", padding: 20, color: "var(--text-muted)" }}>
+                <Loader2 size={16} style={{ animation: "spin 1s linear infinite" }} />
               </div>
             ) : remoteError ? (
-              <div style={{ padding: 8, fontSize: 10, color: "var(--accent-error)" }}>{remoteError}</div>
+              <div style={{ padding: 10, fontSize: 11, color: "var(--accent-error)" }}>{remoteError}</div>
             ) : (
               remoteFiles.map((entry) => {
                 const isSelected = selectedRemote.has(entry.path);
+                const isDragTarget = isDragging && dragOverFolder === entry.path && entry.is_dir;
                 return (
                   <div
                     key={entry.path}
@@ -1109,39 +1063,23 @@ function SFTPExplorer({
                     onMouseLeave={handleEntryMouseLeaveDrag}
                     onClick={() => toggleRemoteSelect(entry.path)}
                     onDoubleClick={() => navigateRemote(entry)}
-                    style={{
-                      display: "flex", alignItems: "center", gap: 6, padding: "3px 6px",
-                      cursor: isDragging && dragSide === "remote" ? "grabbing" : "grab",
-                      background: isDragging && dragOverFolder === entry.path && entry.is_dir
-                        ? "rgba(63,185,80,0.3)"
-                        : isSelected ? "rgba(63,185,80,0.15)" : "transparent",
-                      opacity: isDragging && dragSide === "remote" && isSelected ? 0.5 : 1,
-                      borderBottom: "1px solid var(--border-subtle)", fontSize: 11,
-                    }}
+                    className={`sftp-file-row ${isSelected ? "selected remote" : ""} ${isDragTarget ? "drag-target" : ""} ${isDragging && dragSide === "remote" && isSelected ? "dragging" : ""}`}
+                    style={{ cursor: isDragging && dragSide === "remote" ? "grabbing" : "grab" }}
                   >
-                    {entry.is_dir ? (
-                      <Folder size={12} style={{ color: "var(--accent-secondary)", flexShrink: 0 }} />
-                    ) : (
-                      <File size={12} style={{ color: "var(--text-muted)", flexShrink: 0 }} />
-                    )}
-                    <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "var(--text-primary)" }}>
-                      {entry.name}
-                    </span>
-                    <span style={{ fontSize: 8, color: "var(--text-muted)", flexShrink: 0 }}>{formatPermissions(entry.permissions)}</span>
+                    {entry.is_dir
+                      ? <Folder size={14} style={{ color: "var(--accent-secondary)", flexShrink: 0 }} />
+                      : <File size={14} style={{ color: "var(--text-muted)", flexShrink: 0 }} />
+                    }
+                    <span className="sftp-file-name">{entry.name}</span>
+                    <span className="sftp-file-meta">{formatPermissions(entry.permissions)}</span>
                     {!entry.is_dir && (
                       <>
-                        <button onClick={(e) => { e.stopPropagation(); handlePreview(entry); }} style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", padding: 1 }} title="Preview">
-                          <Eye size={10} />
-                        </button>
-                        <button onClick={(e) => { e.stopPropagation(); openInEditor(entry); }} style={{ background: "none", border: "none", color: "var(--accent-primary)", cursor: "pointer", padding: 1 }} title="Edit in Editor">
-                          <Edit3 size={10} />
-                        </button>
-                        <span style={{ fontSize: 9, color: "var(--text-muted)", flexShrink: 0 }}>{formatSize(entry.size, true)}</span>
+                        <button onClick={(e) => { e.stopPropagation(); handlePreview(entry); }} className="sftp-file-action" title="Preview"><Eye size={11} /></button>
+                        <button onClick={(e) => { e.stopPropagation(); openInEditor(entry); }} className="sftp-file-action" title="Edit"><Edit3 size={11} /></button>
+                        <span className="sftp-file-meta">{formatSize(entry.size, true)}</span>
                       </>
                     )}
-                    <button onClick={(e) => { e.stopPropagation(); setRenameTarget({ path: entry.path, name: entry.name }); }} style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", padding: 1 }} title="Rename">
-                      <Edit3 size={10} />
-                    </button>
+                    <button onClick={(e) => { e.stopPropagation(); setRenameTarget({ path: entry.path, name: entry.name }); }} className="sftp-file-action" title="Rename"><Edit3 size={11} /></button>
                   </div>
                 );
               })
@@ -1152,21 +1090,22 @@ function SFTPExplorer({
 
       {/* Transfer log */}
       {transfers.length > 0 && (
-        <div style={{ flexShrink: 0, marginTop: 4 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 2 }}>
-            <span style={{ fontSize: 9, fontWeight: 700, color: "var(--text-secondary)", textTransform: "uppercase", letterSpacing: 1 }}>Transfers</span>
-            <button onClick={() => setTransfers([])} style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", padding: 1, marginLeft: "auto" }}>
-              <Trash2 size={9} />
-            </button>
+        <div className="sftp-transfers">
+          <div className="sftp-transfers-header">
+            <span className="sftp-transfers-label">Transfers</span>
+            <span style={{ flex: 1 }} />
+            <button onClick={() => setTransfers([])} className="sftp-panel-btn" title="Clear"><Trash2 size={10} /></button>
           </div>
-          <div style={{ maxHeight: 80, overflowY: "auto" }} className="hacking-log-container">
-            {transfers.map((t) => (
-              <div key={t.id} style={{ display: "flex", alignItems: "center", gap: 6, padding: "2px 4px", fontSize: 9, borderBottom: "1px solid var(--border-subtle)" }}>
-                {statusIcon(t.status)}
-                {t.direction === "upload" ? <Upload size={9} style={{ color: "var(--accent-primary)" }} /> : <Download size={9} style={{ color: "var(--accent-secondary)" }} />}
-                <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "var(--text-primary)" }}>{t.filename}</span>
-                {t.size !== undefined && <span style={{ color: "var(--text-muted)", flexShrink: 0 }}>{formatSize(t.size!, true)}</span>}
-                {t.error && <span style={{ color: "var(--accent-error)", flexShrink: 0 }} title={t.error}>err</span>}
+          <div style={{ maxHeight: 90, overflowY: "auto", borderRadius: "var(--radius-sm)" }}>
+            {transfers.map((tr) => (
+              <div key={tr.id} className={`sftp-transfer-row ${tr.status}`}>
+                <span className={`sftp-transfer-badge ${tr.status}`}>
+                  {statusIcon(tr.status)}
+                </span>
+                {tr.direction === "upload" ? <Upload size={11} style={{ color: "var(--accent-primary)" }} /> : <Download size={11} style={{ color: "var(--accent-secondary)" }} />}
+                <span className="sftp-file-name" style={{ fontSize: 11 }}>{tr.filename}</span>
+                {tr.size !== undefined && <span className="sftp-file-meta">{formatSize(tr.size!, true)}</span>}
+                {tr.error && <span style={{ color: "var(--accent-error)", fontSize: 9 }} title={tr.error}>err</span>}
               </div>
             ))}
           </div>

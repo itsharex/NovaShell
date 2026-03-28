@@ -431,7 +431,50 @@ export function SSHPanel() {
         unlisteners.push(unError);
 
         // Terminal input → fire-and-forget via writeQueue
+        let sshInputBuffer = "";
         const dataDisposable = terminal.onData((data) => {
+          // ── AI Natural Language → Command (prefix: ?) ──
+          if ((data === "\r" || data === "\n") && sshInputBuffer.trim().startsWith("?") && sshInputBuffer.trim().length > 2) {
+            const query = sshInputBuffer.trim().slice(1).trim();
+            writeQueue += "\x15"; // Ctrl+U to clear
+            scheduleWriteFlush();
+            sshInputBuffer = "";
+            terminal.write("\r\n\x1b[90m[AI] Generating command...\x1b[0m");
+            (async () => {
+              try {
+                const response = await invoke<string>("ai_chat", {
+                  model: "llama3.2",
+                  systemPrompt: "You are a shell command generator. The user describes what they want in natural language. Reply with ONLY the shell command, nothing else. No explanations, no markdown, no code blocks, no backticks. Just the raw command. If multiple commands are needed, join them with && or ;. Always output a single line.",
+                  messages: [{ role: "user", content: query }],
+                });
+                const cmd = (response || "").trim().replace(/^```[\w]*\n?/, "").replace(/\n?```$/, "").trim().split("\n")[0];
+                if (cmd) {
+                  terminal.write("\r\x1b[2K\x1b[A\x1b[2K");
+                  writeQueue += cmd;
+                  scheduleWriteFlush();
+                  sshInputBuffer = cmd;
+                  terminal.write(`\r\n\x1b[90m[AI] Press Enter to execute, or edit the command above\x1b[0m\r\n`);
+                } else {
+                  terminal.write("\r\n\x1b[31m[AI] Could not generate command\x1b[0m\r\n");
+                }
+              } catch (e) {
+                terminal.write(`\r\n\x1b[31m[AI] Error: ${String(e).slice(0, 100)}\x1b[0m\r\n`);
+              }
+            })();
+            return;
+          }
+
+          // Track input buffer
+          if (data === "\r" || data === "\n") {
+            sshInputBuffer = "";
+          } else if (data === "\x7f" || data === "\b") {
+            sshInputBuffer = sshInputBuffer.slice(0, -1);
+          } else if (data === "\x03" || data === "\x15") {
+            sshInputBuffer = "";
+          } else if (data >= " ") {
+            if (sshInputBuffer.length < 4096) sshInputBuffer += data;
+          }
+
           writeQueue += data;
           scheduleWriteFlush();
         });

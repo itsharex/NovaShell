@@ -676,6 +676,42 @@ export function TerminalPanel() {
             }
           }
 
+          // ── AI Natural Language → Command (prefix: ?) ──
+          if ((data === "\r" || data === "\n") && ptyInputBuffer.trim().startsWith("?") && ptyInputBuffer.trim().length > 2) {
+            const query = ptyInputBuffer.trim().slice(1).trim();
+            // Cancel the typed text in the shell
+            writeToSession("\x15");
+            ptyInputBuffer = "";
+            setShowAutocomplete(false);
+            // Show thinking indicator
+            terminal.write("\r\n\x1b[90m[AI] Generating command...\x1b[0m");
+            // Call Ollama to convert natural language to command
+            (async () => {
+              try {
+                const inv = await getTauriCore();
+                const response = await inv.invoke<string>("ai_chat", {
+                  model: "llama3.2",
+                  systemPrompt: "You are a shell command generator. The user describes what they want in natural language. Reply with ONLY the shell command, nothing else. No explanations, no markdown, no code blocks, no backticks. Just the raw command. If multiple commands are needed, join them with && or ;. Always output a single line.",
+                  messages: [{ role: "user", content: query }],
+                });
+                const cmd = (response || "").trim().replace(/^```[\w]*\n?/, "").replace(/\n?```$/, "").trim().split("\n")[0];
+                if (cmd) {
+                  // Clear the "thinking" line and write the command for review
+                  terminal.write("\r\x1b[2K\x1b[A\x1b[2K");
+                  // Write command to PTY input (not executed — no \r)
+                  writeToSession(cmd);
+                  ptyInputBuffer = cmd;
+                  terminal.write(`\r\n\x1b[90m[AI] Press Enter to execute, or edit the command above\x1b[0m\r\n`);
+                } else {
+                  terminal.write("\r\n\x1b[31m[AI] Could not generate command\x1b[0m\r\n");
+                }
+              } catch (e) {
+                terminal.write(`\r\n\x1b[31m[AI] Error: ${String(e).slice(0, 100)}\x1b[0m\r\n`);
+              }
+            })();
+            return;
+          }
+
           writeToSession(data);
 
           if (data === "\r" || data === "\n") {

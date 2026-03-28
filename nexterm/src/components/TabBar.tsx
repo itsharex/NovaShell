@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { createPortal } from "react-dom";
 import {
-  Plus, X, Users, Share2, Monitor, FolderSync, Activity,
+  Plus, X, Users, Share2, Monitor, FolderSync, Activity, Terminal,
   Edit3, Bug, Sparkles, FileText, Shield, Gauge,
 } from "lucide-react";
 import { useAppStore } from "../store/appStore";
@@ -18,6 +18,19 @@ const shellIcons: Record<string, string> = {
 };
 
 const panelIconMap: Record<PanelTabType, React.ReactNode> = {
+  ssh: <Monitor size={14} />,
+  sftp: <FolderSync size={14} />,
+  servermap: <Activity size={14} />,
+  collab: <Users size={14} />,
+  editor: <Edit3 size={14} />,
+  debug: <Bug size={14} />,
+  ai: <Sparkles size={14} />,
+  docs: <FileText size={14} />,
+  hacking: <Shield size={14} />,
+  infra: <Gauge size={14} />,
+};
+
+const panelTabIconMap: Record<PanelTabType, React.ReactNode> = {
   ssh: <Monitor size={10} />,
   sftp: <FolderSync size={10} />,
   servermap: <Activity size={10} />,
@@ -30,17 +43,37 @@ const panelIconMap: Record<PanelTabType, React.ReactNode> = {
   infra: <Gauge size={10} />,
 };
 
-const panelMenuItems: { type: PanelTabType; label: string }[] = [
-  { type: "ssh", label: "SSH" },
-  { type: "sftp", label: "SFTP" },
-  { type: "editor", label: "Editor" },
-  { type: "ai", label: "AI Assistant" },
-  { type: "debug", label: "Debug" },
-  { type: "servermap", label: "Server Map" },
-  { type: "docs", label: "Session Docs" },
-  { type: "hacking", label: "Hacking" },
-  { type: "infra", label: "Infra Monitor" },
-  { type: "collab", label: "Collaboration" },
+interface MenuGroup {
+  label: string;
+  items: { type: PanelTabType; label: string; desc: string }[];
+}
+
+const menuGroups: MenuGroup[] = [
+  {
+    label: "Connections",
+    items: [
+      { type: "ssh", label: "SSH", desc: "Remote terminal sessions" },
+      { type: "sftp", label: "SFTP", desc: "File transfer" },
+      { type: "servermap", label: "Server Map", desc: "Network discovery" },
+      { type: "collab", label: "Collaboration", desc: "Share sessions" },
+    ],
+  },
+  {
+    label: "Tools",
+    items: [
+      { type: "editor", label: "Editor", desc: "Code editor" },
+      { type: "debug", label: "Debug", desc: "Logs & analysis" },
+      { type: "ai", label: "AI Assistant", desc: "Local AI chat" },
+      { type: "docs", label: "Session Docs", desc: "Documentation" },
+    ],
+  },
+  {
+    label: "Advanced",
+    items: [
+      { type: "hacking", label: "Hacking", desc: "Pentest tools" },
+      { type: "infra", label: "Infra Monitor", desc: "Server dashboards" },
+    ],
+  },
 ];
 
 interface ShellInfo {
@@ -111,7 +144,7 @@ export function TabBar() {
             {(() => {
               // Panel tab → use panel icon
               if (tab.type && tab.type !== "terminal") {
-                return panelIconMap[tab.type] || <Edit3 size={10} />;
+                return panelTabIconMap[tab.type] || <Edit3 size={10} />;
               }
               // Terminal tab → use shell icon
               const s = tab.shellType.toLowerCase();
@@ -155,7 +188,7 @@ export function TabBar() {
       {showShellMenu && createPortal(
         <div
           ref={dropdownRef}
-          className="shell-dropdown animate-slide-up"
+          className="new-tab-menu animate-slide-up"
           style={{
             position: "fixed",
             top: menuPos.top,
@@ -163,35 +196,54 @@ export function TabBar() {
             zIndex: 10000,
           }}
         >
-          {availableShells.map((shell) => {
-            const key = shell.name.toLowerCase().replace(/\s+/g, "").replace("gitbash", "bash");
-            return (
-              <button
-                key={shell.path}
-                className="shell-option"
-                onClick={() => {
-                  addTab(shell.path);
-                  setShowShellMenu(false);
-                }}
-              >
-                <span style={{ fontWeight: 700, width: 24 }}>{shellIcons[key] || ">_"}</span>
-                {shell.name}
-              </button>
-            );
-          })}
-          <div style={{ height: 1, background: "var(--border-color)", margin: "4px 0" }} />
-          {panelMenuItems.map((item) => (
-            <button
-              key={item.type}
-              className="shell-option"
-              onClick={() => {
-                openPanelTab(item.type);
-                setShowShellMenu(false);
-              }}
-            >
-              <span style={{ display: "inline-flex", width: 24, justifyContent: "center" }}>{panelIconMap[item.type]}</span>
-              {item.label}
-            </button>
+          {/* Terminals group */}
+          <div className="new-tab-menu-group">
+            <div className="new-tab-menu-group-header">
+              <Terminal size={12} />
+              <span>Terminals</span>
+            </div>
+            <div className="new-tab-menu-items">
+              {availableShells.map((shell) => {
+                const key = shell.name.toLowerCase().replace(/\s+/g, "").replace("gitbash", "bash");
+                return (
+                  <button
+                    key={shell.path}
+                    className="new-tab-menu-item"
+                    onClick={() => { addTab(shell.path); setShowShellMenu(false); }}
+                  >
+                    <span className="new-tab-menu-item-icon">{shellIcons[key] || ">_"}</span>
+                    <div className="new-tab-menu-item-text">
+                      <span className="new-tab-menu-item-label">{shell.name}</span>
+                      <span className="new-tab-menu-item-desc">Shell session</span>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Panel groups */}
+          {menuGroups.map((group) => (
+            <div key={group.label} className="new-tab-menu-group">
+              <div className="new-tab-menu-group-header">
+                <span>{group.label}</span>
+              </div>
+              <div className="new-tab-menu-items">
+                {group.items.map((item) => (
+                  <button
+                    key={item.type}
+                    className="new-tab-menu-item"
+                    onClick={() => { openPanelTab(item.type); setShowShellMenu(false); }}
+                  >
+                    <span className="new-tab-menu-item-icon">{panelIconMap[item.type]}</span>
+                    <div className="new-tab-menu-item-text">
+                      <span className="new-tab-menu-item-label">{item.label}</span>
+                      <span className="new-tab-menu-item-desc">{item.desc}</span>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
           ))}
         </div>,
         document.body

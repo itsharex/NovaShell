@@ -76,20 +76,20 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
     }
 
     // Full panels (open as tabs)
-    const fullPanels: { id: PanelTabType; label: string; icon: React.ReactNode }[] = [
-      { id: "ssh", label: t("sidebar.ssh"), icon: <Monitor size={14} /> },
-      { id: "sftp", label: t("sidebar.sftpTransfer"), icon: <FolderSync size={14} /> },
-      { id: "servermap", label: t("sidebar.serverMap"), icon: <Activity size={14} /> },
-      { id: "editor", label: t("sidebar.editor"), icon: <Edit3 size={14} /> },
-      { id: "debug", label: t("sidebar.debug"), icon: <Bug size={14} /> },
-      { id: "ai", label: t("sidebar.aiAssistant"), icon: <Sparkles size={14} /> },
-      { id: "docs", label: t("sidebar.sessionDocs"), icon: <FileText size={14} /> },
-      { id: "hacking", label: t("sidebar.hackingMode"), icon: <Shield size={14} /> },
-      { id: "infra", label: t("sidebar.infraMonitor"), icon: <Gauge size={14} /> },
-      { id: "collab", label: t("sidebar.collab"), icon: <Users size={14} /> },
+    const fullPanels: { id: PanelTabType; label: string; desc: string; icon: React.ReactNode }[] = [
+      { id: "ssh", label: t("sidebar.ssh"), desc: "Remote terminal sessions", icon: <Monitor size={14} /> },
+      { id: "sftp", label: t("sidebar.sftpTransfer"), desc: "File transfer", icon: <FolderSync size={14} /> },
+      { id: "servermap", label: t("sidebar.serverMap"), desc: "Network discovery", icon: <Activity size={14} /> },
+      { id: "editor", label: t("sidebar.editor"), desc: "Code editor", icon: <Edit3 size={14} /> },
+      { id: "debug", label: t("sidebar.debug"), desc: "Logs & analysis", icon: <Bug size={14} /> },
+      { id: "ai", label: t("sidebar.aiAssistant"), desc: "Local AI chat", icon: <Sparkles size={14} /> },
+      { id: "docs", label: t("sidebar.sessionDocs"), desc: "Documentation", icon: <FileText size={14} /> },
+      { id: "hacking", label: t("sidebar.hackingMode"), desc: "Pentest tools", icon: <Shield size={14} /> },
+      { id: "infra", label: t("sidebar.infraMonitor"), desc: "Server dashboards", icon: <Gauge size={14} /> },
+      { id: "collab", label: t("sidebar.collab"), desc: "Share sessions", icon: <Users size={14} /> },
     ];
     for (const p of fullPanels) {
-      items.push({ id: `panel-${p.id}`, label: p.label, description: "Open tab", icon: p.icon, category: "panel", action: () => openPanel(p.id) });
+      items.push({ id: `panel-${p.id}`, label: p.label, description: p.desc, icon: p.icon, category: "panel", action: () => openPanel(p.id) });
     }
 
     // Actions

@@ -111,7 +111,8 @@ export function DebugPanel() {
   // Auto-scroll to bottom when new logs arrive (if user hasn't scrolled up)
   useEffect(() => {
     if (!paused && autoScrollRef.current && scrollRef.current && view === "live") {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+      const el = scrollRef.current;
+      requestAnimationFrame(() => { el.scrollTop = el.scrollHeight; });
     }
   }, [filteredLogs.length, paused, view]);
 

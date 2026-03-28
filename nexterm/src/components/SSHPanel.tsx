@@ -313,7 +313,7 @@ export function SSHPanel() {
       theme: colors,
       allowTransparency: true,
       allowProposedApi: true,
-      scrollback: 3000,
+      scrollback: 1500,
       tabStopWidth: 4,
       rightClickSelectsWord: true,
     });

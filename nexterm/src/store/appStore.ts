@@ -1186,9 +1186,11 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   aiMessages: [],
   aiLoading: false,
-  addAiMessage: (msg) => set((s) => ({
-    aiMessages: [...s.aiMessages, { ...msg, id: crypto.randomUUID(), timestamp: Date.now() }],
-  })),
+  addAiMessage: (msg) => set((s) => {
+    const msgs = [...s.aiMessages, { ...msg, id: crypto.randomUUID(), timestamp: Date.now() }];
+    if (msgs.length > 200) msgs.splice(0, msgs.length - 200);
+    return { aiMessages: msgs };
+  }),
   clearAiMessages: () => set({ aiMessages: [] }),
   setAiLoading: (loading) => set({ aiLoading: loading }),
 

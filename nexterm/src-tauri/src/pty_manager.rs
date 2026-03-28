@@ -137,7 +137,7 @@ impl PtySession {
                                 }
                             }
                             // Flush immediately if batch is large (fast output like `cat` large file)
-                            if b.len() > 16384 {
+                            if b.len() > 8192 {
                                 let _ = app_handle_reader.emit(&event_name, std::mem::take(&mut *b));
                             } else {
                                 // Signal flusher that data is ready

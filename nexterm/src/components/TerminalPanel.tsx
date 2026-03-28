@@ -427,7 +427,7 @@ export function TerminalPanel() {
         theme: colors,
         allowTransparency: true,
         allowProposedApi: true,
-        scrollback: 3000,
+        scrollback: 1500,
         tabStopWidth: 4,
         rightClickSelectsWord: true,
       });
@@ -899,10 +899,15 @@ export function TerminalPanel() {
     const handleResize = () => {
       if (resizeTimer) clearTimeout(resizeTimer);
       resizeTimer = setTimeout(() => {
-        terminalsRef.current.forEach((termRef) => {
-          termRef.fitAddon.fit();
-        });
-      }, 100);
+        // Only fit the active terminal (or all visible in split mode)
+        const currentSplit = useAppStore.getState().splitMode;
+        if (currentSplit !== "none") {
+          terminalsRef.current.forEach((termRef) => termRef.fitAddon.fit());
+        } else {
+          const active = terminalsRef.current.get(useAppStore.getState().activeTabId);
+          if (active) active.fitAddon.fit();
+        }
+      }, 80);
     };
     const observer = new ResizeObserver(handleResize);
     const mainArea = document.querySelector(".terminal-panel");

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo, memo } from "react";
 import {
   History,
   Code2,
@@ -74,7 +74,7 @@ export function Sidebar() {
   );
 }
 
-function HistoryPanel() {
+const HistoryPanel = memo(function HistoryPanel() {
   const history = useAppStore((s) => s.history);
   const clearHistory = useAppStore((s) => s.clearHistory);
   const executeSnippet = useAppStore((s) => s.executeSnippet);
@@ -133,11 +133,11 @@ function HistoryPanel() {
       )}
     </div>
   );
-}
+});
 
 const FOLDER_COLORS = ["#58a6ff", "#f78166", "#3fb950", "#d29922", "#bc8cff", "#ff7b72", "#79c0ff", "#7ee787"];
 
-function SnippetsPanel() {
+const SnippetsPanel = memo(function SnippetsPanel() {
   // Reactive data selectors — only these trigger re-renders
   const snippets = useAppStore((s) => s.snippets);
   const folders = useAppStore((s) => s.snippetFolders);
@@ -855,7 +855,7 @@ function SnippetsPanel() {
       </div>
     </div>
   );
-}
+});
 
 interface FileEntry {
   name: string;
@@ -993,7 +993,7 @@ function PreviewPanel() {
   );
 }
 
-function PluginsPanel() {
+const PluginsPanel = memo(function PluginsPanel() {
   const plugins = useAppStore((s) => s.plugins);
   const togglePlugin = useAppStore((s) => s.togglePlugin);
   const [pluginData, setPluginData] = useState<Record<string, { loading: boolean; data: string | null; error: string | null }>>({});
@@ -1277,9 +1277,9 @@ function PluginsPanel() {
       })}
     </div>
   );
-}
+});
 
-function StatsPanel() {
+const StatsPanel = memo(function StatsPanel() {
   const systemStats = useAppStore((s) => s.systemStats);
   const sessionStartTime = useAppStore((s) => s.sessionStartTime);
   const commandCount = useAppStore((s) => s.commandCount);
@@ -1350,4 +1350,4 @@ function StatsPanel() {
       </div>
     </div>
   );
-}
+});

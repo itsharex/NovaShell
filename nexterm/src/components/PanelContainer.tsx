@@ -3,7 +3,7 @@ import type { PanelTabType } from "../store/appStore";
 
 // EditorPanel loaded directly — CodeMirror's CSS injection breaks with lazy loading
 import { EditorPanel } from "./EditorPanel";
-import { DebugPanel } from "./DebugPanel";
+const DebugPanel = lazy(() => import("./DebugPanel").then(m => ({ default: m.DebugPanel })));
 import { AIPanel } from "./AIPanel";
 import { SessionDocPanel } from "./SessionDocPanel";
 
@@ -28,7 +28,7 @@ export function PanelContainer({ panelType }: { panelType: PanelTabType }) {
       {panelType === "sftp" && <Suspense fallback={<LazyFallback />}><SFTPPanel /></Suspense>}
       {panelType === "servermap" && <Suspense fallback={<LazyFallback />}><ServerMapPanel /></Suspense>}
       {panelType === "editor" && <EditorPanel />}
-      {panelType === "debug" && <DebugPanel />}
+      {panelType === "debug" && <Suspense fallback={<LazyFallback />}><DebugPanel /></Suspense>}
       {panelType === "ai" && <AIPanel />}
       {panelType === "docs" && <SessionDocPanel />}
       {panelType === "hacking" && <Suspense fallback={<LazyFallback />}><HackingPanel /></Suspense>}

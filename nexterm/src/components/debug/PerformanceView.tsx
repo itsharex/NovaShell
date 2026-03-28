@@ -63,7 +63,7 @@ export function PerformanceView() {
   const [processes, setProcesses] = useState<ProcessInfo[]>([]);
   const [processesLoading, setProcessesLoading] = useState(false);
   const [showProcesses, setShowProcesses] = useState(true);
-  const [autoRefresh, setAutoRefresh] = useState(true);
+  const [autoRefresh, setAutoRefresh] = useState(false);
 
   const fetchProcesses = useCallback(async () => {
     setProcessesLoading(true);

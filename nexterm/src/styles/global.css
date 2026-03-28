@@ -802,20 +802,6 @@ body {
   display: none;
 }
 
-.sidebar-tab-group {
-  display: flex;
-  align-items: center;
-}
-
-.sidebar-tab-separator {
-  width: 1px;
-  height: 16px;
-  background: var(--border-color);
-  margin: 0 2px;
-  flex-shrink: 0;
-  opacity: 0.6;
-}
-
 .sidebar-tab-btn {
   display: flex;
   align-items: center;

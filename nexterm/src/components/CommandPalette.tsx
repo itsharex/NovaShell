@@ -3,7 +3,7 @@ import {
   Search, Terminal, History, Code2, Monitor, FolderSync, Activity,
   Edit3, Bug, Sparkles, FileText, Shield, Gauge, Palette, Languages,
   Columns, Rows3, Square, Server, Play, Zap, Eye, FolderTree, Puzzle,
-  BarChart3, X, Layout, Save,
+  BarChart3, X, Layout, Save, Users,
 } from "lucide-react";
 import { useAppStore } from "../store/appStore";
 import type { SidebarTab, PanelTabType } from "../store/appStore";
@@ -86,7 +86,7 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
       { id: "docs", label: t("sidebar.sessionDocs"), icon: <FileText size={14} /> },
       { id: "hacking", label: t("sidebar.hackingMode"), icon: <Shield size={14} /> },
       { id: "infra", label: t("sidebar.infraMonitor"), icon: <Gauge size={14} /> },
-      { id: "collab", label: t("sidebar.collab"), icon: <Activity size={14} /> },
+      { id: "collab", label: t("sidebar.collab"), icon: <Users size={14} /> },
     ];
     for (const p of fullPanels) {
       items.push({ id: `panel-${p.id}`, label: p.label, description: "Open tab", icon: p.icon, category: "panel", action: () => openPanel(p.id) });

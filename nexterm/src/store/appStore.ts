@@ -39,6 +39,23 @@ export interface BackupJob {
   enabled: boolean;
   lastRun: number | null;
   lastStatus: "success" | "failed" | null;
+  // Notifications
+  notifyEmail: boolean;
+  notifyOn: "always" | "failure" | "success";
+  // Cloud upload
+  cloudEnabled: boolean;
+  cloudCommand: string; // e.g. rclone copy {FILE} remote:backups/
+}
+
+export interface BackupSmtpConfig {
+  enabled: boolean;
+  host: string;
+  port: number;
+  username: string;
+  password: string;
+  fromAddress: string;
+  toAddress: string;
+  useTls: boolean;
 }
 
 export interface BackupRecord {
@@ -390,6 +407,7 @@ interface PersistedConfig {
   workspaces?: Array<{ id: string; name: string; tabCount: number; splitMode: string; sidebarTab: string }>;
   backupJobs?: BackupJob[];
   backupHistory?: BackupRecord[];
+  backupSmtp?: BackupSmtpConfig;
 }
 
 let configLoaded = false;
@@ -424,6 +442,7 @@ function buildPersistedConfig(): PersistedConfig {
     workspaces: s.workspaces.length > 0 ? s.workspaces : undefined,
     backupJobs: s.backupJobs.length > 0 ? s.backupJobs : undefined,
     backupHistory: s.backupHistory.length > 0 ? s.backupHistory.slice(0, 200) : undefined,
+    backupSmtp: s.backupSmtp.enabled ? s.backupSmtp : undefined,
   };
 }
 
@@ -682,11 +701,13 @@ interface AppState {
   // Backup Manager
   backupJobs: BackupJob[];
   backupHistory: BackupRecord[];
+  backupSmtp: BackupSmtpConfig;
   addBackupJob: (job: Omit<BackupJob, "id" | "lastRun" | "lastStatus">) => void;
   updateBackupJob: (id: string, updates: Partial<BackupJob>) => void;
   removeBackupJob: (id: string) => void;
   addBackupRecord: (record: Omit<BackupRecord, "id">) => void;
   clearBackupHistory: () => void;
+  setBackupSmtp: (config: Partial<BackupSmtpConfig>) => void;
 
   // Hydration from config file
   _hydrateFromConfig: (config: PersistedConfig) => void;
@@ -1665,6 +1686,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   // Backup Manager
   backupJobs: [],
   backupHistory: [],
+  backupSmtp: { enabled: false, host: "smtp.gmail.com", port: 587, username: "", password: "", fromAddress: "", toAddress: "", useTls: true },
 
   addBackupJob: (job) => {
     set((s) => ({
@@ -1691,6 +1713,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     scheduleSave();
   },
   clearBackupHistory: () => { set({ backupHistory: [] }); scheduleSave(); },
+  setBackupSmtp: (config) => { set((s) => ({ backupSmtp: { ...s.backupSmtp, ...config } })); scheduleSave(); },
 
   _hydrateFromConfig: (config) => {
     const updates: Partial<AppState> = {};
@@ -1707,6 +1730,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (config.workspaces && config.workspaces.length > 0) updates.workspaces = config.workspaces;
     if (config.backupJobs?.length) updates.backupJobs = config.backupJobs;
     if (config.backupHistory?.length) updates.backupHistory = config.backupHistory;
+    if (config.backupSmtp?.enabled) updates.backupSmtp = config.backupSmtp;
     if (config.sshConnections && config.sshConnections.length > 0) {
       updates.sshConnections = config.sshConnections.map((c) => ({
         ...c,

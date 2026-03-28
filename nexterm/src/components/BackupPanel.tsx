@@ -1,11 +1,12 @@
-import { useState, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import {
   HardDrive, Play, Plus, Trash2, Edit3, Check, X, Clock,
   Database, Server, FileArchive, Download,
   CheckCircle, XCircle, Activity, Calendar, Loader2,
+  Mail, Cloud, Settings, Bell, Upload,
 } from "lucide-react";
 import { useAppStore } from "../store/appStore";
-import type { BackupJob, BackupRecord } from "../store/appStore";
+import type { BackupJob, BackupRecord, BackupSmtpConfig } from "../store/appStore";
 
 let invokeCache: typeof import("@tauri-apps/api/core").invoke | null = null;
 async function getInvoke() {
@@ -13,7 +14,7 @@ async function getInvoke() {
   return invokeCache;
 }
 
-type BackupView = "dashboard" | "jobs" | "history" | "templates";
+type BackupView = "dashboard" | "jobs" | "history" | "templates" | "settings";
 
 const DEFAULT_TEMPLATES = [
   { id: "pg", name: "PostgreSQL", category: "database" as const, engine: "postgresql", command: "pg_dump -U {USER} {DB_NAME} | gzip > {OUTPUT_PATH}", description: "PostgreSQL database dump with gzip compression" },
@@ -24,6 +25,15 @@ const DEFAULT_TEMPLATES = [
   { id: "rsync", name: "Rsync", category: "system" as const, engine: "rsync", command: "rsync -avz {SOURCE_PATHS} {OUTPUT_PATH}", description: "Rsync file synchronization" },
   { id: "custom", name: "Custom Command", category: "custom" as const, engine: "custom", command: "{COMMAND}", description: "Write your own backup command" },
 ] as const;
+
+const CLOUD_TEMPLATES = [
+  { id: "rclone_gdrive", name: "Google Drive (rclone)", command: "rclone copy {FILE} gdrive:Backups/{SERVER}/", description: "Upload via rclone to Google Drive" },
+  { id: "rclone_s3", name: "AWS S3 (rclone)", command: "rclone copy {FILE} s3:my-bucket/backups/{SERVER}/", description: "Upload via rclone to S3" },
+  { id: "aws_s3", name: "AWS S3 (cli)", command: "aws s3 cp {FILE} s3://my-bucket/backups/", description: "Upload via AWS CLI" },
+  { id: "gcloud", name: "Google Cloud Storage", command: "gsutil cp {FILE} gs://my-bucket/backups/", description: "Upload via gsutil" },
+  { id: "scp", name: "SCP to another server", command: "scp {FILE} user@remote:/backups/", description: "Copy to another server via SCP" },
+  { id: "custom", name: "Custom command", command: "", description: "Write your own upload command" },
+];
 
 function formatRelativeTime(ts: number): string {
   const diff = Date.now() - ts;
@@ -38,7 +48,21 @@ function formatDuration(sec: number): string {
   return `${Math.floor(sec / 60)}m ${sec % 60}s`;
 }
 
-// ──── Status Badge ────
+// Simple cron matcher: "MIN HOUR DOM MON DOW" — checks if now matches
+function cronMatches(cron: string): boolean {
+  const parts = cron.trim().split(/\s+/);
+  if (parts.length < 5) return false;
+  const now = new Date();
+  const checks = [now.getMinutes(), now.getHours(), now.getDate(), now.getMonth() + 1, now.getDay()];
+  return parts.every((p, i) => {
+    if (p === "*") return true;
+    if (p.includes("/")) { const step = parseInt(p.split("/")[1]); return checks[i] % step === 0; }
+    if (p.includes(",")) return p.split(",").some((v) => parseInt(v) === checks[i]);
+    if (p.includes("-")) { const [a, b] = p.split("-").map(Number); return checks[i] >= a && checks[i] <= b; }
+    return parseInt(p) === checks[i];
+  });
+}
+
 function StatusBadge({ status }: { status: string | null }) {
   if (status === "success") return <span className="backup-status success"><CheckCircle size={12} /> Success</span>;
   if (status === "failed") return <span className="backup-status failed"><XCircle size={12} /> Failed</span>;
@@ -48,41 +72,38 @@ function StatusBadge({ status }: { status: string | null }) {
 
 // ──── Job Form ────
 interface JobFormData {
-  name: string;
-  connectionId: string;
-  templateId: string;
-  command: string;
-  remotePath: string;
-  downloadLocal: boolean;
-  localPath: string;
-  schedule: string;
+  name: string; connectionId: string; templateId: string; command: string;
+  remotePath: string; downloadLocal: boolean; localPath: string; schedule: string;
+  notifyEmail: boolean; notifyOn: "always" | "failure" | "success";
+  cloudEnabled: boolean; cloudCommand: string;
 }
 
 const emptyForm: JobFormData = {
   name: "", connectionId: "", templateId: "", command: "",
-  remotePath: "/tmp/backup-{DATE}.tar.gz", downloadLocal: false, localPath: "", schedule: "",
+  remotePath: "/tmp/backup-$(date +%Y%m%d_%H%M%S).tar.gz",
+  downloadLocal: false, localPath: "", schedule: "",
+  notifyEmail: false, notifyOn: "always",
+  cloudEnabled: false, cloudCommand: "",
 };
 
-function JobForm({ initial, onSave, onCancel }: {
-  initial: JobFormData;
-  onSave: (d: JobFormData) => void;
-  onCancel: () => void;
-}) {
+function JobForm({ initial, onSave, onCancel }: { initial: JobFormData; onSave: (d: JobFormData) => void; onCancel: () => void }) {
   const [form, setForm] = useState<JobFormData>(initial);
   const sshConnections = useAppStore((s) => s.sshConnections);
-
-  const set = useCallback(
-    <K extends keyof JobFormData>(k: K, v: JobFormData[K]) => setForm((f) => ({ ...f, [k]: v })),
-    [],
-  );
+  const set = useCallback(<K extends keyof JobFormData>(k: K, v: JobFormData[K]) => setForm((f) => ({ ...f, [k]: v })), []);
 
   const handleTemplateChange = useCallback((tid: string) => {
     const tpl = DEFAULT_TEMPLATES.find((t) => t.id === tid);
     setForm((f) => ({ ...f, templateId: tid, command: tpl ? (tpl.command as string) : f.command }));
   }, []);
 
+  const handleCloudTemplate = useCallback((tid: string) => {
+    const tpl = CLOUD_TEMPLATES.find((t) => t.id === tid);
+    if (tpl) setForm((f) => ({ ...f, cloudCommand: tpl.command, cloudEnabled: true }));
+  }, []);
+
   return (
     <div className="backup-form">
+      {/* Basic info */}
       <div className="backup-form-grid">
         <div>
           <label className="backup-form-label">Job Name</label>
@@ -99,10 +120,10 @@ function JobForm({ initial, onSave, onCancel }: {
 
       <div className="backup-form-grid">
         <div>
-          <label className="backup-form-label">Template</label>
+          <label className="backup-form-label">Backup Template</label>
           <select className="backup-form-input" value={form.templateId} onChange={(e) => handleTemplateChange(e.target.value)}>
             <option value="">Select template...</option>
-            {DEFAULT_TEMPLATES.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+            {DEFAULT_TEMPLATES.map((t) => <option key={t.id} value={t.id}>{t.name} ({t.category})</option>)}
           </select>
         </div>
         <div>
@@ -112,24 +133,60 @@ function JobForm({ initial, onSave, onCancel }: {
       </div>
 
       <div>
-        <label className="backup-form-label">Command</label>
+        <label className="backup-form-label">Backup Command</label>
         <textarea className="backup-form-textarea" value={form.command} onChange={(e) => set("command", e.target.value)} placeholder="Enter backup command..." />
       </div>
 
+      {/* Schedule */}
       <div className="backup-form-grid">
         <div>
-          <label className="backup-form-label">Schedule (cron, empty = manual)</label>
-          <input className="backup-form-input" value={form.schedule} onChange={(e) => set("schedule", e.target.value)} placeholder="0 2 * * *" />
+          <label className="backup-form-label"><Calendar size={11} /> Schedule (cron, empty = manual)</label>
+          <input className="backup-form-input" value={form.schedule} onChange={(e) => set("schedule", e.target.value)} placeholder="0 2 * * *  (2:00 AM daily)" />
+          {form.schedule && <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 3 }}>Format: MIN HOUR DAY MONTH WEEKDAY</div>}
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
           <label className="backup-form-checkbox">
             <input type="checkbox" checked={form.downloadLocal} onChange={(e) => set("downloadLocal", e.target.checked)} style={{ accentColor: "var(--accent-primary)" }} />
-            Download to local after backup
+            <Download size={12} /> Download to local after backup
           </label>
-          {form.downloadLocal && (
-            <input className="backup-form-input" value={form.localPath} onChange={(e) => set("localPath", e.target.value)} placeholder="C:\Backups\" />
-          )}
+          {form.downloadLocal && <input className="backup-form-input" value={form.localPath} onChange={(e) => set("localPath", e.target.value)} placeholder="C:\Backups\" />}
         </div>
+      </div>
+
+      {/* Notifications */}
+      <div style={{ padding: "12px 14px", background: "var(--bg-primary)", borderRadius: "var(--radius-sm)", border: "1px solid var(--border-color)" }}>
+        <label className="backup-form-checkbox" style={{ marginBottom: 8 }}>
+          <input type="checkbox" checked={form.notifyEmail} onChange={(e) => set("notifyEmail", e.target.checked)} style={{ accentColor: "var(--accent-primary)" }} />
+          <Mail size={12} /> Email notification on completion
+        </label>
+        {form.notifyEmail && (
+          <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
+            <select className="backup-form-input" style={{ width: "auto" }} value={form.notifyOn} onChange={(e) => set("notifyOn", e.target.value as JobFormData["notifyOn"])}>
+              <option value="always">Always</option>
+              <option value="failure">On failure only</option>
+              <option value="success">On success only</option>
+            </select>
+            <div style={{ fontSize: 10, color: "var(--text-muted)", display: "flex", alignItems: "center" }}>Configure SMTP in Settings tab</div>
+          </div>
+        )}
+      </div>
+
+      {/* Cloud Upload */}
+      <div style={{ padding: "12px 14px", background: "var(--bg-primary)", borderRadius: "var(--radius-sm)", border: "1px solid var(--border-color)" }}>
+        <label className="backup-form-checkbox" style={{ marginBottom: 8 }}>
+          <input type="checkbox" checked={form.cloudEnabled} onChange={(e) => set("cloudEnabled", e.target.checked)} style={{ accentColor: "var(--accent-primary)" }} />
+          <Cloud size={12} /> Upload to cloud after backup
+        </label>
+        {form.cloudEnabled && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 6 }}>
+            <select className="backup-form-input" onChange={(e) => handleCloudTemplate(e.target.value)} defaultValue="">
+              <option value="">Choose cloud provider...</option>
+              {CLOUD_TEMPLATES.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+            </select>
+            <textarea className="backup-form-textarea" style={{ minHeight: 48 }} value={form.cloudCommand} onChange={(e) => set("cloudCommand", e.target.value)} placeholder="rclone copy {FILE} remote:backups/" />
+            <div style={{ fontSize: 10, color: "var(--text-muted)" }}>{"{FILE}"} = backup file path, {"{SERVER}"} = server name</div>
+          </div>
+        )}
       </div>
 
       <div className="backup-form-actions">
@@ -151,15 +208,16 @@ export function BackupPanel() {
   const [runningJobs, setRunningJobs] = useState<Set<string>>(new Set());
   const [historyFilter, setHistoryFilter] = useState<"all" | "success" | "failed">("all");
   const [historyServerFilter, setHistoryServerFilter] = useState("");
+  const [cronLog, setCronLog] = useState<string[]>([]);
 
   const backupJobs = useAppStore((s) => s.backupJobs);
   const backupHistory = useAppStore((s) => s.backupHistory);
+  const backupSmtp = useAppStore((s) => s.backupSmtp);
   const sshConnections = useAppStore((s) => s.sshConnections);
-  const addBackupJob = useAppStore((s) => s.addBackupJob);
-  const updateBackupJob = useAppStore((s) => s.updateBackupJob);
-  const removeBackupJob = useAppStore((s) => s.removeBackupJob);
-  const addBackupRecord = useAppStore((s) => s.addBackupRecord);
-  const clearBackupHistory = useAppStore((s) => s.clearBackupHistory);
+  const { addBackupJob, updateBackupJob, removeBackupJob, addBackupRecord, clearBackupHistory, setBackupSmtp } = useAppStore.getState();
+
+  const runningJobsRef = useRef(runningJobs);
+  runningJobsRef.current = runningJobs;
 
   const kpis = useMemo(() => {
     const total = backupHistory.length;
@@ -170,6 +228,7 @@ export function BackupPanel() {
     return { total, rate, lastTs, totalSize, activeJobs: backupJobs.length };
   }, [backupHistory, backupJobs]);
 
+  // ── Execute backup ──
   const executeBackup = useCallback(async (job: BackupJob) => {
     const conn = sshConnections.find((c) => c.id === job.connectionId);
     if (!conn) return;
@@ -180,41 +239,85 @@ export function BackupPanel() {
     if (!password && !conn.privateKey) {
       try { password = await invoke("keychain_get_password", { connectionId: conn.id }) as string; } catch { /* noop */ }
     }
+    const sshArgs = { host: conn.host, port: conn.port, username: conn.username, password, privateKey: conn.privateKey || null };
+
+    let status: "success" | "failed" = "success";
+    let output = "";
+    let sizeMB = 0;
+    let error: string | null = null;
+
     try {
-      const output = await invoke("ssh_exec", {
-        host: conn.host, port: conn.port, username: conn.username,
-        password, privateKey: conn.privateKey || null, command: job.command,
-      }) as string;
-      let sizeMB = 0;
+      output = await invoke("ssh_exec", { ...sshArgs, command: job.command }) as string;
       try {
-        const sizeOutput = await invoke("ssh_exec", {
-          host: conn.host, port: conn.port, username: conn.username,
-          password, privateKey: conn.privateKey || null,
-          command: `stat -c%s "${job.remotePath}" 2>/dev/null || echo 0`,
-        }) as string;
-        sizeMB = parseFloat(sizeOutput) / (1024 * 1024);
+        const sizeOut = await invoke("ssh_exec", { ...sshArgs, command: `stat -c%s "${job.remotePath}" 2>/dev/null || echo 0` }) as string;
+        sizeMB = parseFloat(sizeOut) / (1024 * 1024);
       } catch { /* noop */ }
-      const duration = Math.round((Date.now() - startTime) / 1000);
-      addBackupRecord({ jobId: job.id, jobName: job.name, serverName: conn.name, timestamp: Date.now(), status: "success", duration, sizeMB, output: (output || "").slice(0, 2000), error: null, downloaded: false });
-      updateBackupJob(job.id, { lastRun: Date.now(), lastStatus: "success" });
     } catch (e) {
-      const duration = Math.round((Date.now() - startTime) / 1000);
-      addBackupRecord({ jobId: job.id, jobName: job.name, serverName: conn.name, timestamp: Date.now(), status: "failed", duration, sizeMB: 0, output: "", error: String(e), downloaded: false });
-      updateBackupJob(job.id, { lastRun: Date.now(), lastStatus: "failed" });
-    } finally {
-      setRunningJobs((s) => { const n = new Set(s); n.delete(job.id); return n; });
+      status = "failed";
+      error = String(e);
     }
-  }, [sshConnections, addBackupRecord, updateBackupJob]);
+
+    const duration = Math.round((Date.now() - startTime) / 1000);
+    addBackupRecord({ jobId: job.id, jobName: job.name, serverName: conn.name, timestamp: Date.now(), status, duration, sizeMB: status === "success" ? sizeMB : 0, output: (output || "").slice(0, 2000), error, downloaded: false });
+    updateBackupJob(job.id, { lastRun: Date.now(), lastStatus: status });
+
+    // Post-backup: cloud upload
+    if (status === "success" && job.cloudEnabled && job.cloudCommand) {
+      try {
+        const cloudCmd = job.cloudCommand.replace(/\{FILE\}/g, job.remotePath).replace(/\{SERVER\}/g, conn.name);
+        await invoke("ssh_exec", { ...sshArgs, command: cloudCmd });
+      } catch { /* cloud upload failed, non-blocking */ }
+    }
+
+    // Post-backup: email notification
+    const smtp = useAppStore.getState().backupSmtp;
+    if (smtp.enabled && job.notifyEmail) {
+      const shouldNotify = job.notifyOn === "always" || (job.notifyOn === "failure" && status === "failed") || (job.notifyOn === "success" && status === "success");
+      if (shouldNotify) {
+        try {
+          const subject = `[NovaShell] Backup ${status.toUpperCase()}: ${job.name} on ${conn.name}`;
+          const body = `Backup Job: ${job.name}\\nServer: ${conn.name} (${conn.host})\\nStatus: ${status}\\nDuration: ${formatDuration(duration)}\\nSize: ${sizeMB.toFixed(2)} MB\\nTime: ${new Date().toISOString()}${error ? `\\nError: ${error}` : ""}`;
+          // Send email via server's mail command using SMTP config
+          const mailCmd = `echo -e "Subject: ${subject}\\nFrom: ${smtp.fromAddress}\\nTo: ${smtp.toAddress}\\nContent-Type: text/plain\\n\\n${body}" | curl --ssl-reqd --url "smtps://${smtp.host}:${smtp.port}" --user "${smtp.username}:${smtp.password}" --mail-from "${smtp.fromAddress}" --mail-rcpt "${smtp.toAddress}" -T - 2>&1 || echo "Mail send failed"`;
+          await invoke("ssh_exec", { ...sshArgs, command: mailCmd });
+        } catch { /* email failed, non-blocking */ }
+      }
+    }
+
+    setRunningJobs((s) => { const n = new Set(s); n.delete(job.id); return n; });
+  }, [sshConnections]);
+
+  // ── Cron scheduler — checks every 60s ──
+  useEffect(() => {
+    const timer = setInterval(() => {
+      const jobs = useAppStore.getState().backupJobs;
+      const running = runningJobsRef.current;
+      for (const job of jobs) {
+        if (!job.enabled || !job.schedule || running.has(job.id)) continue;
+        if (cronMatches(job.schedule)) {
+          // Don't run if already ran this minute
+          if (job.lastRun && Date.now() - job.lastRun < 60_000) continue;
+          setCronLog((l) => [`[${new Date().toLocaleTimeString()}] Cron triggered: ${job.name}`, ...l.slice(0, 49)]);
+          executeBackup(job);
+        }
+      }
+    }, 60_000);
+    return () => clearInterval(timer);
+  }, [executeBackup]);
 
   const handleSaveJob = useCallback((data: JobFormData) => {
-    if (editingJob) {
-      updateBackupJob(editingJob.id, { name: data.name, connectionId: data.connectionId, templateId: data.templateId || null, command: data.command, remotePath: data.remotePath, downloadLocal: data.downloadLocal, localPath: data.localPath, schedule: data.schedule || null });
-    } else {
-      addBackupJob({ name: data.name, connectionId: data.connectionId, templateId: data.templateId || null, command: data.command, remotePath: data.remotePath, downloadLocal: data.downloadLocal, localPath: data.localPath, schedule: data.schedule || null, enabled: true });
-    }
+    const jobData = {
+      name: data.name, connectionId: data.connectionId, templateId: data.templateId || null,
+      command: data.command, remotePath: data.remotePath, downloadLocal: data.downloadLocal,
+      localPath: data.localPath, schedule: data.schedule || null, enabled: true,
+      notifyEmail: data.notifyEmail, notifyOn: data.notifyOn,
+      cloudEnabled: data.cloudEnabled, cloudCommand: data.cloudCommand,
+    };
+    if (editingJob) updateBackupJob(editingJob.id, jobData);
+    else addBackupJob(jobData);
     setShowForm(false);
     setEditingJob(null);
-  }, [editingJob, addBackupJob, updateBackupJob]);
+  }, [editingJob]);
 
   const filteredHistory = useMemo(() => {
     let h = backupHistory;
@@ -225,13 +328,22 @@ export function BackupPanel() {
 
   const recentHistory = useMemo(() => [...backupHistory].sort((a, b) => b.timestamp - a.timestamp).slice(0, 10), [backupHistory]);
   const serverNames = useMemo(() => [...new Set(backupHistory.map((r) => r.serverName))], [backupHistory]);
+  const scheduledJobs = useMemo(() => backupJobs.filter((j) => j.schedule && j.enabled), [backupJobs]);
+
+  // ── SMTP form state ──
+  const [smtpForm, setSmtpForm] = useState<BackupSmtpConfig>(backupSmtp);
+  useEffect(() => { setSmtpForm(backupSmtp); }, [backupSmtp]);
 
   return (
     <div className="backup-panel">
-      {/* Header */}
       <div className="backup-header">
         <div className="backup-header-icon"><HardDrive size={16} /></div>
         <div className="backup-header-title">Backup Manager</div>
+        {scheduledJobs.length > 0 && (
+          <span className="backup-status success" style={{ fontSize: 10 }}>
+            <Calendar size={10} /> {scheduledJobs.length} scheduled
+          </span>
+        )}
         <div style={{ flex: 1 }} />
         <div className="infra-tab-bar" style={{ flex: "none" }}>
           {([
@@ -239,17 +351,18 @@ export function BackupPanel() {
             { key: "jobs" as const, label: "Jobs", icon: <Server size={13} />, badge: backupJobs.length },
             { key: "history" as const, label: "History", icon: <Clock size={13} />, badge: backupHistory.length },
             { key: "templates" as const, label: "Templates", icon: <FileArchive size={13} /> },
+            { key: "settings" as const, label: "Settings", icon: <Settings size={13} /> },
           ] as const).map((tab) => (
             <button key={tab.key} className={`infra-tab${view === tab.key ? " active" : ""}`} onClick={() => setView(tab.key)}>
               {tab.icon} {tab.label}
-              {"badge" in tab && tab.badge > 0 && <span className="infra-tab-badge">{tab.badge}</span>}
+              {"badge" in tab && (tab as any).badge > 0 && <span className="infra-tab-badge">{(tab as any).badge}</span>}
             </button>
           ))}
         </div>
       </div>
 
-      {/* Content */}
       <div className="backup-view">
+        {/* ── DASHBOARD ── */}
         {view === "dashboard" && (
           <>
             <div className="infra-kpi-row infra-fade-in">
@@ -282,56 +395,52 @@ export function BackupPanel() {
 
             <div className="backup-section-title" style={{ marginTop: 20 }}>Recent Backup History</div>
             {recentHistory.length === 0 ? (
-              <div className="backup-empty">
-                <FileArchive size={36} className="backup-empty-icon" />
-                <div className="backup-empty-text">No backups executed yet.<br />Create a job and run your first backup.</div>
-              </div>
+              <div className="backup-empty"><FileArchive size={36} className="backup-empty-icon" /><div className="backup-empty-text">No backups yet. Create a job and run your first backup.</div></div>
             ) : (
               <table className="backup-table">
                 <thead><tr><th>Time</th><th>Job</th><th>Server</th><th>Status</th><th>Duration</th><th>Size</th></tr></thead>
-                <tbody>
-                  {recentHistory.map((r) => (
-                    <tr key={r.id}>
-                      <td className="col-mono">{formatRelativeTime(r.timestamp)}</td>
-                      <td style={{ color: "var(--text-primary)", fontWeight: 500 }}>{r.jobName}</td>
-                      <td>{r.serverName}</td>
-                      <td><StatusBadge status={r.status} /></td>
-                      <td className="col-mono">{formatDuration(r.duration)}</td>
-                      <td className="col-mono">{r.sizeMB > 0 ? `${r.sizeMB.toFixed(2)} MB` : "—"}</td>
-                    </tr>
-                  ))}
-                </tbody>
+                <tbody>{recentHistory.map((r) => (
+                  <tr key={r.id}>
+                    <td className="col-mono">{formatRelativeTime(r.timestamp)}</td>
+                    <td style={{ color: "var(--text-primary)", fontWeight: 500 }}>{r.jobName}</td>
+                    <td>{r.serverName}</td>
+                    <td><StatusBadge status={r.status} /></td>
+                    <td className="col-mono">{formatDuration(r.duration)}</td>
+                    <td className="col-mono">{r.sizeMB > 0 ? `${r.sizeMB.toFixed(2)} MB` : "—"}</td>
+                  </tr>
+                ))}</tbody>
               </table>
+            )}
+
+            {cronLog.length > 0 && (
+              <div style={{ marginTop: 16 }}>
+                <div className="backup-section-title"><Calendar size={14} /> Cron Activity</div>
+                <div style={{ fontSize: 11, color: "var(--text-muted)", fontFamily: "'JetBrains Mono', monospace", maxHeight: 80, overflowY: "auto", background: "var(--bg-secondary)", borderRadius: "var(--radius-sm)", padding: "8px 10px" }}>
+                  {cronLog.map((l, i) => <div key={i}>{l}</div>)}
+                </div>
+              </div>
             )}
           </>
         )}
 
+        {/* ── JOBS ── */}
         {view === "jobs" && (
           <>
             <div className="backup-toolbar">
               <div className="backup-section-title" style={{ margin: 0 }}>Backup Jobs</div>
-              {!showForm && (
-                <button className="infra-action-btn primary" onClick={() => { setEditingJob(null); setShowForm(true); }}>
-                  <Plus size={14} /> New Job
-                </button>
-              )}
+              {!showForm && <button className="infra-action-btn primary" onClick={() => { setEditingJob(null); setShowForm(true); }}><Plus size={14} /> New Job</button>}
             </div>
-
             {showForm && (
               <div style={{ marginBottom: 14 }}>
                 <JobForm
-                  initial={editingJob ? { name: editingJob.name, connectionId: editingJob.connectionId, templateId: editingJob.templateId || "", command: editingJob.command, remotePath: editingJob.remotePath, downloadLocal: editingJob.downloadLocal, localPath: editingJob.localPath, schedule: editingJob.schedule || "" } : emptyForm}
+                  initial={editingJob ? { name: editingJob.name, connectionId: editingJob.connectionId, templateId: editingJob.templateId || "", command: editingJob.command, remotePath: editingJob.remotePath, downloadLocal: editingJob.downloadLocal, localPath: editingJob.localPath, schedule: editingJob.schedule || "", notifyEmail: editingJob.notifyEmail, notifyOn: editingJob.notifyOn, cloudEnabled: editingJob.cloudEnabled, cloudCommand: editingJob.cloudCommand } : emptyForm}
                   onSave={handleSaveJob}
                   onCancel={() => { setShowForm(false); setEditingJob(null); }}
                 />
               </div>
             )}
-
             {backupJobs.length === 0 && !showForm ? (
-              <div className="backup-empty">
-                <Server size={36} className="backup-empty-icon" />
-                <div className="backup-empty-text">No backup jobs configured yet.<br />Click "New Job" to create your first backup job.</div>
-              </div>
+              <div className="backup-empty"><Server size={36} className="backup-empty-icon" /><div className="backup-empty-text">No backup jobs configured yet.<br />Click "New Job" to create your first backup job.</div></div>
             ) : (
               <div className="backup-job-list">
                 {backupJobs.map((job) => {
@@ -341,7 +450,11 @@ export function BackupPanel() {
                     <div key={job.id} className="backup-job-card">
                       <div className={`backup-job-status-dot ${isRunning ? "running" : job.lastStatus || "never"}`} />
                       <div className="backup-job-info">
-                        <div className="backup-job-name">{job.name}</div>
+                        <div className="backup-job-name">
+                          {job.name}
+                          {job.notifyEmail && <Mail size={11} style={{ color: "var(--accent-primary)", marginLeft: 6 }} />}
+                          {job.cloudEnabled && <Cloud size={11} style={{ color: "var(--accent-secondary)", marginLeft: 4 }} />}
+                        </div>
                         <div className="backup-job-meta">
                           <span className="backup-job-meta-item"><Server size={11} /> {conn?.name || "Unknown"}</span>
                           {job.schedule && <span className="backup-job-meta-item"><Calendar size={11} /> {job.schedule}</span>}
@@ -365,55 +478,47 @@ export function BackupPanel() {
           </>
         )}
 
+        {/* ── HISTORY ── */}
         {view === "history" && (
           <>
             <div className="backup-toolbar">
               <div className="backup-section-title" style={{ margin: 0 }}>Backup History</div>
               <div className="backup-filters">
                 <select className="backup-filter-select" value={historyFilter} onChange={(e) => setHistoryFilter(e.target.value as typeof historyFilter)}>
-                  <option value="all">All Status</option>
-                  <option value="success">Success</option>
-                  <option value="failed">Failed</option>
+                  <option value="all">All Status</option><option value="success">Success</option><option value="failed">Failed</option>
                 </select>
                 <select className="backup-filter-select" value={historyServerFilter} onChange={(e) => setHistoryServerFilter(e.target.value)}>
                   <option value="">All Servers</option>
                   {serverNames.map((n) => <option key={n} value={n}>{n}</option>)}
                 </select>
-                {backupHistory.length > 0 && (
-                  <button className="infra-action-btn danger" onClick={clearBackupHistory}><Trash2 size={12} /> Clear</button>
-                )}
+                {backupHistory.length > 0 && <button className="infra-action-btn danger" onClick={clearBackupHistory}><Trash2 size={12} /> Clear</button>}
               </div>
             </div>
-
             {filteredHistory.length === 0 ? (
-              <div className="backup-empty">
-                <Clock size={36} className="backup-empty-icon" />
-                <div className="backup-empty-text">No backup history found.</div>
-              </div>
+              <div className="backup-empty"><Clock size={36} className="backup-empty-icon" /><div className="backup-empty-text">No backup history found.</div></div>
             ) : (
               <table className="backup-table">
                 <thead><tr><th>Time</th><th>Job</th><th>Server</th><th>Status</th><th>Duration</th><th>Size</th><th>Output</th></tr></thead>
-                <tbody>
-                  {filteredHistory.map((r) => (
-                    <tr key={r.id}>
-                      <td className="col-mono" style={{ whiteSpace: "nowrap" }}>{new Date(r.timestamp).toLocaleString()}</td>
-                      <td style={{ color: "var(--text-primary)", fontWeight: 500 }}>{r.jobName}</td>
-                      <td>{r.serverName}</td>
-                      <td><StatusBadge status={r.status} /></td>
-                      <td className="col-mono">{formatDuration(r.duration)}</td>
-                      <td className="col-mono">{r.sizeMB > 0 ? `${r.sizeMB.toFixed(2)} MB` : "—"}</td>
-                      <td className="col-output">{r.error || r.output || "—"}</td>
-                    </tr>
-                  ))}
-                </tbody>
+                <tbody>{filteredHistory.map((r) => (
+                  <tr key={r.id}>
+                    <td className="col-mono" style={{ whiteSpace: "nowrap" }}>{new Date(r.timestamp).toLocaleString()}</td>
+                    <td style={{ color: "var(--text-primary)", fontWeight: 500 }}>{r.jobName}</td>
+                    <td>{r.serverName}</td>
+                    <td><StatusBadge status={r.status} /></td>
+                    <td className="col-mono">{formatDuration(r.duration)}</td>
+                    <td className="col-mono">{r.sizeMB > 0 ? `${r.sizeMB.toFixed(2)} MB` : "—"}</td>
+                    <td className="col-output">{r.error || r.output || "—"}</td>
+                  </tr>
+                ))}</tbody>
               </table>
             )}
           </>
         )}
 
+        {/* ── TEMPLATES ── */}
         {view === "templates" && (
           <>
-            <div className="backup-section-title">Backup Templates</div>
+            <div className="backup-section-title"><Database size={14} /> Backup Templates</div>
             <div className="backup-template-grid">
               {DEFAULT_TEMPLATES.map((tpl) => (
                 <div key={tpl.id} className={`backup-template-card ${tpl.category}`}>
@@ -426,6 +531,81 @@ export function BackupPanel() {
                   <div className="backup-template-command">{tpl.command}</div>
                 </div>
               ))}
+            </div>
+
+            <div className="backup-section-title" style={{ marginTop: 20 }}><Cloud size={14} /> Cloud Upload Templates</div>
+            <div className="backup-template-grid">
+              {CLOUD_TEMPLATES.map((tpl) => (
+                <div key={tpl.id} className="backup-template-card system">
+                  <div className="backup-template-header">
+                    <span className="backup-template-name">{tpl.name}</span>
+                    <span className="backup-template-badge system">cloud</span>
+                  </div>
+                  <div className="backup-template-desc">{tpl.description}</div>
+                  {tpl.command && <div className="backup-template-command">{tpl.command}</div>}
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+
+        {/* ── SETTINGS ── */}
+        {view === "settings" && (
+          <>
+            <div className="backup-section-title"><Mail size={14} /> Email Notifications (SMTP)</div>
+            <div className="backup-form" style={{ borderColor: "var(--border-color)" }}>
+              <label className="backup-form-checkbox">
+                <input type="checkbox" checked={smtpForm.enabled} onChange={(e) => setSmtpForm((f) => ({ ...f, enabled: e.target.checked }))} style={{ accentColor: "var(--accent-primary)" }} />
+                <Bell size={12} /> Enable email notifications
+              </label>
+
+              {smtpForm.enabled && (
+                <>
+                  <div className="backup-form-grid">
+                    <div>
+                      <label className="backup-form-label">SMTP Server</label>
+                      <input className="backup-form-input" value={smtpForm.host} onChange={(e) => setSmtpForm((f) => ({ ...f, host: e.target.value }))} placeholder="smtp.gmail.com" />
+                    </div>
+                    <div>
+                      <label className="backup-form-label">Port</label>
+                      <input className="backup-form-input" type="number" value={smtpForm.port} onChange={(e) => setSmtpForm((f) => ({ ...f, port: parseInt(e.target.value) || 587 }))} />
+                    </div>
+                  </div>
+                  <div className="backup-form-grid">
+                    <div>
+                      <label className="backup-form-label">Username / Email</label>
+                      <input className="backup-form-input" value={smtpForm.username} onChange={(e) => setSmtpForm((f) => ({ ...f, username: e.target.value }))} placeholder="you@gmail.com" />
+                    </div>
+                    <div>
+                      <label className="backup-form-label">Password / App Password</label>
+                      <input className="backup-form-input" type="password" value={smtpForm.password} onChange={(e) => setSmtpForm((f) => ({ ...f, password: e.target.value }))} placeholder="App password" />
+                    </div>
+                  </div>
+                  <div className="backup-form-grid">
+                    <div>
+                      <label className="backup-form-label">From Address</label>
+                      <input className="backup-form-input" value={smtpForm.fromAddress} onChange={(e) => setSmtpForm((f) => ({ ...f, fromAddress: e.target.value }))} placeholder="backups@yourdomain.com" />
+                    </div>
+                    <div>
+                      <label className="backup-form-label">To Address</label>
+                      <input className="backup-form-input" value={smtpForm.toAddress} onChange={(e) => setSmtpForm((f) => ({ ...f, toAddress: e.target.value }))} placeholder="admin@yourdomain.com" />
+                    </div>
+                  </div>
+                  <label className="backup-form-checkbox">
+                    <input type="checkbox" checked={smtpForm.useTls} onChange={(e) => setSmtpForm((f) => ({ ...f, useTls: e.target.checked }))} style={{ accentColor: "var(--accent-primary)" }} />
+                    Use TLS/SSL
+                  </label>
+                  <div style={{ fontSize: 11, color: "var(--text-muted)", padding: "8px 10px", background: "var(--bg-primary)", borderRadius: "var(--radius-sm)" }}>
+                    For Gmail: use smtp.gmail.com:587, enable 2FA, and create an App Password at myaccount.google.com/apppasswords
+                  </div>
+                </>
+              )}
+
+              <div className="backup-form-actions">
+                <button className="infra-action-btn primary" onClick={() => setBackupSmtp(smtpForm)}>
+                  <Check size={14} /> Save SMTP Settings
+                </button>
+              </div>
             </div>
           </>
         )}

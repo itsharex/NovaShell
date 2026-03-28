@@ -59,22 +59,45 @@ const LazyFallback = () => (
 );
 import { useT } from "../i18n";
 
-const sidebarTabs: { id: SidebarTab; icon: typeof History; labelKey: string }[] = [
-  { id: "history", icon: History, labelKey: "sidebar.history" },
-  { id: "snippets", icon: Code2, labelKey: "sidebar.snippets" },
-  { id: "preview", icon: FolderTree, labelKey: "sidebar.explorer" },
-  { id: "plugins", icon: Puzzle, labelKey: "sidebar.plugins" },
-  { id: "stats", icon: BarChart3, labelKey: "sidebar.stats" },
-  { id: "ssh", icon: Monitor, labelKey: "sidebar.ssh" },
-  { id: "sftp", icon: FolderSync, labelKey: "sidebar.sftpTransfer" },
-  { id: "servermap", icon: Activity, labelKey: "sidebar.serverMap" },
-  { id: "editor", icon: Edit3, labelKey: "sidebar.editor" },
-  { id: "debug", icon: Bug, labelKey: "sidebar.debug" },
-  { id: "ai", icon: Sparkles, labelKey: "sidebar.aiAssistant" },
-  { id: "docs", icon: FileText, labelKey: "sidebar.sessionDocs" },
-  { id: "hacking", icon: Shield, labelKey: "sidebar.hackingMode" },
-  { id: "infra", icon: Gauge, labelKey: "sidebar.infraMonitor" },
-  { id: "collab", icon: Users, labelKey: "sidebar.collab" },
+type SidebarTabEntry = { id: SidebarTab; icon: typeof History; labelKey: string };
+type SidebarGroup = { labelKey: string; tabs: SidebarTabEntry[] };
+
+const sidebarGroups: SidebarGroup[] = [
+  {
+    labelKey: "sidebarGroup.terminal",
+    tabs: [
+      { id: "history", icon: History, labelKey: "sidebar.history" },
+      { id: "snippets", icon: Code2, labelKey: "sidebar.snippets" },
+      { id: "preview", icon: FolderTree, labelKey: "sidebar.explorer" },
+      { id: "plugins", icon: Puzzle, labelKey: "sidebar.plugins" },
+      { id: "stats", icon: BarChart3, labelKey: "sidebar.stats" },
+    ],
+  },
+  {
+    labelKey: "sidebarGroup.connections",
+    tabs: [
+      { id: "ssh", icon: Monitor, labelKey: "sidebar.ssh" },
+      { id: "sftp", icon: FolderSync, labelKey: "sidebar.sftpTransfer" },
+      { id: "servermap", icon: Activity, labelKey: "sidebar.serverMap" },
+      { id: "collab", icon: Users, labelKey: "sidebar.collab" },
+    ],
+  },
+  {
+    labelKey: "sidebarGroup.tools",
+    tabs: [
+      { id: "editor", icon: Edit3, labelKey: "sidebar.editor" },
+      { id: "debug", icon: Bug, labelKey: "sidebar.debug" },
+      { id: "ai", icon: Sparkles, labelKey: "sidebar.aiAssistant" },
+      { id: "docs", icon: FileText, labelKey: "sidebar.sessionDocs" },
+    ],
+  },
+  {
+    labelKey: "sidebarGroup.advanced",
+    tabs: [
+      { id: "hacking", icon: Shield, labelKey: "sidebar.hackingMode" },
+      { id: "infra", icon: Gauge, labelKey: "sidebar.infraMonitor" },
+    ],
+  },
 ];
 
 export function Sidebar() {
@@ -86,20 +109,25 @@ export function Sidebar() {
   return (
     <div className="sidebar">
       <div className="sidebar-tabs">
-        {sidebarTabs.map((tab) => (
-          <button
-            key={tab.id}
-            className={`sidebar-tab-btn ${sidebarTab === tab.id ? "active" : ""}`}
-            onClick={() => setSidebarTab(tab.id)}
-            title={t(tab.labelKey)}
-            aria-label={t(tab.labelKey)}
-            style={tab.id === "hacking" && hackingMode ? {
-              color: "#00ff41",
-              filter: "drop-shadow(0 0 4px rgba(0,255,65,0.6))",
-            } : undefined}
-          >
-            <tab.icon size={16} />
-          </button>
+        {sidebarGroups.map((group, gi) => (
+          <div key={group.labelKey} className="sidebar-tab-group" title={t(group.labelKey)}>
+            {gi > 0 && <span className="sidebar-tab-separator" />}
+            {group.tabs.map((tab) => (
+              <button
+                key={tab.id}
+                className={`sidebar-tab-btn ${sidebarTab === tab.id ? "active" : ""}`}
+                onClick={() => setSidebarTab(tab.id)}
+                title={t(tab.labelKey)}
+                aria-label={t(tab.labelKey)}
+                style={tab.id === "hacking" && hackingMode ? {
+                  color: "#00ff41",
+                  filter: "drop-shadow(0 0 4px rgba(0,255,65,0.6))",
+                } : undefined}
+              >
+                <tab.icon size={16} />
+              </button>
+            ))}
+          </div>
         ))}
       </div>
       <div className="sidebar-content" style={sidebarTab === "editor" ? { padding: 0, overflow: "hidden" } : undefined}>

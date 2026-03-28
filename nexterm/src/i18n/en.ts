@@ -93,6 +93,14 @@ export const en: Record<string, any> = {
     infra: "INFRA",
   },
 
+  // Sidebar Tab Groups
+  sidebarGroup: {
+    terminal: "Terminal",
+    connections: "Connections",
+    tools: "Tools",
+    advanced: "Advanced",
+  },
+
   // Sidebar Tabs
   sidebar: {
     history: "History",

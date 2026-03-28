@@ -93,6 +93,14 @@ export const es: Record<string, any> = {
     infra: "INFRA",
   },
 
+  // Grupos del panel lateral
+  sidebarGroup: {
+    terminal: "Terminal",
+    connections: "Conexiones",
+    tools: "Herramientas",
+    advanced: "Avanzado",
+  },
+
   // Pestanas del panel lateral
   sidebar: {
     history: "Historial",

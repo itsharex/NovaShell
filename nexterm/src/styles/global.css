@@ -655,6 +655,26 @@ body {
   display: flex;
   border-bottom: 1px solid var(--border-color);
   padding: 0 4px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.sidebar-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.sidebar-tab-group {
+  display: flex;
+  align-items: center;
+}
+
+.sidebar-tab-separator {
+  width: 1px;
+  height: 16px;
+  background: var(--border-color);
+  margin: 0 2px;
+  flex-shrink: 0;
+  opacity: 0.6;
 }
 
 .sidebar-tab-btn {

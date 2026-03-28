@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { createPortal } from "react-dom";
 import {
   Plus, X, Users, Share2, Monitor, FolderSync, Activity, Terminal,
-  Edit3, Bug, Sparkles, FileText, Shield, Gauge,
+  Edit3, Bug, Sparkles, FileText, Shield, Gauge, LayoutGrid,
 } from "lucide-react";
 import { useAppStore } from "../store/appStore";
 import type { PanelTabType } from "../store/appStore";
@@ -90,10 +90,10 @@ export function TabBar() {
   const closeTab = useAppStore((s) => s.closeTab);
   const setActiveTab = useAppStore((s) => s.setActiveTab);
   const collabSessions = useAppStore((s) => s.collabSessions);
-  const [showShellMenu, setShowShellMenu] = useState(false);
+  const [showToolsMenu, setShowToolsMenu] = useState(false);
   const [menuPos, setMenuPos] = useState({ top: 0, left: 0 });
   const [availableShells, setAvailableShells] = useState<ShellInfo[]>([]);
-  const btnRef = useRef<HTMLButtonElement>(null);
+  const toolsBtnRef = useRef<HTMLButtonElement>(null);
   const t = useT();
 
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -113,24 +113,24 @@ export function TabBar() {
 
   // Close menu on outside click
   useEffect(() => {
-    if (!showShellMenu) return;
+    if (!showToolsMenu) return;
     const handleClick = (e: MouseEvent) => {
       const target = e.target as Node;
-      if (btnRef.current && btnRef.current.contains(target)) return;
+      if (toolsBtnRef.current && toolsBtnRef.current.contains(target)) return;
       if (dropdownRef.current && dropdownRef.current.contains(target)) return;
-      setShowShellMenu(false);
+      setShowToolsMenu(false);
     };
     document.addEventListener("mousedown", handleClick);
     return () => document.removeEventListener("mousedown", handleClick);
-  }, [showShellMenu]);
+  }, [showToolsMenu]);
 
-  const toggleMenu = useCallback(() => {
-    if (!showShellMenu && btnRef.current) {
-      const rect = btnRef.current.getBoundingClientRect();
+  const toggleToolsMenu = useCallback(() => {
+    if (!showToolsMenu && toolsBtnRef.current) {
+      const rect = toolsBtnRef.current.getBoundingClientRect();
       setMenuPos({ top: rect.bottom + 4, left: rect.left });
     }
-    setShowShellMenu((v) => !v);
-  }, [showShellMenu]);
+    setShowToolsMenu((v) => !v);
+  }, [showToolsMenu]);
 
   return (
     <div className="tab-bar">
@@ -178,14 +178,22 @@ export function TabBar() {
         </button>
       ))}
       <button
-        ref={btnRef}
         className="tab-add"
-        onClick={toggleMenu}
+        onClick={() => addTab()}
         title={t("tabbar.newTab")}
       >
         <Plus size={14} />
       </button>
-      {showShellMenu && createPortal(
+      <button
+        ref={toolsBtnRef}
+        className="tab-add"
+        onClick={toggleToolsMenu}
+        title="Tools & Shells"
+        style={showToolsMenu ? { color: "var(--accent-primary)" } : undefined}
+      >
+        <LayoutGrid size={14} />
+      </button>
+      {showToolsMenu && createPortal(
         <div
           ref={dropdownRef}
           className="new-tab-menu animate-slide-up"
@@ -209,7 +217,7 @@ export function TabBar() {
                   <button
                     key={shell.path}
                     className="new-tab-menu-item"
-                    onClick={() => { addTab(shell.path); setShowShellMenu(false); }}
+                    onClick={() => { addTab(shell.path); setShowToolsMenu(false); }}
                   >
                     <span className="new-tab-menu-item-icon">{shellIcons[key] || ">_"}</span>
                     <div className="new-tab-menu-item-text">
@@ -233,7 +241,7 @@ export function TabBar() {
                   <button
                     key={item.type}
                     className="new-tab-menu-item"
-                    onClick={() => { openPanelTab(item.type); setShowShellMenu(false); }}
+                    onClick={() => { openPanelTab(item.type); setShowToolsMenu(false); }}
                   >
                     <span className="new-tab-menu-item-icon">{panelIconMap[item.type]}</span>
                     <div className="new-tab-menu-item-text">

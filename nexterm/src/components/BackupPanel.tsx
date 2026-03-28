@@ -218,6 +218,7 @@ export function BackupPanel() {
   const [historyFilter, setHistoryFilter] = useState<"all" | "success" | "failed">("all");
   const [historyServerFilter, setHistoryServerFilter] = useState("");
   const [cronLog, setCronLog] = useState<string[]>([]);
+  const [prefilledTemplate, setPrefilledTemplate] = useState<string | null>(null);
 
   const backupJobs = useAppStore((s) => s.backupJobs);
   const backupHistory = useAppStore((s) => s.backupHistory);
@@ -460,9 +461,14 @@ export function BackupPanel() {
             {showForm && (
               <div style={{ marginBottom: 14 }}>
                 <JobForm
-                  initial={editingJob ? { name: editingJob.name, connectionId: editingJob.connectionId, templateId: editingJob.templateId || "", command: editingJob.command, remotePath: editingJob.remotePath, downloadLocal: editingJob.downloadLocal, localPath: editingJob.localPath, schedule: editingJob.schedule || "", notifyEmail: editingJob.notifyEmail, notifyTelegram: editingJob.notifyTelegram, notifyOn: editingJob.notifyOn, cloudEnabled: editingJob.cloudEnabled, cloudCommand: editingJob.cloudCommand } : emptyForm}
-                  onSave={handleSaveJob}
-                  onCancel={() => { setShowForm(false); setEditingJob(null); }}
+                  initial={editingJob
+                    ? { name: editingJob.name, connectionId: editingJob.connectionId, templateId: editingJob.templateId || "", command: editingJob.command, remotePath: editingJob.remotePath, downloadLocal: editingJob.downloadLocal, localPath: editingJob.localPath, schedule: editingJob.schedule || "", notifyEmail: editingJob.notifyEmail, notifyTelegram: editingJob.notifyTelegram, notifyOn: editingJob.notifyOn, cloudEnabled: editingJob.cloudEnabled, cloudCommand: editingJob.cloudCommand }
+                    : prefilledTemplate
+                      ? { ...emptyForm, templateId: prefilledTemplate, command: DEFAULT_TEMPLATES.find((t) => t.id === prefilledTemplate)?.command || "", name: `${DEFAULT_TEMPLATES.find((t) => t.id === prefilledTemplate)?.name || ""} Backup` }
+                      : emptyForm
+                  }
+                  onSave={(d) => { handleSaveJob(d); setPrefilledTemplate(null); }}
+                  onCancel={() => { setShowForm(false); setEditingJob(null); setPrefilledTemplate(null); }}
                 />
               </div>
             )}
@@ -547,9 +553,17 @@ export function BackupPanel() {
         {view === "templates" && (
           <>
             <div className="backup-section-title"><Database size={14} /> Backup Templates</div>
+            <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 12 }}>Click a template to create a new backup job with it pre-configured.</div>
             <div className="backup-template-grid">
               {DEFAULT_TEMPLATES.map((tpl) => (
-                <div key={tpl.id} className={`backup-template-card ${tpl.category}`}>
+                <div key={tpl.id} className={`backup-template-card ${tpl.category}`} style={{ cursor: "pointer" }}
+                  onClick={() => {
+                    setEditingJob(null);
+                    setPrefilledTemplate(tpl.id);
+                    setShowForm(true);
+                    setView("jobs");
+                  }}
+                >
                   <div className="backup-template-header">
                     <span className="backup-template-name">{tpl.name}</span>
                     <span className={`backup-template-badge ${tpl.category}`}>{tpl.category}</span>
@@ -557,11 +571,15 @@ export function BackupPanel() {
                   <div className="backup-template-desc">{tpl.description}</div>
                   <div className="backup-template-engine"><HardDrive size={10} /> {tpl.engine}</div>
                   <div className="backup-template-command">{tpl.command}</div>
+                  <div className="infra-action-btn primary" style={{ marginTop: 4, alignSelf: "flex-start", pointerEvents: "none" }}>
+                    <Plus size={12} /> Use Template
+                  </div>
                 </div>
               ))}
             </div>
 
             <div className="backup-section-title" style={{ marginTop: 20 }}><Cloud size={14} /> Cloud Upload Templates</div>
+            <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 12 }}>These are used in the "Cloud Upload" section when creating a job.</div>
             <div className="backup-template-grid">
               {CLOUD_TEMPLATES.map((tpl) => (
                 <div key={tpl.id} className="backup-template-card system">

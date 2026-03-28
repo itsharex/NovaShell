@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, memo } from "react";
+import { useState, useEffect, useCallback, memo, useMemo } from "react";
 import {
   Play,
   Square,
@@ -46,24 +46,33 @@ const SparklineSVG = memo(function SparklineSVG({
   width = 120,
   height = 20,
   color = "#3fb950",
+  showArea = false,
+  fillOpacity = 0.1,
 }: {
   data: number[];
   width?: number;
   height?: number;
   color?: string;
+  showArea?: boolean;
+  fillOpacity?: number;
 }) {
   if (data.length < 2) return <svg width={width} height={height} />;
   const max = Math.max(...data);
   const min = Math.min(...data);
   const range = max - min || 1;
-  const points = data
-    .map(
-      (v, i) =>
-        `${(i / (data.length - 1)) * width},${height - ((v - min) / range) * (height - 2) - 1}`
-    )
-    .join(" ");
+  const pointCoords = data.map((v, i) => ({
+    x: (i / (data.length - 1)) * width,
+    y: height - ((v - min) / range) * (height - 2) - 1,
+  }));
+  const points = pointCoords.map((p) => `${p.x},${p.y}`).join(" ");
+  const areaPoints = showArea
+    ? `${pointCoords[0].x},${height} ${points} ${pointCoords[pointCoords.length - 1].x},${height}`
+    : "";
   return (
     <svg width={width} height={height} style={{ display: "block" }}>
+      {showArea && (
+        <polygon points={areaPoints} fill={color} opacity={fillOpacity} />
+      )}
       <polyline points={points} fill="none" stroke={color} strokeWidth="1.5" />
     </svg>
   );
@@ -926,9 +935,38 @@ function OverviewView({
   onRemediation: (conn: SSHConnection, action: string) => void;
 }) {
   const t = useT();
+  const infraAlerts = useAppStore((s) => s.infraAlerts);
   const relevantConnections = allConnections.filter(
     (c) => c.status === "connected" || infraMonitors[c.id]
   );
+
+  const kpiData = useMemo(() => {
+    const monitoredIds = Array.from(activeMonitors);
+    const totalServers = monitoredIds.length;
+    let cpuSum = 0;
+    let memSum = 0;
+    let healthSum = 0;
+    let metricsCount = 0;
+
+    for (const id of monitoredIds) {
+      const monData = infraMonitors[id];
+      if (!monData || monData.metrics.length === 0) continue;
+      const latest = monData.metrics[monData.metrics.length - 1];
+      cpuSum += latest.cpu;
+      memSum += latest.memPercent;
+      // Health score: inverse of worst metric pressure
+      const worstMetric = Math.max(latest.cpu, latest.memPercent, latest.diskPercent);
+      healthSum += Math.max(0, 100 - worstMetric);
+      metricsCount++;
+    }
+
+    const avgCpu = metricsCount > 0 ? Math.round(cpuSum / metricsCount) : 0;
+    const avgMem = metricsCount > 0 ? Math.round(memSum / metricsCount) : 0;
+    const avgHealth = metricsCount > 0 ? Math.round(healthSum / metricsCount) : 0;
+    const activeAlerts = infraAlerts.filter((a) => !a.acknowledged).length;
+
+    return { totalServers, avgCpu, avgMem, avgHealth, activeAlerts };
+  }, [activeMonitors, infraMonitors, infraAlerts]);
 
   if (relevantConnections.length === 0) {
     return (
@@ -940,8 +978,74 @@ function OverviewView({
     );
   }
 
+  const cpuColor = kpiData.avgCpu >= 90 ? "red" : kpiData.avgCpu >= 70 ? "yellow" : "green";
+  const memColor = kpiData.avgMem >= 90 ? "red" : kpiData.avgMem >= 70 ? "yellow" : "blue";
+  const healthColor = kpiData.avgHealth >= 70 ? "green" : kpiData.avgHealth >= 40 ? "yellow" : "red";
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: compact ? 4 : 8 }}>
+      {/* KPI Summary Row */}
+      <div className="infra-kpi-row infra-fade-in">
+        <div className={`infra-kpi-card green`}>
+          <div className="infra-kpi-header">
+            <div className="infra-kpi-icon green">
+              <HardDrive size={16} />
+            </div>
+          </div>
+          <div className="infra-kpi-value">{kpiData.totalServers}</div>
+          <div className="infra-kpi-label">Monitored Servers</div>
+        </div>
+
+        <div className={`infra-kpi-card ${cpuColor}`}>
+          <div className="infra-kpi-header">
+            <div className={`infra-kpi-icon ${cpuColor}`}>
+              <Activity size={16} />
+            </div>
+            <span className={`infra-kpi-trend ${kpiData.avgCpu >= 70 ? "up" : "stable"}`}>
+              {kpiData.avgCpu >= 70 ? "\u2191" : "\u2194"}
+            </span>
+          </div>
+          <div className="infra-kpi-value">{kpiData.avgCpu}%</div>
+          <div className="infra-kpi-label">Avg CPU</div>
+        </div>
+
+        <div className={`infra-kpi-card ${memColor}`}>
+          <div className="infra-kpi-header">
+            <div className={`infra-kpi-icon ${memColor}`}>
+              <Database size={16} />
+            </div>
+            <span className={`infra-kpi-trend ${kpiData.avgMem >= 70 ? "up" : "stable"}`}>
+              {kpiData.avgMem >= 70 ? "\u2191" : "\u2194"}
+            </span>
+          </div>
+          <div className="infra-kpi-value">{kpiData.avgMem}%</div>
+          <div className="infra-kpi-label">Avg Memory</div>
+        </div>
+
+        <div className={`infra-kpi-card ${kpiData.activeAlerts > 0 ? "red" : "green"}`}>
+          <div className="infra-kpi-header">
+            <div className={`infra-kpi-icon ${kpiData.activeAlerts > 0 ? "red" : "green"}`}>
+              <AlertTriangle size={16} />
+            </div>
+            {kpiData.activeAlerts > 0 && (
+              <span className="infra-tab-badge">{kpiData.activeAlerts}</span>
+            )}
+          </div>
+          <div className="infra-kpi-value">{kpiData.activeAlerts}</div>
+          <div className="infra-kpi-label">Active Alerts</div>
+        </div>
+
+        <div className={`infra-kpi-card ${healthColor}`}>
+          <div className="infra-kpi-header">
+            <div className={`infra-kpi-icon ${healthColor}`}>
+              <Shield size={16} />
+            </div>
+          </div>
+          <div className="infra-kpi-value">{kpiData.avgHealth}</div>
+          <div className="infra-kpi-label">Health Score</div>
+        </div>
+      </div>
+
       {relevantConnections.map((conn) => {
         const monitorData = infraMonitors[conn.id];
         const metrics = monitorData?.metrics || [];

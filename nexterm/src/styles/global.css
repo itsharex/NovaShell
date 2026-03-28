@@ -2037,10 +2037,6 @@ body {
   margin-top: 2px;
 }
 
-.infra-kpi-sparkline {
-  margin-top: 8px;
-}
-
 .infra-kpi-trend {
   font-size: 10px;
   font-weight: 600;
@@ -2053,12 +2049,6 @@ body {
 .infra-kpi-trend.stable { background: var(--bg-tertiary); color: var(--text-muted); }
 
 /* Server Cards */
-.infra-server-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
-  gap: 12px;
-}
-
 .infra-server-card {
   background: var(--bg-secondary);
   border: 1px solid var(--border-color);

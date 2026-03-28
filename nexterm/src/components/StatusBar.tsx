@@ -118,9 +118,10 @@ export function StatusBar() {
         });
       }
     };
-    fetchStats();
+    // Defer initial stats fetch to avoid blocking startup
+    const statsDelay = setTimeout(fetchStats, 500);
     const statsInterval = setInterval(fetchStats, 60000);
-    return () => { clearInterval(branchInterval); clearInterval(statsInterval); };
+    return () => { clearInterval(branchInterval); clearInterval(statsInterval); clearTimeout(statsDelay); };
   }, [setGitBranch, setSystemStats]);
 
   const getShellLabel = (shellType: string) => {

@@ -384,17 +384,22 @@ function buildPersistedConfig(): PersistedConfig {
   };
 }
 
+let lastSavedJson = "";
+
 function scheduleSave() {
   if (!configLoaded) return; // Don't save until initial config is loaded — prevents overwriting
   if (saveTimer) clearTimeout(saveTimer);
   saveTimer = setTimeout(() => {
     saveTimer = null;
     const config = buildPersistedConfig();
+    const json = JSON.stringify(config);
+    if (json === lastSavedJson) return; // Skip if unchanged
+    lastSavedJson = json;
     import("@tauri-apps/api/core").then(({ invoke }) => {
       cachedInvoke = invoke;
-      invoke("save_app_config", { data: JSON.stringify(config) }).catch(() => {});
+      invoke("save_app_config", { data: json }).catch(() => {});
     }).catch(() => {});
-  }, 2000);
+  }, 3000);
 }
 
 // Save shared folder data (snippets + subFolders) to its JSON file
@@ -748,7 +753,8 @@ export const useAppStore = create<AppState>((set, get) => ({
         history: [{ ...entry, id: crypto.randomUUID(), timestamp: Date.now() }, ...prev],
       };
     });
-    scheduleSave();
+    // Deferred save — history is not critical, avoid disk I/O on every command
+    if (!saveTimer) scheduleSave();
   },
   clearHistory: () => { set({ history: [] }); scheduleSave(); },
 
@@ -893,26 +899,25 @@ export const useAppStore = create<AppState>((set, get) => ({
   systemStats: null,
   setSystemStats: (stats) => set((s) => {
     if (!stats) return { systemStats: stats };
-    // Combine stats + metrics history in a single set() to avoid double re-render
     const maxPoints = 60;
-    const cpuArr = s.metricsHistory.cpu.length >= maxPoints
-      ? s.metricsHistory.cpu.slice(1).concat(stats.cpu)
-      : s.metricsHistory.cpu.concat(stats.cpu);
-    const memArr = s.metricsHistory.memory.length >= maxPoints
-      ? s.metricsHistory.memory.slice(1).concat(stats.memoryPercent)
-      : s.metricsHistory.memory.concat(stats.memoryPercent);
-    return { systemStats: stats, metricsHistory: { cpu: cpuArr, memory: memArr } };
+    const cpu = s.metricsHistory.cpu.length >= maxPoints
+      ? [...s.metricsHistory.cpu.slice(1), stats.cpu]
+      : [...s.metricsHistory.cpu, stats.cpu];
+    const memory = s.metricsHistory.memory.length >= maxPoints
+      ? [...s.metricsHistory.memory.slice(1), stats.memoryPercent]
+      : [...s.metricsHistory.memory, stats.memoryPercent];
+    return { systemStats: stats, metricsHistory: { cpu, memory } };
   }),
 
   metricsHistory: { cpu: [], memory: [] },
   addMetricsSnapshot: (cpu, memory) => set((s) => {
     const maxPoints = 60;
     const cpuArr = s.metricsHistory.cpu.length >= maxPoints
-      ? s.metricsHistory.cpu.slice(1).concat(cpu)
-      : s.metricsHistory.cpu.concat(cpu);
+      ? [...s.metricsHistory.cpu.slice(1), cpu]
+      : [...s.metricsHistory.cpu, cpu];
     const memArr = s.metricsHistory.memory.length >= maxPoints
-      ? s.metricsHistory.memory.slice(1).concat(memory)
-      : s.metricsHistory.memory.concat(memory);
+      ? [...s.metricsHistory.memory.slice(1), memory]
+      : [...s.metricsHistory.memory, memory];
     return { metricsHistory: { cpu: cpuArr, memory: memArr } };
   }),
 

@@ -188,7 +188,7 @@ impl SftpSession {
             let mut local_file = std::fs::File::create(&local_path_owned)
                 .map_err(|e| format!("Cannot create local file {}: {}", local_path_owned, e))?;
 
-            let mut buf = [0u8; 32768];
+            let mut buf = [0u8; 262144];
             let mut total: u64 = 0;
 
             let result: Result<u64, String> = (|| {
@@ -228,7 +228,7 @@ impl SftpSession {
                 .create(Path::new(&normalized_remote))
                 .map_err(|e| format!("Cannot create remote file {}: {}", normalized_remote, e))?;
 
-            let mut buf = [0u8; 32768];
+            let mut buf = [0u8; 262144];
             let mut total: u64 = 0;
 
             loop {

@@ -186,7 +186,11 @@ function SnippetsPanel() {
   const [editingSubFolderId, setEditingSubFolderId] = useState<string | null>(null);
   const [editSubFolderName, setEditSubFolderName] = useState("");
 
-  // Poll shared folders for changes every 3 seconds
+  // Poll shared folders for changes every 10 seconds
+  const sharedFolderIds = useMemo(
+    () => folders.filter((f) => f.sharedPath).map((f) => f.id).join(","),
+    [folders]
+  );
   useEffect(() => {
     const sharedFolders = folders.filter((f) => f.sharedPath);
     if (sharedFolders.length === 0) return;
@@ -208,10 +212,10 @@ function SnippetsPanel() {
           } catch { /* file may be temporarily unavailable */ }
         }
       } catch { /* tauri not ready */ }
-    }, 3000);
+    }, 10000);
     return () => clearInterval(interval);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [folders.filter((f) => f.sharedPath).map((f) => f.id).join(",")]);
+  }, [sharedFolderIds]);
 
   const handleBrowseSharedPath = async () => {
     try {

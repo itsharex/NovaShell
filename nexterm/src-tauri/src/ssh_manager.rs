@@ -168,7 +168,7 @@ impl SshSession {
         // Keep session in BLOCKING mode — use read timeout for non-blocking behavior
         // This avoids the race condition of switching blocking/non-blocking between threads
         session.set_blocking(true);
-        session.set_timeout(2); // 2ms timeout — minimal latency for write pickup while keeping CPU low
+        session.set_timeout(50); // 50ms timeout — balances responsiveness with network tolerance
 
         let session = Arc::new(Mutex::new(session));
         let channel = Arc::new(Mutex::new(channel));
@@ -298,7 +298,7 @@ impl SshSession {
                                 }
                             }
                             // Flush immediately if batch is large (fast output like `ls -la`)
-                            if b.len() > 16384 {
+                            if b.len() > 8192 {
                                 let _ = app_handle_reader.emit(&data_event_reader, std::mem::take(&mut *b));
                             } else {
                                 // Signal flusher that data is ready
@@ -386,7 +386,7 @@ impl SshSession {
                         Ok(l) => l,
                         Err(e) => e.into_inner(),
                     };
-                    let _ = data_ready_flusher.wait_timeout(lock, Duration::from_millis(8));
+                    let _ = data_ready_flusher.wait_timeout(lock, Duration::from_millis(16));
                 }
 
                 if !running_flusher.load(Ordering::Relaxed) {

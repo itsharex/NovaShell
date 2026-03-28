@@ -838,7 +838,8 @@ body {
 
 .sftp-panel.drag-over {
   border-color: var(--accent-secondary);
-  box-shadow: 0 0 12px rgba(63, 185, 80, 0.2);
+  box-shadow: 0 0 16px rgba(63, 185, 80, 0.25), inset 0 0 30px rgba(63, 185, 80, 0.04);
+  background: rgba(63, 185, 80, 0.03);
 }
 
 .sftp-panel-header {
@@ -927,7 +928,69 @@ body {
 }
 
 .sftp-file-row.drag-target {
-  background: rgba(88, 166, 255, 0.25);
+  background: rgba(88, 166, 255, 0.2);
+  outline: 1px dashed var(--accent-primary);
+  outline-offset: -1px;
+  border-radius: var(--radius-sm);
+}
+
+/* Drag ghost floating indicator */
+.sftp-drag-ghost {
+  position: fixed;
+  z-index: 10000;
+  pointer-events: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--accent-primary);
+  border-radius: var(--radius-md);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  font-size: 11px;
+  color: var(--text-primary);
+  white-space: nowrap;
+  max-width: 220px;
+  animation: sftp-ghost-in 0.12s ease-out;
+}
+
+@keyframes sftp-ghost-in {
+  from { opacity: 0; transform: scale(0.9); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+.sftp-drag-ghost-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: var(--radius-sm);
+  background: var(--accent-primary);
+  color: white;
+  flex-shrink: 0;
+}
+
+.sftp-drag-ghost-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+}
+
+.sftp-drag-ghost-badge {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  border-radius: 9px;
+  background: var(--accent-primary);
+  color: white;
+  font-size: 9px;
+  font-weight: 700;
+  padding: 0 4px;
+  flex-shrink: 0;
 }
 
 .sftp-file-name {

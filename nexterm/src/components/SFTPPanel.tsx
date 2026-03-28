@@ -369,9 +369,12 @@ function SFTPExplorer({
   const [dragOver, setDragOver] = useState<"local" | "remote" | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [dragSide, setDragSide] = useState<"local" | "remote" | null>(null);
+  const [dragPos, setDragPos] = useState({ x: 0, y: 0 });
+  const [dragFileCount, setDragFileCount] = useState(0);
+  const [dragFileName, setDragFileName] = useState("");
   const dragStartPos = useRef<{ x: number; y: number } | null>(null);
   const pendingDragData = useRef<{ side: "local" | "remote"; files: Array<{ name: string; path: string; is_dir: boolean; size: number }> } | null>(null);
-  const [dragOverFolder, setDragOverFolder] = useState<string | null>(null); // path of folder being hovered during drag
+  const [dragOverFolder, setDragOverFolder] = useState<string | null>(null);
   const dragStateRef = useRef({ isDragging: false, side: null as "local" | "remote" | null, files: null as Array<{ name: string; path: string; is_dir: boolean; size: number }> | null, overPanel: null as "local" | "remote" | null, overFolderPath: null as string | null });
 
   // Cached invoke
@@ -416,7 +419,7 @@ function SFTPExplorer({
     setLocalLoading(false);
   }, [getInvoke]);
 
-  // Initial load — phase 1: get home paths, phase 2: list both dirs in parallel
+  // Initial load — all calls in parallel for fastest startup
   const initialized = useRef(false);
   useEffect(() => {
     if (initialized.current) return;
@@ -425,13 +428,13 @@ function SFTPExplorer({
     (async () => {
       const invoke = await getInvoke();
 
-      // Phase 1: get home paths + local listing in parallel
+      // Fire all three calls simultaneously
       const [remoteHome, localEntries] = await Promise.allSettled([
         invoke<string>("sftp_home_dir", { sessionId }),
         invoke<LocalFileEntry[]>("list_directory", { path: null }),
       ]);
 
-      // Resolve local path from entries
+      // Process local immediately (don't wait for remote)
       let resolvedLocalPath = "/";
       if (localEntries.status === "fulfilled" && localEntries.value.length > 0) {
         const first = localEntries.value[0].path;
@@ -440,9 +443,11 @@ function SFTPExplorer({
         setLocalPath(resolvedLocalPath);
         setLocalFiles(localEntries.value);
         setLocalLoading(false);
+      } else {
+        loadLocal(resolvedLocalPath);
       }
 
-      // Phase 2: load remote listing (local is already done from phase 1)
+      // Process remote (runs in parallel with local state updates above)
       const rHome = remoteHome.status === "fulfilled" ? remoteHome.value : "/";
       try {
         const entries = await invoke<RemoteFileEntry[]>("sftp_list_dir", { sessionId, path: rHome });
@@ -452,11 +457,6 @@ function SFTPExplorer({
         setRemoteError(String(e));
       }
       setRemoteLoading(false);
-
-      // If local failed in phase 1, load fallback
-      if (localEntries.status !== "fulfilled" || localEntries.value.length === 0) {
-        loadLocal(resolvedLocalPath);
-      }
     })();
   }, [sessionId, getInvoke, loadLocal]);
 
@@ -632,19 +632,28 @@ function SFTPExplorer({
   // Global mouse listeners for drag
   useEffect(() => {
     const onMouseMove = (e: MouseEvent) => {
+      // Track position during active drag
+      if (dragStateRef.current.isDragging) {
+        setDragPos({ x: e.clientX, y: e.clientY });
+        return;
+      }
       if (!dragStartPos.current || !pendingDragData.current) return;
       const dx = Math.abs(e.clientX - dragStartPos.current.x);
       const dy = Math.abs(e.clientY - dragStartPos.current.y);
       if (dx > 5 || dy > 5) {
+        const files = pendingDragData.current.files;
         dragStateRef.current = {
           isDragging: true,
           side: pendingDragData.current.side,
-          files: pendingDragData.current.files,
+          files,
           overPanel: null,
           overFolderPath: null,
         };
         setIsDragging(true);
         setDragSide(pendingDragData.current.side);
+        setDragFileCount(files.length);
+        setDragFileName(files.length === 1 ? files[0].name : `${files.length} items`);
+        setDragPos({ x: e.clientX, y: e.clientY });
         dragStartPos.current = null;
       }
     };
@@ -659,6 +668,8 @@ function SFTPExplorer({
       setDragSide(null);
       setDragOver(null);
       setDragOverFolder(null);
+      setDragFileCount(0);
+      setDragFileName("");
       dragStartPos.current = null;
       pendingDragData.current = null;
     };
@@ -1109,6 +1120,19 @@ function SFTPExplorer({
               </div>
             ))}
           </div>
+        </div>
+      )}
+
+      {/* Drag ghost indicator */}
+      {isDragging && dragFileCount > 0 && (
+        <div className="sftp-drag-ghost" style={{ left: dragPos.x + 14, top: dragPos.y + 14 }}>
+          <span className="sftp-drag-ghost-icon">
+            {dragSide === "local" ? <Upload size={12} /> : <Download size={12} />}
+          </span>
+          <span className="sftp-drag-ghost-label">{dragFileName}</span>
+          {dragFileCount > 1 && (
+            <span className="sftp-drag-ghost-badge">{dragFileCount}</span>
+          )}
         </div>
       )}
     </div>

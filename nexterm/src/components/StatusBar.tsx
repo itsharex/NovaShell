@@ -88,7 +88,8 @@ export function StatusBar() {
         setGitBranch("");
       }
     };
-    fetchBranch();
+    // Defer initial fetch to avoid blocking startup
+    const branchDelay = setTimeout(fetchBranch, 500);
     const branchInterval = setInterval(fetchBranch, 60000);
 
     const fetchStats = async () => {
@@ -121,7 +122,7 @@ export function StatusBar() {
     // Defer initial stats fetch to avoid blocking startup
     const statsDelay = setTimeout(fetchStats, 500);
     const statsInterval = setInterval(fetchStats, 60000);
-    return () => { clearInterval(branchInterval); clearInterval(statsInterval); clearTimeout(statsDelay); };
+    return () => { clearTimeout(branchDelay); clearInterval(branchInterval); clearTimeout(statsDelay); clearInterval(statsInterval); };
   }, [setGitBranch, setSystemStats]);
 
   const getShellLabel = (shellType: string) => {

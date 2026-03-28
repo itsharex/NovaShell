@@ -316,6 +316,8 @@ impl SshSession {
                             }
                             last_keepalive = Instant::now();
                         }
+                        // Brief sleep on idle to reduce CPU usage (prevents 20 wakeups/sec)
+                        std::thread::sleep(Duration::from_millis(5));
                     }
                     Err(ref e) if e.kind() == std::io::ErrorKind::ConnectionReset
                         || e.kind() == std::io::ErrorKind::BrokenPipe

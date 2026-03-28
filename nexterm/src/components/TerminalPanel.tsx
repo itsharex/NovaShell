@@ -681,9 +681,9 @@ export function TerminalPanel() {
             const query = ptyInputBuffer.trim().slice(1).trim();
             ptyInputBuffer = "";
             setShowAutocomplete(false);
-            // Clear the ? text from shell and show a "thinking" comment via PTY
-            writeToSession("\x15"); // Ctrl+U clears readline
-            writeToSession("# \x1b[90m[AI] generating...\x1b[0m");
+            // Send Enter — the "? text" runs harmlessly (command not found)
+            // This gives us a fresh prompt to type the AI command into
+            writeToSession("\r");
             (async () => {
               try {
                 const inv = await getTauriCore();
@@ -693,18 +693,12 @@ export function TerminalPanel() {
                   messages: [{ role: "user", content: query }],
                 });
                 const cmd = (response || "").trim().replace(/^```[\w]*\n?/, "").replace(/\n?```$/, "").trim().split("\n")[0];
-                // Clear the thinking comment and type the real command
-                writeToSession("\x15"); // Clear "generating..." from readline
                 if (cmd) {
+                  // Type the command at the fresh prompt (no Enter — user reviews)
                   writeToSession(cmd);
                   ptyInputBuffer = cmd;
-                } else {
-                  writeToSession("# [AI] could not generate command");
                 }
-              } catch (e) {
-                writeToSession("\x15");
-                writeToSession(`# [AI] error: ${String(e).slice(0, 80)}`);
-              }
+              } catch { /* Ollama unavailable — silently fail, user sees fresh prompt */ }
             })();
             return;
           }

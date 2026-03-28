@@ -437,9 +437,8 @@ export function SSHPanel() {
           if ((data === "\r" || data === "\n") && sshInputBuffer.trim().startsWith("?") && sshInputBuffer.trim().length > 2) {
             const query = sshInputBuffer.trim().slice(1).trim();
             sshInputBuffer = "";
-            // Clear ? text and show thinking comment via PTY
-            writeQueue += "\x15"; // Ctrl+U clears readline
-            writeQueue += "# \x1b[90m[AI] generating...\x1b[0m";
+            // Send Enter — the "? text" runs harmlessly on the remote shell
+            writeQueue += "\r";
             scheduleWriteFlush();
             (async () => {
               try {
@@ -449,19 +448,12 @@ export function SSHPanel() {
                   messages: [{ role: "user", content: query }],
                 });
                 const cmd = (response || "").trim().replace(/^```[\w]*\n?/, "").replace(/\n?```$/, "").trim().split("\n")[0];
-                writeQueue += "\x15"; // Clear thinking comment
                 if (cmd) {
                   writeQueue += cmd;
                   sshInputBuffer = cmd;
-                } else {
-                  writeQueue += "# [AI] could not generate command";
+                  scheduleWriteFlush();
                 }
-                scheduleWriteFlush();
-              } catch (e) {
-                writeQueue += "\x15";
-                writeQueue += `# [AI] error: ${String(e).slice(0, 80)}`;
-                scheduleWriteFlush();
-              }
+              } catch { /* Ollama unavailable */ }
             })();
             return;
           }

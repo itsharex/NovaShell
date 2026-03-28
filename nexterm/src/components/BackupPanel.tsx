@@ -35,6 +35,11 @@ const CLOUD_TEMPLATES = [
   { id: "custom", name: "Custom command", command: "", description: "Write your own upload command" },
 ];
 
+// Escape string for safe use inside single-quoted shell arguments
+function shellEscape(s: string): string {
+  return s.replace(/'/g, "'\\''");
+}
+
 function formatRelativeTime(ts: number): string {
   const diff = Date.now() - ts;
   if (diff < 60_000) return "just now";
@@ -271,41 +276,40 @@ export function BackupPanel() {
     addBackupRecord({ jobId: job.id, jobName: job.name, serverName: conn.name, timestamp: Date.now(), status, duration, sizeMB: status === "success" ? sizeMB : 0, output: (output || "").slice(0, 2000), error, downloaded: false });
     updateBackupJob(job.id, { lastRun: Date.now(), lastStatus: status });
 
-    // Post-backup: cloud upload
+    // Post-backup: cloud upload (shell-escaped paths)
     if (status === "success" && job.cloudEnabled && job.cloudCommand) {
       try {
-        const cloudCmd = job.cloudCommand.replace(/\{FILE\}/g, job.remotePath).replace(/\{SERVER\}/g, conn.name);
+        const cloudCmd = job.cloudCommand
+          .replace(/\{FILE\}/g, `'${shellEscape(job.remotePath)}'`)
+          .replace(/\{SERVER\}/g, `'${shellEscape(conn.name)}'`);
         await invoke("ssh_exec", { ...sshArgs, command: cloudCmd });
       } catch { /* cloud upload failed, non-blocking */ }
     }
 
-    // Post-backup: email notification
+    // Determine if notification should fire
+    const shouldNotify = (enabled: boolean, jobFlag: boolean) =>
+      enabled && jobFlag && (job.notifyOn === "always" || (job.notifyOn === "failure" && status === "failed") || (job.notifyOn === "success" && status === "success"));
+
+    // Post-backup: email notification (all values shell-escaped)
     const smtp = useAppStore.getState().backupSmtp;
-    if (smtp.enabled && job.notifyEmail) {
-      const shouldNotify = job.notifyOn === "always" || (job.notifyOn === "failure" && status === "failed") || (job.notifyOn === "success" && status === "success");
-      if (shouldNotify) {
-        try {
-          const subject = `[NovaShell] Backup ${status.toUpperCase()}: ${job.name} on ${conn.name}`;
-          const body = `Backup Job: ${job.name}\\nServer: ${conn.name} (${conn.host})\\nStatus: ${status}\\nDuration: ${formatDuration(duration)}\\nSize: ${sizeMB.toFixed(2)} MB\\nTime: ${new Date().toISOString()}${error ? `\\nError: ${error}` : ""}`;
-          // Send email via server's mail command using SMTP config
-          const mailCmd = `echo -e "Subject: ${subject}\\nFrom: ${smtp.fromAddress}\\nTo: ${smtp.toAddress}\\nContent-Type: text/plain\\n\\n${body}" | curl --ssl-reqd --url "smtps://${smtp.host}:${smtp.port}" --user "${smtp.username}:${smtp.password}" --mail-from "${smtp.fromAddress}" --mail-rcpt "${smtp.toAddress}" -T - 2>&1 || echo "Mail send failed"`;
-          await invoke("ssh_exec", { ...sshArgs, command: mailCmd });
-        } catch { /* email failed, non-blocking */ }
-      }
+    if (shouldNotify(smtp.enabled, job.notifyEmail)) {
+      try {
+        const subject = shellEscape(`[NovaShell] Backup ${status.toUpperCase()}: ${job.name} on ${conn.name}`);
+        const body = shellEscape(`Backup Job: ${job.name}\nServer: ${conn.name} (${conn.host})\nStatus: ${status}\nDuration: ${formatDuration(duration)}\nSize: ${sizeMB.toFixed(2)} MB\nTime: ${new Date().toISOString()}${error ? `\nError: ${error.slice(0, 200)}` : ""}`);
+        const mailCmd = `printf 'Subject: %s\\nFrom: %s\\nTo: %s\\nContent-Type: text/plain\\n\\n%s' '${subject}' '${shellEscape(smtp.fromAddress)}' '${shellEscape(smtp.toAddress)}' '${body}' | curl --ssl-reqd --url 'smtps://${shellEscape(smtp.host)}:${smtp.port}' --user '${shellEscape(smtp.username)}:${shellEscape(smtp.password)}' --mail-from '${shellEscape(smtp.fromAddress)}' --mail-rcpt '${shellEscape(smtp.toAddress)}' -T - 2>&1 || echo 'Mail send failed'`;
+        await invoke("ssh_exec", { ...sshArgs, command: mailCmd });
+      } catch { /* email failed, non-blocking */ }
     }
 
-    // Post-backup: Telegram notification
+    // Post-backup: Telegram notification (URL-encoded via curl --data-urlencode)
     const tg = useAppStore.getState().backupTelegram;
-    if (tg.enabled && job.notifyTelegram) {
-      const shouldNotify = job.notifyOn === "always" || (job.notifyOn === "failure" && status === "failed") || (job.notifyOn === "success" && status === "success");
-      if (shouldNotify) {
-        try {
-          const icon = status === "success" ? "\u2705" : "\u274C";
-          const msg = `${icon} *NovaShell Backup*\n*Job:* ${job.name}\n*Server:* ${conn.name} (${conn.host})\n*Status:* ${status.toUpperCase()}\n*Duration:* ${formatDuration(duration)}\n*Size:* ${sizeMB.toFixed(2)} MB\n*Time:* ${new Date().toISOString()}${error ? `\n*Error:* ${error.slice(0, 200)}` : ""}`;
-          const tgCmd = `curl -s -X POST "https://api.telegram.org/bot${tg.botToken}/sendMessage" -d chat_id="${tg.chatId}" -d parse_mode="Markdown" -d text="${msg.replace(/"/g, '\\"')}" 2>&1 || echo "Telegram send failed"`;
-          await invoke("ssh_exec", { ...sshArgs, command: tgCmd });
-        } catch { /* telegram failed, non-blocking */ }
-      }
+    if (shouldNotify(tg.enabled, job.notifyTelegram)) {
+      try {
+        const icon = status === "success" ? "\u2705" : "\u274C";
+        const msg = `${icon} NovaShell Backup\nJob: ${job.name}\nServer: ${conn.name} (${conn.host})\nStatus: ${status.toUpperCase()}\nDuration: ${formatDuration(duration)}\nSize: ${sizeMB.toFixed(2)} MB\nTime: ${new Date().toISOString()}${error ? `\nError: ${error.slice(0, 200)}` : ""}`;
+        const tgCmd = `curl -s -X POST 'https://api.telegram.org/bot${shellEscape(tg.botToken)}/sendMessage' --data-urlencode 'chat_id=${tg.chatId}' --data-urlencode 'text=${shellEscape(msg)}' 2>&1 || echo 'Telegram send failed'`;
+        await invoke("ssh_exec", { ...sshArgs, command: tgCmd });
+      } catch { /* telegram failed, non-blocking */ }
     }
 
     setRunningJobs((s) => { const n = new Set(s); n.delete(job.id); return n; });

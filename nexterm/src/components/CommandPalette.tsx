@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import {
   Search, Terminal, History, Code2, Monitor, FolderSync, Activity,
   Edit3, Bug, Sparkles, FileText, Shield, Gauge, Palette, Languages,
-  Columns, Rows3, Square, Server, Play, Zap, Eye, FolderTree, Puzzle,
+  Columns, Rows3, Square, Server, Zap, Eye, FolderTree, Puzzle,
   BarChart3, X, Layout, Save, Users, HardDrive,
 } from "lucide-react";
 import { useAppStore } from "../store/appStore";

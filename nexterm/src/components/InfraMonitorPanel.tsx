@@ -635,7 +635,7 @@ export function InfraMonitorPanel() {
         message: `Started monitoring ${conn.name} (${conn.host})`,
       });
     } catch (e) {
-      console.error("Failed to start monitor:", e);
+      /* monitor start failed — silently handled */
     }
   }, [infraPollingInterval, addInfraTimelineEvent, addActiveMonitor]);
 
@@ -654,7 +654,7 @@ export function InfraMonitorPanel() {
         message: `Stopped monitoring ${conn?.name || connId}`,
       });
     } catch (e) {
-      console.error("Failed to stop monitor:", e);
+      /* monitor stop failed — silently handled */
     }
   }, [clearInfraMonitor, sshConnections, addInfraTimelineEvent, removeActiveMonitor]);
 

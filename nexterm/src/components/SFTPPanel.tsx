@@ -822,7 +822,7 @@ function SFTPExplorer({
         sshHost: conn?.host, sshPort: conn?.port, sshUsername: conn?.username,
         sshPassword: conn?.sessionPassword || null, sshPrivateKey: conn?.privateKey || null,
       });
-      store.setSidebarTab("editor");
+      store.openPanelTab("editor");
     } catch (e) {
       setRemoteError(`Cannot open ${entry.name}: ${e}`);
     }

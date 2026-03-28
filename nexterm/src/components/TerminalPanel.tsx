@@ -848,7 +848,8 @@ export function TerminalPanel() {
   );
 
   useEffect(() => {
-    const currentTabIds = new Set(tabs.map((t) => t.id));
+    const terminalTabs = tabs.filter((t) => t.type === "terminal" || !t.type);
+    const currentTabIds = new Set(terminalTabs.map((t) => t.id));
     const toRemove: string[] = [];
     terminalsRef.current.forEach((_ref, tabId) => {
       if (!currentTabIds.has(tabId)) {
@@ -991,7 +992,7 @@ export function TerminalPanel() {
         selectedIndex={selectedSuggestion}
       />
       <div className="terminal-instances-container">
-        {tabs.map((tab) => (
+        {tabs.filter((t) => t.type === "terminal" || !t.type).map((tab) => (
           <div
             key={tab.id}
             className={`terminal-instance ${tab.id !== activeTabId && splitMode === "none" ? "hidden" : ""}`}

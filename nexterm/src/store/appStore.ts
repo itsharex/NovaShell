@@ -12,7 +12,8 @@ export interface CustomThemeColors {
   terminalFg: string;
   terminalCursor: string;
 }
-export type SidebarTab = "history" | "snippets" | "preview" | "plugins" | "stats" | "ssh" | "sftp" | "servermap" | "editor" | "debug" | "ai" | "docs" | "hacking" | "infra" | "collab";
+export type SidebarTab = "history" | "snippets" | "preview" | "plugins" | "stats";
+export type PanelTabType = "ssh" | "sftp" | "editor" | "ai" | "debug" | "hacking" | "infra" | "collab" | "servermap" | "docs";
 export type AppLanguage = "en" | "es";
 
 // === Hacking Mode Types ===
@@ -78,9 +79,10 @@ export interface HackingAlert {
   category: string;
 }
 
-interface Tab {
+export interface Tab {
   id: string;
   title: string;
+  type: "terminal" | PanelTabType;
   shellType: string;
   sessionId: string | null;
 }
@@ -437,6 +439,7 @@ interface AppState {
   tabs: Tab[];
   activeTabId: string;
   addTab: (shell?: string) => void;
+  openPanelTab: (panelType: PanelTabType) => void;
   closeTab: (id: string) => void;
   setActiveTab: (id: string) => void;
   updateTab: (id: string, updates: Partial<Tab>) => void;
@@ -677,14 +680,33 @@ export const useAppStore = create<AppState>((set, get) => ({
   language: "en" as AppLanguage,
   setLanguage: (lang) => { set({ language: lang }); scheduleSave(); },
 
-  tabs: [{ id: "tab-0", title: "Terminal 1", shellType: navigator.platform.startsWith("Win") ? "powershell.exe" : "/bin/bash", sessionId: null }],
+  tabs: [{ id: "tab-0", title: "Terminal 1", type: "terminal" as const, shellType: navigator.platform.startsWith("Win") ? "powershell.exe" : "/bin/bash", sessionId: null }],
   activeTabId: "tab-0",
 
   addTab: (shell = navigator.platform.startsWith("Win") ? "powershell.exe" : "/bin/bash") => {
     tabCounter++;
     const id = `tab-${tabCounter}`;
     set((s) => ({
-      tabs: [...s.tabs, { id, title: `Terminal ${s.tabs.length + 1}`, shellType: shell, sessionId: null }],
+      tabs: [...s.tabs, { id, title: `Terminal ${s.tabs.length + 1}`, type: "terminal" as const, shellType: shell, sessionId: null }],
+      activeTabId: id,
+    }));
+  },
+
+  openPanelTab: (panelType) => {
+    const existing = get().tabs.find((t) => t.type === panelType);
+    if (existing) {
+      set({ activeTabId: existing.id });
+      return;
+    }
+    tabCounter++;
+    const id = `tab-${tabCounter}`;
+    const titles: Record<PanelTabType, string> = {
+      ssh: "SSH", sftp: "SFTP", editor: "Editor", ai: "AI Assistant",
+      debug: "Debug", hacking: "Hacking", infra: "Infra Monitor",
+      collab: "Collaboration", servermap: "Server Map", docs: "Session Docs",
+    };
+    set((s) => ({
+      tabs: [...s.tabs, { id, title: titles[panelType], type: panelType, shellType: "", sessionId: null }],
       activeTabId: id,
     }));
   },
@@ -990,9 +1012,9 @@ export const useAppStore = create<AppState>((set, get) => ({
         hackingMode: true,
         hackingPreviousTheme: s.theme,
         theme: "hacking" as ThemeName,
-        sidebarTab: "hacking",
-        sidebarOpen: true,
       });
+      // Open hacking panel as a tab
+      get().openPanelTab("hacking");
       import("../utils/hackingAlerts").then((m) => m.startSecurityMonitor());
     } else {
       // Deactivate: restore previous theme
@@ -1049,6 +1071,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       ? [...currentTabs, ...Array.from({ length: ws.tabCount - currentTabs.length }, (_, i) => ({
           id: `tab-${Date.now()}-${i}`,
           title: `Terminal ${currentTabs.length + i + 1}`,
+          type: "terminal" as const,
           shellType: navigator.platform.startsWith("Win") ? "powershell.exe" : "/bin/bash",
           sessionId: null,
         }))]
@@ -1420,6 +1443,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       tabs: [...s.tabs, {
         id: tabId,
         title: `Collab: ${info.host_name || "Host"}`,
+        type: "terminal" as const,
         shellType: "collab-guest",
         sessionId: collabId,  // Store collabId as sessionId for reference
       }],

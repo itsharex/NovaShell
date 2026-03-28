@@ -577,6 +577,15 @@ body {
   contain: strict;
 }
 
+.panel-tab-content {
+  flex: 1;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-primary);
+  padding: 12px;
+}
+
 .terminal-instances-container {
   flex: 1;
   position: relative;

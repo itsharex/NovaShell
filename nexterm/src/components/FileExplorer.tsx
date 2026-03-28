@@ -140,7 +140,7 @@ export function FileExplorer() {
       const content = await invoke<string>("read_file_preview", { path: file.path });
       const store = useAppStore.getState();
       store.setPendingEditorFile({ path: file.path, name: file.name, content, source: "local" });
-      store.setSidebarTab("editor");
+      store.openPanelTab("editor");
     } catch {
       setPreviewFile({ name: file.name, content: t("editor.cannotOpen", { name: "" }), extension: file.extension });
     }
@@ -152,7 +152,7 @@ export function FileExplorer() {
       const content = await invoke<string>("read_file_preview", { path: file.path });
       const store = useAppStore.getState();
       store.setPendingEditorFile({ path: file.path, name: file.name, content, source: "local" });
-      store.setSidebarTab("editor");
+      store.openPanelTab("editor");
     } catch (e) {
       setPreviewFile({ name: file.name, content: `Cannot open: ${e}`, extension: file.extension });
     }
@@ -185,7 +185,7 @@ export function FileExplorer() {
             // Open current preview file in editor
             const store = useAppStore.getState();
             store.setPendingEditorFile({ path: rootPath + (rootPath.includes("\\") ? "\\" : "/") + previewFile.name, name: previewFile.name, content: previewFile.content, source: "local" });
-            store.setSidebarTab("editor");
+            store.openPanelTab("editor");
           }} style={{ padding: "2px 6px", border: "none", borderRadius: "var(--radius-sm)", background: "var(--accent-primary)", color: "white", fontSize: 9, cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", gap: 3 }}>
             {t("common.edit")}
           </button>

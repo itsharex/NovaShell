@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback, useMemo, lazy, Suspense } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import {
   History,
   Code2,
@@ -11,141 +11,61 @@ import {
   Search,
   Cpu,
   MemoryStick,
-  Activity,
   HardDrive,
   Folder,
   FolderOpen,
   FolderPlus,
   File,
   ArrowLeft,
-  Monitor,
-  Bug,
-  Sparkles,
-  FileText,
   FolderTree,
+  FolderSync,
   GripVertical,
   ChevronRight,
   ChevronDown,
   Edit3,
   X,
-  Shield,
-  FolderSync,
-  Gauge,
-  Users,
+  Activity,
 } from "lucide-react";
 import { useAppStore } from "../store/appStore";
 import type { SidebarTab } from "../store/appStore";
 import { formatSize, getExtColor } from "../utils/fileColors";
-import { DebugPanel } from "./DebugPanel";
-import { AIPanel } from "./AIPanel";
 import { FileExplorer } from "./FileExplorer";
-import { SessionDocPanel } from "./SessionDocPanel";
-
-// EditorPanel loaded directly — CodeMirror's CSS injection breaks with lazy loading in production builds
-import { EditorPanel } from "./EditorPanel";
-
-// Lazy-load other heavy panels — deferred until user selects the tab
-const SSHPanel = lazy(() => import("./SSHPanel").then(m => ({ default: m.SSHPanel })));
-const SFTPPanel = lazy(() => import("./SFTPPanel").then(m => ({ default: m.SFTPPanel })));
-const InfraMonitorPanel = lazy(() => import("./InfraMonitorPanel").then(m => ({ default: m.InfraMonitorPanel })));
-const HackingPanel = lazy(() => import("./HackingPanel").then(m => ({ default: m.HackingPanel })));
-const ServerMapPanel = lazy(() => import("./ServerMapPanel").then(m => ({ default: m.ServerMapPanel })));
-const CollabPanel = lazy(() => import("./CollabPanel").then(m => ({ default: m.CollabPanel })));
-
-const LazyFallback = () => (
-  <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: 120, color: "var(--text-muted)", fontSize: 12 }}>
-    Loading...
-  </div>
-);
 import { useT } from "../i18n";
 
-type SidebarTabEntry = { id: SidebarTab; icon: typeof History; labelKey: string };
-type SidebarGroup = { labelKey: string; tabs: SidebarTabEntry[] };
-
-const sidebarGroups: SidebarGroup[] = [
-  {
-    labelKey: "sidebarGroup.terminal",
-    tabs: [
-      { id: "history", icon: History, labelKey: "sidebar.history" },
-      { id: "snippets", icon: Code2, labelKey: "sidebar.snippets" },
-      { id: "preview", icon: FolderTree, labelKey: "sidebar.explorer" },
-      { id: "plugins", icon: Puzzle, labelKey: "sidebar.plugins" },
-      { id: "stats", icon: BarChart3, labelKey: "sidebar.stats" },
-    ],
-  },
-  {
-    labelKey: "sidebarGroup.connections",
-    tabs: [
-      { id: "ssh", icon: Monitor, labelKey: "sidebar.ssh" },
-      { id: "sftp", icon: FolderSync, labelKey: "sidebar.sftpTransfer" },
-      { id: "servermap", icon: Activity, labelKey: "sidebar.serverMap" },
-      { id: "collab", icon: Users, labelKey: "sidebar.collab" },
-    ],
-  },
-  {
-    labelKey: "sidebarGroup.tools",
-    tabs: [
-      { id: "editor", icon: Edit3, labelKey: "sidebar.editor" },
-      { id: "debug", icon: Bug, labelKey: "sidebar.debug" },
-      { id: "ai", icon: Sparkles, labelKey: "sidebar.aiAssistant" },
-      { id: "docs", icon: FileText, labelKey: "sidebar.sessionDocs" },
-    ],
-  },
-  {
-    labelKey: "sidebarGroup.advanced",
-    tabs: [
-      { id: "hacking", icon: Shield, labelKey: "sidebar.hackingMode" },
-      { id: "infra", icon: Gauge, labelKey: "sidebar.infraMonitor" },
-    ],
-  },
+const sidebarTabs: { id: SidebarTab; icon: typeof History; labelKey: string }[] = [
+  { id: "history", icon: History, labelKey: "sidebar.history" },
+  { id: "snippets", icon: Code2, labelKey: "sidebar.snippets" },
+  { id: "preview", icon: FolderTree, labelKey: "sidebar.explorer" },
+  { id: "plugins", icon: Puzzle, labelKey: "sidebar.plugins" },
+  { id: "stats", icon: BarChart3, labelKey: "sidebar.stats" },
 ];
 
 export function Sidebar() {
   const sidebarTab = useAppStore((s) => s.sidebarTab);
   const setSidebarTab = useAppStore((s) => s.setSidebarTab);
-  const hackingMode = useAppStore((s) => s.hackingMode);
   const t = useT();
 
   return (
     <div className="sidebar">
       <div className="sidebar-tabs">
-        {sidebarGroups.map((group, gi) => (
-          <div key={group.labelKey} className="sidebar-tab-group" title={t(group.labelKey)}>
-            {gi > 0 && <span className="sidebar-tab-separator" />}
-            {group.tabs.map((tab) => (
-              <button
-                key={tab.id}
-                className={`sidebar-tab-btn ${sidebarTab === tab.id ? "active" : ""}`}
-                onClick={() => setSidebarTab(tab.id)}
-                title={t(tab.labelKey)}
-                aria-label={t(tab.labelKey)}
-                style={tab.id === "hacking" && hackingMode ? {
-                  color: "#00ff41",
-                  filter: "drop-shadow(0 0 4px rgba(0,255,65,0.6))",
-                } : undefined}
-              >
-                <tab.icon size={16} />
-              </button>
-            ))}
-          </div>
+        {sidebarTabs.map((tab) => (
+          <button
+            key={tab.id}
+            className={`sidebar-tab-btn ${sidebarTab === tab.id ? "active" : ""}`}
+            onClick={() => setSidebarTab(tab.id)}
+            title={t(tab.labelKey)}
+            aria-label={t(tab.labelKey)}
+          >
+            <tab.icon size={16} />
+          </button>
         ))}
       </div>
-      <div className="sidebar-content" style={sidebarTab === "editor" ? { padding: 0, overflow: "hidden" } : undefined}>
+      <div className="sidebar-content">
         {sidebarTab === "history" && <HistoryPanel />}
         {sidebarTab === "snippets" && <SnippetsPanel />}
         {sidebarTab === "preview" && <FileExplorer />}
         {sidebarTab === "plugins" && <PluginsPanel />}
         {sidebarTab === "stats" && <StatsPanel />}
-        {sidebarTab === "ssh" && <Suspense fallback={<LazyFallback />}><SSHPanel /></Suspense>}
-        {sidebarTab === "sftp" && <Suspense fallback={<LazyFallback />}><SFTPPanel /></Suspense>}
-        {sidebarTab === "servermap" && <Suspense fallback={<LazyFallback />}><ServerMapPanel /></Suspense>}
-        {sidebarTab === "editor" && <EditorPanel />}
-        {sidebarTab === "debug" && <DebugPanel />}
-        {sidebarTab === "ai" && <AIPanel />}
-        {sidebarTab === "docs" && <SessionDocPanel />}
-        {sidebarTab === "hacking" && <Suspense fallback={<LazyFallback />}><HackingPanel /></Suspense>}
-        {sidebarTab === "infra" && <Suspense fallback={<LazyFallback />}><InfraMonitorPanel /></Suspense>}
-        {sidebarTab === "collab" && <Suspense fallback={<LazyFallback />}><CollabPanel /></Suspense>}
       </div>
       <div style={{ padding: "4px 12px", textAlign: "center", borderTop: "1px solid var(--border-color)", flexShrink: 0 }}>
         <span style={{ fontSize: 9, color: "var(--text-muted)", opacity: 0.5 }}>NovaShell v{APP_VERSION}</span>

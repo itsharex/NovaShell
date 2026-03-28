@@ -1,11 +1,13 @@
-import { useEffect, useRef, useState, useCallback, memo } from "react";
+import { useEffect, useRef, useState, useCallback, useMemo, memo } from "react";
 import { TitleBar } from "./components/TitleBar";
 import { TabBar } from "./components/TabBar";
 import { TerminalPanel } from "./components/TerminalPanel";
+import { PanelContainer } from "./components/PanelContainer";
 import { Sidebar } from "./components/Sidebar";
 import { StatusBar } from "./components/StatusBar";
 import { UpdateNotification } from "./components/UpdateNotification";
 import { useAppStore } from "./store/appStore";
+import type { PanelTabType } from "./store/appStore";
 import { AlertToast } from "./components/hacking/AlertToast";
 import { CommandPalette } from "./components/CommandPalette";
 import { I18nProvider } from "./i18n";
@@ -22,6 +24,11 @@ function App() {
   const sidebarOpen = useAppStore((s) => s.sidebarOpen);
   const focusMode = useAppStore((s) => s.focusMode);
   const hackingMode = useAppStore((s) => s.hackingMode);
+  const tabs = useAppStore((s) => s.tabs);
+  const activeTabId = useAppStore((s) => s.activeTabId);
+
+  const activeTab = useMemo(() => tabs.find((t) => t.id === activeTabId), [tabs, activeTabId]);
+  const activeIsTerminal = !activeTab || activeTab.type === "terminal" || !activeTab.type;
   const [sidebarWidth, setSidebarWidth] = useState(DEFAULT_SIDEBAR_WIDTH);
   const sidebarWidthRef = useRef(DEFAULT_SIDEBAR_WIDTH);
   sidebarWidthRef.current = sidebarWidth;
@@ -107,7 +114,12 @@ function App() {
         <div className="app-body">
           <div className="main-area">
             <MemoizedTabBar />
-            <MemoizedTerminalPanel />
+            <div style={{ flex: 1, display: activeIsTerminal ? "flex" : "none", flexDirection: "column", minHeight: 0 }}>
+              <MemoizedTerminalPanel />
+            </div>
+            {!activeIsTerminal && activeTab && (
+              <PanelContainer panelType={activeTab.type as PanelTabType} />
+            )}
           </div>
           <div
             ref={sidebarWrapperRef}

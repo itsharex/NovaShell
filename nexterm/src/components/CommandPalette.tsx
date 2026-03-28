@@ -6,7 +6,7 @@ import {
   BarChart3, X, Layout, Save,
 } from "lucide-react";
 import { useAppStore } from "../store/appStore";
-import type { SidebarTab } from "../store/appStore";
+import type { SidebarTab, PanelTabType } from "../store/appStore";
 import { useT } from "../i18n";
 
 interface PaletteItem {
@@ -26,6 +26,7 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
   const listRef = useRef<HTMLDivElement>(null);
 
   const setSidebarTab = useAppStore((s) => s.setSidebarTab);
+  const openPanelTab = useAppStore((s) => s.openPanelTab);
   const setTheme = useAppStore((s) => s.setTheme);
   const setLanguage = useAppStore((s) => s.setLanguage);
   const language = useAppStore((s) => s.language);
@@ -48,22 +49,34 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
     inputRef.current?.focus();
   }, []);
 
-  const openPanel = useCallback((tab: SidebarTab) => {
+  const openSidebarPanel = useCallback((tab: SidebarTab) => {
     setSidebarTab(tab);
     onClose();
   }, [setSidebarTab, onClose]);
+
+  const openPanel = useCallback((panelType: PanelTabType) => {
+    openPanelTab(panelType);
+    onClose();
+  }, [openPanelTab, onClose]);
 
   const allItems = useMemo((): PaletteItem[] => {
     const items: PaletteItem[] = [];
     const { history, snippets, sshConnections } = useAppStore.getState();
 
-    // Panels
-    const panels: { id: SidebarTab; label: string; icon: React.ReactNode }[] = [
+    // Sidebar panels (auxiliary)
+    const sidebarPanels: { id: SidebarTab; label: string; icon: React.ReactNode }[] = [
       { id: "history", label: t("sidebar.history"), icon: <History size={14} /> },
       { id: "snippets", label: t("sidebar.snippets"), icon: <Code2 size={14} /> },
       { id: "preview", label: t("sidebar.explorer"), icon: <FolderTree size={14} /> },
       { id: "plugins", label: t("sidebar.plugins"), icon: <Puzzle size={14} /> },
       { id: "stats", label: t("sidebar.stats"), icon: <BarChart3 size={14} /> },
+    ];
+    for (const p of sidebarPanels) {
+      items.push({ id: `panel-${p.id}`, label: p.label, description: "Open sidebar panel", icon: p.icon, category: "panel", action: () => openSidebarPanel(p.id) });
+    }
+
+    // Full panels (open as tabs)
+    const fullPanels: { id: PanelTabType; label: string; icon: React.ReactNode }[] = [
       { id: "ssh", label: t("sidebar.ssh"), icon: <Monitor size={14} /> },
       { id: "sftp", label: t("sidebar.sftpTransfer"), icon: <FolderSync size={14} /> },
       { id: "servermap", label: t("sidebar.serverMap"), icon: <Activity size={14} /> },
@@ -73,9 +86,10 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
       { id: "docs", label: t("sidebar.sessionDocs"), icon: <FileText size={14} /> },
       { id: "hacking", label: t("sidebar.hackingMode"), icon: <Shield size={14} /> },
       { id: "infra", label: t("sidebar.infraMonitor"), icon: <Gauge size={14} /> },
+      { id: "collab", label: t("sidebar.collab"), icon: <Activity size={14} /> },
     ];
-    for (const p of panels) {
-      items.push({ id: `panel-${p.id}`, label: p.label, description: "Open panel", icon: p.icon, category: "panel", action: () => openPanel(p.id) });
+    for (const p of fullPanels) {
+      items.push({ id: `panel-${p.id}`, label: p.label, description: "Open tab", icon: p.icon, category: "panel", action: () => openPanel(p.id) });
     }
 
     // Actions

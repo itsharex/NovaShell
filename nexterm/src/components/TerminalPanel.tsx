@@ -478,6 +478,11 @@ export function TerminalPanel() {
         liveWriteQueue += text;
         scheduleLiveWriteFlush();
       };
+      // Wrap pasted text with bracketed paste sequences so editors
+      // like nano/vim don't auto-indent each line
+      const pasteToLiveSession = (text: string) => {
+        writeToLiveSession(`\x1b[200~${text}\x1b[201~`);
+      };
 
       // Copy: Ctrl+C with selection copies to clipboard (otherwise sends SIGINT)
       terminal.attachCustomKeyEventHandler((e) => {
@@ -492,7 +497,7 @@ export function TerminalPanel() {
         if ((e.ctrlKey || e.metaKey) && e.key === "v") {
           e.preventDefault(); // Prevent browser native paste (avoids duplicate)
           navigator.clipboard.readText().then((text) => {
-            if (text) writeToLiveSession(text);
+            if (text) pasteToLiveSession(text);
           });
           return false;
         }
@@ -508,7 +513,7 @@ export function TerminalPanel() {
         if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === "V") {
           e.preventDefault(); // Prevent browser native paste (avoids duplicate)
           navigator.clipboard.readText().then((text) => {
-            if (text) writeToLiveSession(text);
+            if (text) pasteToLiveSession(text);
           });
           return false;
         }
@@ -523,7 +528,7 @@ export function TerminalPanel() {
           terminal.clearSelection();
         } else {
           navigator.clipboard.readText().then((text) => {
-            if (text) writeToLiveSession(text);
+            if (text) pasteToLiveSession(text);
           });
         }
       };

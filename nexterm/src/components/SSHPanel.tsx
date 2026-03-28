@@ -351,6 +351,13 @@ export function SSHPanel() {
       });
     };
 
+    // Wrap pasted text with bracketed paste sequences so editors
+    // like nano/vim don't auto-indent each line
+    const pasteToSession = (text: string) => {
+      writeQueue += `\x1b[200~${text}\x1b[201~`;
+      scheduleWriteFlush();
+    };
+
     // Copy/paste for SSH terminal — paste routes through writeQueue for optimal batching
     terminal.attachCustomKeyEventHandler((e) => {
       if (e.type !== "keydown") return true;
@@ -362,7 +369,7 @@ export function SSHPanel() {
       if ((e.ctrlKey || e.metaKey) && e.key === "v") {
         e.preventDefault();
         navigator.clipboard.readText().then((text) => {
-          if (text) { writeQueue += text; scheduleWriteFlush(); }
+          if (text) pasteToSession(text);
         });
         return false;
       }
@@ -376,7 +383,7 @@ export function SSHPanel() {
         terminal.clearSelection();
       } else {
         navigator.clipboard.readText().then((text) => {
-          if (text) { writeQueue += text; scheduleWriteFlush(); }
+          if (text) pasteToSession(text);
         });
       }
     };

@@ -3,10 +3,10 @@ import {
   HardDrive, Play, Plus, Trash2, Edit3, Check, X, Clock,
   Database, Server, FileArchive, Download,
   CheckCircle, XCircle, Activity, Calendar, Loader2,
-  Mail, Cloud, Settings, Bell, Upload,
+  Mail, Cloud, Settings, Bell, Upload, Send,
 } from "lucide-react";
 import { useAppStore } from "../store/appStore";
-import type { BackupJob, BackupRecord, BackupSmtpConfig } from "../store/appStore";
+import type { BackupJob, BackupRecord, BackupSmtpConfig, BackupTelegramConfig } from "../store/appStore";
 
 let invokeCache: typeof import("@tauri-apps/api/core").invoke | null = null;
 async function getInvoke() {
@@ -74,7 +74,7 @@ function StatusBadge({ status }: { status: string | null }) {
 interface JobFormData {
   name: string; connectionId: string; templateId: string; command: string;
   remotePath: string; downloadLocal: boolean; localPath: string; schedule: string;
-  notifyEmail: boolean; notifyOn: "always" | "failure" | "success";
+  notifyEmail: boolean; notifyTelegram: boolean; notifyOn: "always" | "failure" | "success";
   cloudEnabled: boolean; cloudCommand: string;
 }
 
@@ -82,7 +82,7 @@ const emptyForm: JobFormData = {
   name: "", connectionId: "", templateId: "", command: "",
   remotePath: "/tmp/backup-$(date +%Y%m%d_%H%M%S).tar.gz",
   downloadLocal: false, localPath: "", schedule: "",
-  notifyEmail: false, notifyOn: "always",
+  notifyEmail: false, notifyTelegram: false, notifyOn: "always",
   cloudEnabled: false, cloudCommand: "",
 };
 
@@ -154,19 +154,28 @@ function JobForm({ initial, onSave, onCancel }: { initial: JobFormData; onSave: 
       </div>
 
       {/* Notifications */}
-      <div style={{ padding: "12px 14px", background: "var(--bg-primary)", borderRadius: "var(--radius-sm)", border: "1px solid var(--border-color)" }}>
-        <label className="backup-form-checkbox" style={{ marginBottom: 8 }}>
-          <input type="checkbox" checked={form.notifyEmail} onChange={(e) => set("notifyEmail", e.target.checked)} style={{ accentColor: "var(--accent-primary)" }} />
-          <Mail size={12} /> Email notification on completion
-        </label>
-        {form.notifyEmail && (
-          <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
+      <div style={{ padding: "12px 14px", background: "var(--bg-primary)", borderRadius: "var(--radius-sm)", border: "1px solid var(--border-color)", display: "flex", flexDirection: "column", gap: 8 }}>
+        <div style={{ fontSize: 11, fontWeight: 600, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.04em" }}>
+          <Bell size={11} /> Notifications
+        </div>
+        <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
+          <label className="backup-form-checkbox">
+            <input type="checkbox" checked={form.notifyEmail} onChange={(e) => set("notifyEmail", e.target.checked)} style={{ accentColor: "var(--accent-primary)" }} />
+            <Mail size={12} /> Email
+          </label>
+          <label className="backup-form-checkbox">
+            <input type="checkbox" checked={form.notifyTelegram} onChange={(e) => set("notifyTelegram", e.target.checked)} style={{ accentColor: "var(--accent-primary)" }} />
+            <Send size={12} /> Telegram
+          </label>
+        </div>
+        {(form.notifyEmail || form.notifyTelegram) && (
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
             <select className="backup-form-input" style={{ width: "auto" }} value={form.notifyOn} onChange={(e) => set("notifyOn", e.target.value as JobFormData["notifyOn"])}>
-              <option value="always">Always</option>
+              <option value="always">Notify always</option>
               <option value="failure">On failure only</option>
               <option value="success">On success only</option>
             </select>
-            <div style={{ fontSize: 10, color: "var(--text-muted)", display: "flex", alignItems: "center" }}>Configure SMTP in Settings tab</div>
+            <div style={{ fontSize: 10, color: "var(--text-muted)" }}>Configure in Settings tab</div>
           </div>
         )}
       </div>
@@ -284,6 +293,20 @@ export function BackupPanel() {
       }
     }
 
+    // Post-backup: Telegram notification
+    const tg = useAppStore.getState().backupTelegram;
+    if (tg.enabled && job.notifyTelegram) {
+      const shouldNotify = job.notifyOn === "always" || (job.notifyOn === "failure" && status === "failed") || (job.notifyOn === "success" && status === "success");
+      if (shouldNotify) {
+        try {
+          const icon = status === "success" ? "\u2705" : "\u274C";
+          const msg = `${icon} *NovaShell Backup*\n*Job:* ${job.name}\n*Server:* ${conn.name} (${conn.host})\n*Status:* ${status.toUpperCase()}\n*Duration:* ${formatDuration(duration)}\n*Size:* ${sizeMB.toFixed(2)} MB\n*Time:* ${new Date().toISOString()}${error ? `\n*Error:* ${error.slice(0, 200)}` : ""}`;
+          const tgCmd = `curl -s -X POST "https://api.telegram.org/bot${tg.botToken}/sendMessage" -d chat_id="${tg.chatId}" -d parse_mode="Markdown" -d text="${msg.replace(/"/g, '\\"')}" 2>&1 || echo "Telegram send failed"`;
+          await invoke("ssh_exec", { ...sshArgs, command: tgCmd });
+        } catch { /* telegram failed, non-blocking */ }
+      }
+    }
+
     setRunningJobs((s) => { const n = new Set(s); n.delete(job.id); return n; });
   }, [sshConnections]);
 
@@ -310,7 +333,7 @@ export function BackupPanel() {
       name: data.name, connectionId: data.connectionId, templateId: data.templateId || null,
       command: data.command, remotePath: data.remotePath, downloadLocal: data.downloadLocal,
       localPath: data.localPath, schedule: data.schedule || null, enabled: true,
-      notifyEmail: data.notifyEmail, notifyOn: data.notifyOn,
+      notifyEmail: data.notifyEmail, notifyTelegram: data.notifyTelegram, notifyOn: data.notifyOn,
       cloudEnabled: data.cloudEnabled, cloudCommand: data.cloudCommand,
     };
     if (editingJob) updateBackupJob(editingJob.id, jobData);
@@ -330,9 +353,13 @@ export function BackupPanel() {
   const serverNames = useMemo(() => [...new Set(backupHistory.map((r) => r.serverName))], [backupHistory]);
   const scheduledJobs = useMemo(() => backupJobs.filter((j) => j.schedule && j.enabled), [backupJobs]);
 
-  // ── SMTP form state ──
+  // ── SMTP + Telegram form state ──
   const [smtpForm, setSmtpForm] = useState<BackupSmtpConfig>(backupSmtp);
+  const backupTelegram = useAppStore((s) => s.backupTelegram);
+  const { setBackupTelegram } = useAppStore.getState();
+  const [tgForm, setTgForm] = useState<BackupTelegramConfig>(backupTelegram);
   useEffect(() => { setSmtpForm(backupSmtp); }, [backupSmtp]);
+  useEffect(() => { setTgForm(backupTelegram); }, [backupTelegram]);
 
   return (
     <div className="backup-panel">
@@ -433,7 +460,7 @@ export function BackupPanel() {
             {showForm && (
               <div style={{ marginBottom: 14 }}>
                 <JobForm
-                  initial={editingJob ? { name: editingJob.name, connectionId: editingJob.connectionId, templateId: editingJob.templateId || "", command: editingJob.command, remotePath: editingJob.remotePath, downloadLocal: editingJob.downloadLocal, localPath: editingJob.localPath, schedule: editingJob.schedule || "", notifyEmail: editingJob.notifyEmail, notifyOn: editingJob.notifyOn, cloudEnabled: editingJob.cloudEnabled, cloudCommand: editingJob.cloudCommand } : emptyForm}
+                  initial={editingJob ? { name: editingJob.name, connectionId: editingJob.connectionId, templateId: editingJob.templateId || "", command: editingJob.command, remotePath: editingJob.remotePath, downloadLocal: editingJob.downloadLocal, localPath: editingJob.localPath, schedule: editingJob.schedule || "", notifyEmail: editingJob.notifyEmail, notifyTelegram: editingJob.notifyTelegram, notifyOn: editingJob.notifyOn, cloudEnabled: editingJob.cloudEnabled, cloudCommand: editingJob.cloudCommand } : emptyForm}
                   onSave={handleSaveJob}
                   onCancel={() => { setShowForm(false); setEditingJob(null); }}
                 />
@@ -453,6 +480,7 @@ export function BackupPanel() {
                         <div className="backup-job-name">
                           {job.name}
                           {job.notifyEmail && <Mail size={11} style={{ color: "var(--accent-primary)", marginLeft: 6 }} />}
+                          {job.notifyTelegram && <Send size={11} style={{ color: "#2AABEE", marginLeft: 4 }} />}
                           {job.cloudEnabled && <Cloud size={11} style={{ color: "var(--accent-secondary)", marginLeft: 4 }} />}
                         </div>
                         <div className="backup-job-meta">
@@ -604,6 +632,38 @@ export function BackupPanel() {
               <div className="backup-form-actions">
                 <button className="infra-action-btn primary" onClick={() => setBackupSmtp(smtpForm)}>
                   <Check size={14} /> Save SMTP Settings
+                </button>
+              </div>
+            </div>
+
+            <div className="backup-section-title" style={{ marginTop: 24 }}><Send size={14} /> Telegram Notifications</div>
+            <div className="backup-form" style={{ borderColor: "var(--border-color)" }}>
+              <label className="backup-form-checkbox">
+                <input type="checkbox" checked={tgForm.enabled} onChange={(e) => setTgForm((f) => ({ ...f, enabled: e.target.checked }))} style={{ accentColor: "#2AABEE" }} />
+                <Send size={12} /> Enable Telegram notifications
+              </label>
+
+              {tgForm.enabled && (
+                <>
+                  <div className="backup-form-grid">
+                    <div>
+                      <label className="backup-form-label">Bot Token</label>
+                      <input className="backup-form-input" value={tgForm.botToken} onChange={(e) => setTgForm((f) => ({ ...f, botToken: e.target.value }))} placeholder="123456789:ABCdefGHIjklMNOpqrSTUvwx" />
+                    </div>
+                    <div>
+                      <label className="backup-form-label">Chat ID</label>
+                      <input className="backup-form-input" value={tgForm.chatId} onChange={(e) => setTgForm((f) => ({ ...f, chatId: e.target.value }))} placeholder="-1001234567890" />
+                    </div>
+                  </div>
+                  <div style={{ fontSize: 11, color: "var(--text-muted)", padding: "8px 10px", background: "var(--bg-primary)", borderRadius: "var(--radius-sm)", lineHeight: 1.5 }}>
+                    <strong>Setup:</strong> 1) Create a bot via @BotFather on Telegram. 2) Copy the bot token. 3) Add the bot to your group/channel. 4) Get the chat ID (send a message, then visit api.telegram.org/bot&lt;TOKEN&gt;/getUpdates).
+                  </div>
+                </>
+              )}
+
+              <div className="backup-form-actions">
+                <button className="infra-action-btn primary" onClick={() => setBackupTelegram(tgForm)} style={{ background: "#2AABEE", borderColor: "#2AABEE" }}>
+                  <Check size={14} /> Save Telegram Settings
                 </button>
               </div>
             </div>

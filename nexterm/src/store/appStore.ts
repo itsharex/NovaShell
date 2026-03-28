@@ -41,6 +41,7 @@ export interface BackupJob {
   lastStatus: "success" | "failed" | null;
   // Notifications
   notifyEmail: boolean;
+  notifyTelegram: boolean;
   notifyOn: "always" | "failure" | "success";
   // Cloud upload
   cloudEnabled: boolean;
@@ -56,6 +57,12 @@ export interface BackupSmtpConfig {
   fromAddress: string;
   toAddress: string;
   useTls: boolean;
+}
+
+export interface BackupTelegramConfig {
+  enabled: boolean;
+  botToken: string;
+  chatId: string;
 }
 
 export interface BackupRecord {
@@ -408,6 +415,7 @@ interface PersistedConfig {
   backupJobs?: BackupJob[];
   backupHistory?: BackupRecord[];
   backupSmtp?: BackupSmtpConfig;
+  backupTelegram?: BackupTelegramConfig;
 }
 
 let configLoaded = false;
@@ -443,6 +451,7 @@ function buildPersistedConfig(): PersistedConfig {
     backupJobs: s.backupJobs.length > 0 ? s.backupJobs : undefined,
     backupHistory: s.backupHistory.length > 0 ? s.backupHistory.slice(0, 200) : undefined,
     backupSmtp: s.backupSmtp.enabled ? s.backupSmtp : undefined,
+    backupTelegram: s.backupTelegram.enabled ? s.backupTelegram : undefined,
   };
 }
 
@@ -702,12 +711,14 @@ interface AppState {
   backupJobs: BackupJob[];
   backupHistory: BackupRecord[];
   backupSmtp: BackupSmtpConfig;
+  backupTelegram: BackupTelegramConfig;
   addBackupJob: (job: Omit<BackupJob, "id" | "lastRun" | "lastStatus">) => void;
   updateBackupJob: (id: string, updates: Partial<BackupJob>) => void;
   removeBackupJob: (id: string) => void;
   addBackupRecord: (record: Omit<BackupRecord, "id">) => void;
   clearBackupHistory: () => void;
   setBackupSmtp: (config: Partial<BackupSmtpConfig>) => void;
+  setBackupTelegram: (config: Partial<BackupTelegramConfig>) => void;
 
   // Hydration from config file
   _hydrateFromConfig: (config: PersistedConfig) => void;
@@ -1687,6 +1698,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   backupJobs: [],
   backupHistory: [],
   backupSmtp: { enabled: false, host: "smtp.gmail.com", port: 587, username: "", password: "", fromAddress: "", toAddress: "", useTls: true },
+  backupTelegram: { enabled: false, botToken: "", chatId: "" },
 
   addBackupJob: (job) => {
     set((s) => ({
@@ -1714,6 +1726,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
   clearBackupHistory: () => { set({ backupHistory: [] }); scheduleSave(); },
   setBackupSmtp: (config) => { set((s) => ({ backupSmtp: { ...s.backupSmtp, ...config } })); scheduleSave(); },
+  setBackupTelegram: (config) => { set((s) => ({ backupTelegram: { ...s.backupTelegram, ...config } })); scheduleSave(); },
 
   _hydrateFromConfig: (config) => {
     const updates: Partial<AppState> = {};
@@ -1731,6 +1744,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (config.backupJobs?.length) updates.backupJobs = config.backupJobs;
     if (config.backupHistory?.length) updates.backupHistory = config.backupHistory;
     if (config.backupSmtp?.enabled) updates.backupSmtp = config.backupSmtp;
+    if (config.backupTelegram?.enabled) updates.backupTelegram = config.backupTelegram;
     if (config.sshConnections && config.sshConnections.length > 0) {
       updates.sshConnections = config.sshConnections.map((c) => ({
         ...c,

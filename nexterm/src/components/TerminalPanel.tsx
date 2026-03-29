@@ -680,20 +680,27 @@ export function TerminalPanel() {
           if ((data === "\r" || data === "\n") && ptyInputBuffer.trim().startsWith("?") && ptyInputBuffer.trim().length > 2) {
             const query = ptyInputBuffer.trim().slice(1).trim();
             const bufLen = ptyInputBuffer.length;
-            // Erase the "? text" from shell input using backspaces (cross-platform)
             writeToSession("\x7f".repeat(bufLen));
             ptyInputBuffer = "";
             setShowAutocomplete(false);
             (async () => {
               try {
                 const inv = await getTauriCore();
+                const AI_MODEL = "deepseek-coder:6.7b";
+                // Auto-pull model if not available
+                try {
+                  const models = await inv.invoke<Array<{ name: string }>>("ai_list_models");
+                  if (!models.some((m) => m.name.startsWith(AI_MODEL.split(":")[0]))) {
+                    terminal.write("\r\n\x1b[33m[AI] Downloading model (first time only)...\x1b[0m\r\n");
+                    await inv.invoke("ai_pull_model", { model: AI_MODEL });
+                  }
+                } catch { /* Ollama not running or list failed */ }
                 const response = await inv.invoke<string>("ai_chat", {
-                  model: "deepseek-coder:6.7b",
+                  model: AI_MODEL,
                   systemPrompt: "Output ONLY the shell command. No explanation, no markdown, no backticks. One line.",
                   messages: [{ role: "user", content: query }],
                 });
                 const cmd = (response || "").trim().replace(/^```[\w]*\n?/, "").replace(/\n?```$/, "").trim().split("\n")[0];
-                // Only inject if user hasn't started typing something new
                 if (cmd && ptyInputBuffer.length === 0) {
                   writeToSession(cmd);
                   ptyInputBuffer = cmd;

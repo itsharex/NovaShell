@@ -257,7 +257,7 @@ export const UpdateNotification = memo(function UpdateNotification() {
 
   // Auto-check on startup (30s delay to not block boot)
   useEffect(() => {
-    const timer = setTimeout(() => checkForUpdates(true), 30000);
+    const timer = setTimeout(() => checkForUpdates(true), 5000);
     const interval = setInterval(() => checkForUpdates(true), 4 * 60 * 60 * 1000);
     return () => {
       clearTimeout(timer);

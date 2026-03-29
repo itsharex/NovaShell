@@ -683,29 +683,44 @@ export function TerminalPanel() {
             writeToSession("\x7f".repeat(bufLen));
             ptyInputBuffer = "";
             setShowAutocomplete(false);
+            // Helper: show status in shell prompt (as comment), then clear it
+            const showStatus = (msg: string) => { writeToSession(msg); };
+            const clearStatus = (len: number) => { writeToSession("\x7f".repeat(len)); };
+
             (async () => {
+              const statusMsg = "# [AI] generating...";
               try {
                 const inv = await getTauriCore();
                 const AI_MODEL = "deepseek-coder:6.7b";
                 // Auto-pull model if not available
+                let needsPull = false;
                 try {
                   const models = await inv.invoke<Array<{ name: string }>>("ai_list_models");
-                  if (!models.some((m) => m.name.startsWith(AI_MODEL.split(":")[0]))) {
-                    terminal.write("\r\n\x1b[33m[AI] Downloading model (first time only)...\x1b[0m\r\n");
-                    await inv.invoke("ai_pull_model", { model: AI_MODEL });
-                  }
-                } catch { /* Ollama not running or list failed */ }
+                  needsPull = !models.some((m) => m.name.startsWith(AI_MODEL.split(":")[0]));
+                } catch { /* Ollama not running */ }
+
+                if (needsPull) {
+                  const dlMsg = "# [AI] downloading model (first time)...";
+                  showStatus(dlMsg);
+                  try { await inv.invoke("ai_pull_model", { model: AI_MODEL }); } catch { /* pull failed */ }
+                  clearStatus(dlMsg.length);
+                }
+
+                showStatus(statusMsg);
                 const response = await inv.invoke<string>("ai_chat", {
                   model: AI_MODEL,
                   systemPrompt: "Output ONLY the shell command. No explanation, no markdown, no backticks. One line.",
                   messages: [{ role: "user", content: query }],
                 });
+                clearStatus(statusMsg.length);
                 const cmd = (response || "").trim().replace(/^```[\w]*\n?/, "").replace(/\n?```$/, "").trim().split("\n")[0];
                 if (cmd && ptyInputBuffer.length === 0) {
                   writeToSession(cmd);
                   ptyInputBuffer = cmd;
                 }
-              } catch { /* Ollama unavailable */ }
+              } catch {
+                clearStatus(statusMsg.length);
+              }
             })();
             return;
           }

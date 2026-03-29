@@ -444,7 +444,7 @@ export function SSHPanel() {
             (async () => {
               try {
                 const response = await invoke<string>("ai_chat", {
-                  model: "llama3.2",
+                  model: "deepseek-coder:6.7b",
                   systemPrompt: "Output ONLY the shell command. No explanation, no markdown, no backticks. One line.",
                   messages: [{ role: "user", content: query }],
                 });

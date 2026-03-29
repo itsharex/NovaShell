@@ -436,9 +436,10 @@ export function SSHPanel() {
           // ── AI Natural Language → Command (prefix: ?) ──
           if ((data === "\r" || data === "\n") && sshInputBuffer.trim().startsWith("?") && sshInputBuffer.trim().length > 2) {
             const query = sshInputBuffer.trim().slice(1).trim();
+            const bufLen = sshInputBuffer.length;
+            // Erase the "? text" from shell input using backspaces (cross-platform)
+            writeQueue += "\x7f".repeat(bufLen);
             sshInputBuffer = "";
-            // Send Enter — the "? text" runs harmlessly on the remote shell
-            writeQueue += "\r";
             scheduleWriteFlush();
             (async () => {
               try {

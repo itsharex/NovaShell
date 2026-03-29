@@ -679,11 +679,11 @@ export function TerminalPanel() {
           // ── AI Natural Language → Command (prefix: ?) ──
           if ((data === "\r" || data === "\n") && ptyInputBuffer.trim().startsWith("?") && ptyInputBuffer.trim().length > 2) {
             const query = ptyInputBuffer.trim().slice(1).trim();
+            const bufLen = ptyInputBuffer.length;
+            // Erase the "? text" from shell input using backspaces (cross-platform)
+            writeToSession("\x7f".repeat(bufLen));
             ptyInputBuffer = "";
             setShowAutocomplete(false);
-            // Send Enter — the "? text" runs harmlessly (command not found)
-            // This gives us a fresh prompt to type the AI command into
-            writeToSession("\r");
             (async () => {
               try {
                 const inv = await getTauriCore();
@@ -694,11 +694,10 @@ export function TerminalPanel() {
                 });
                 const cmd = (response || "").trim().replace(/^```[\w]*\n?/, "").replace(/\n?```$/, "").trim().split("\n")[0];
                 if (cmd) {
-                  // Type the command at the fresh prompt (no Enter — user reviews)
                   writeToSession(cmd);
                   ptyInputBuffer = cmd;
                 }
-              } catch { /* Ollama unavailable — silently fail, user sees fresh prompt */ }
+              } catch { /* Ollama unavailable */ }
             })();
             return;
           }

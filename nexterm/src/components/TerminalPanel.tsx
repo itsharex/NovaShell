@@ -707,9 +707,11 @@ export function TerminalPanel() {
                 }
 
                 showStatus(statusMsg);
+                const osName = navigator.platform.startsWith("Win") ? "Windows" : navigator.platform.includes("Mac") ? "macOS" : "Linux";
+                const shellName = (tab?.shellType || "").split(/[/\\]/).pop() || "shell";
                 const response = await inv.invoke<string>("ai_chat", {
                   model: AI_MODEL,
-                  systemPrompt: "Output ONLY the shell command. No explanation, no markdown, no backticks. One line.",
+                  systemPrompt: `Output ONLY the shell command for ${osName} using ${shellName}. No explanation, no markdown, no backticks. One line.`,
                   messages: [{ role: "user", content: query }],
                 });
                 clearStatus(statusMsg.length);

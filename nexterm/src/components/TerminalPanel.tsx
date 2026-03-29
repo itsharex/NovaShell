@@ -41,9 +41,9 @@ function queueDebugParse(data: string, source: string) {
   if (!debugBuffers.has(source) && debugBuffers.size >= MAX_DEBUG_SOURCES) return;
   // Append to per-source buffer (handles line splits across chunks)
   const existing = debugBuffers.get(source) || "";
-  // Limit buffer size per source to prevent memory issues (256KB)
+  // Limit buffer size per source to prevent memory issues (64KB)
   const combined = existing + data;
-  debugBuffers.set(source, combined.length > 262144 ? combined.slice(-131072) : combined);
+  debugBuffers.set(source, combined.length > 65536 ? combined.slice(-32768) : combined);
   if (!debugParseScheduled) {
     debugParseScheduled = true;
     setTimeout(flushDebugParse, 200);
@@ -425,9 +425,9 @@ export function TerminalPanel() {
         cursorStyle: "block",
         cursorWidth: 2,
         theme: colors,
-        allowTransparency: true,
+        allowTransparency: false,
         allowProposedApi: true,
-        scrollback: 1500,
+        scrollback: 1000,
         tabStopWidth: 4,
         rightClickSelectsWord: true,
       });
@@ -711,11 +711,19 @@ export function TerminalPanel() {
                 const shellName = (tab?.shellType || "").split(/[/\\]/).pop() || "shell";
                 const response = await inv.invoke<string>("ai_chat", {
                   model: AI_MODEL,
-                  systemPrompt: `Output ONLY the shell command for ${osName} using ${shellName}. No explanation, no markdown, no backticks. One line.`,
+                  systemPrompt: `You are a command translator. The user describes what they want to do and you reply with EXACTLY ONE shell command. OS: ${osName}. Shell: ${shellName}. Rules: reply with ONLY the command, nothing else. No explanations, no descriptions, no markdown, no backticks, no quotes. Just the raw command.`,
                   messages: [{ role: "user", content: query }],
                 });
                 clearStatus(statusMsg.length);
-                const cmd = (response || "").trim().replace(/^```[\w]*\n?/, "").replace(/\n?```$/, "").trim().split("\n")[0];
+                // Extract just the command — strip markdown, explanations, pick first code-like line
+                let cmd = (response || "").trim()
+                  .replace(/^```[\w]*\n?/gm, "").replace(/\n?```$/gm, "") // strip code fences
+                  .split("\n")
+                  .map((l: string) => l.trim())
+                  .filter((l: string) => l && !l.startsWith("#") && !l.startsWith("//") && !l.startsWith("El ") && !l.startsWith("The ") && !l.startsWith("This ") && !l.startsWith("Use ") && !l.startsWith("Note") && !l.startsWith("*") && !l.startsWith("-") && l.length < 200)
+                  [0] || "";
+                // Strip leading "$ " or "> " prompt markers
+                cmd = cmd.replace(/^[$>]\s+/, "");
                 if (cmd && ptyInputBuffer.length === 0) {
                   writeToSession(cmd);
                   ptyInputBuffer = cmd;

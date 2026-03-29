@@ -188,7 +188,7 @@ impl SftpSession {
             let mut local_file = std::fs::File::create(&local_path_owned)
                 .map_err(|e| format!("Cannot create local file {}: {}", local_path_owned, e))?;
 
-            let mut buf = [0u8; 262144];
+            let mut buf = [0u8; 65536];
             let mut total: u64 = 0;
 
             let result: Result<u64, String> = (|| {
@@ -228,7 +228,7 @@ impl SftpSession {
                 .create(Path::new(&normalized_remote))
                 .map_err(|e| format!("Cannot create remote file {}: {}", normalized_remote, e))?;
 
-            let mut buf = [0u8; 262144];
+            let mut buf = [0u8; 65536];
             let mut total: u64 = 0;
 
             loop {
@@ -358,6 +358,11 @@ impl SftpSession {
 
     /// Recursively download a remote directory to a local path
     pub fn download_dir(&self, remote_dir: &str, local_dir: &str) -> Result<u64, String> {
+        self.download_dir_impl(remote_dir, local_dir, 0)
+    }
+
+    fn download_dir_impl(&self, remote_dir: &str, local_dir: &str, depth: u16) -> Result<u64, String> {
+        if depth > 50 { return Err("Maximum directory depth exceeded (possible symlink loop)".to_string()); }
         let entries = self.list_dir(remote_dir)?;
 
         std::fs::create_dir_all(local_dir)
@@ -369,7 +374,7 @@ impl SftpSession {
             let local_str = local_path.to_string_lossy().to_string();
 
             if entry.is_dir {
-                total += self.download_dir(&entry.path, &local_str)?;
+                total += self.download_dir_impl(&entry.path, &local_str, depth + 1)?;
             } else {
                 total += self.download_file(&entry.path, &local_str)?;
             }
@@ -379,6 +384,11 @@ impl SftpSession {
 
     /// Recursively upload a local directory to a remote path
     pub fn upload_dir(&self, local_dir: &str, remote_dir: &str) -> Result<u64, String> {
+        self.upload_dir_impl(local_dir, remote_dir, 0)
+    }
+
+    fn upload_dir_impl(&self, local_dir: &str, remote_dir: &str, depth: u16) -> Result<u64, String> {
+        if depth > 50 { return Err("Maximum directory depth exceeded (possible symlink loop)".to_string()); }
         let normalized_remote = normalize_remote_path(remote_dir);
         // Create remote directory (ignore error if it already exists)
         let _ = self.mkdir(&normalized_remote);
@@ -395,7 +405,7 @@ impl SftpSession {
             let remote_path = format!("{}/{}", normalized_remote, name);
 
             if metadata.is_dir() {
-                total += self.upload_dir(&local_path, &remote_path)?;
+                total += self.upload_dir_impl(&local_path, &remote_path, depth + 1)?;
             } else {
                 total += self.upload_file(&local_path, &remote_path)?;
             }

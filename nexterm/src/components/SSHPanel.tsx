@@ -311,9 +311,9 @@ export function SSHPanel() {
       cursorStyle: "block",
       cursorWidth: 2,
       theme: colors,
-      allowTransparency: true,
+      allowTransparency: false,
       allowProposedApi: true,
-      scrollback: 1500,
+      scrollback: 1000,
       tabStopWidth: 4,
       rightClickSelectsWord: true,
     });

@@ -378,9 +378,14 @@ async fn ssh_connect(
         )
     }).await.map_err(|e| format!("Task join error: {}", e))??;
 
-    state.ssh_sessions.write()
-        .map_err(|e| format!("SSH session lock error: {}", e))?
-        .insert(session_id.clone(), session);
+    {
+        let mut sessions = state.ssh_sessions.write()
+            .map_err(|e| format!("SSH session lock error: {}", e))?;
+        if sessions.len() >= 10 {
+            return Err("Maximum number of SSH sessions reached (10)".to_string());
+        }
+        sessions.insert(session_id.clone(), session);
+    }
 
     Ok(session_id)
 }

@@ -54,7 +54,7 @@ pub struct SshSession {
     _reader_thread: Option<JoinHandle<()>>,
     _flusher_thread: Option<JoinHandle<()>>,
     running: Arc<AtomicBool>,
-    write_tx: mpsc::Sender<Vec<u8>>,
+    write_tx: mpsc::SyncSender<Vec<u8>>,
 }
 
 impl Drop for SshSession {
@@ -177,7 +177,7 @@ impl SshSession {
         let sid = session_id.to_string();
 
         // Write queue — IPC pushes here (instant), reader thread processes (no lock contention)
-        let (write_tx, write_rx) = mpsc::channel::<Vec<u8>>();
+        let (write_tx, write_rx) = mpsc::sync_channel::<Vec<u8>>(256);
 
         // Shared batch buffer + condvar for efficient batching (mirrors PTY pattern)
         let batch: Arc<Mutex<String>> = Arc::new(Mutex::new(String::new()));
@@ -316,8 +316,8 @@ impl SshSession {
                             }
                             last_keepalive = Instant::now();
                         }
-                        // Brief sleep on idle to reduce CPU usage (prevents 20 wakeups/sec)
-                        std::thread::sleep(Duration::from_millis(5));
+                        // Progressive sleep on idle to reduce CPU usage
+                        std::thread::sleep(Duration::from_millis(10));
                     }
                     Err(ref e) if e.kind() == std::io::ErrorKind::ConnectionReset
                         || e.kind() == std::io::ErrorKind::BrokenPipe

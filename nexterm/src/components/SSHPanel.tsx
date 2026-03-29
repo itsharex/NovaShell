@@ -449,7 +449,8 @@ export function SSHPanel() {
                   messages: [{ role: "user", content: query }],
                 });
                 const cmd = (response || "").trim().replace(/^```[\w]*\n?/, "").replace(/\n?```$/, "").trim().split("\n")[0];
-                if (cmd) {
+                // Only inject if user hasn't started typing something new
+                if (cmd && sshInputBuffer.length === 0) {
                   writeQueue += cmd;
                   sshInputBuffer = cmd;
                   scheduleWriteFlush();

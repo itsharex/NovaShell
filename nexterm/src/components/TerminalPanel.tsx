@@ -693,7 +693,8 @@ export function TerminalPanel() {
                   messages: [{ role: "user", content: query }],
                 });
                 const cmd = (response || "").trim().replace(/^```[\w]*\n?/, "").replace(/\n?```$/, "").trim().split("\n")[0];
-                if (cmd) {
+                // Only inject if user hasn't started typing something new
+                if (cmd && ptyInputBuffer.length === 0) {
                   writeToSession(cmd);
                   ptyInputBuffer = cmd;
                 }

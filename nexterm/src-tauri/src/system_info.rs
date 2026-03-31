@@ -19,7 +19,9 @@ pub struct SystemStats {
 
 // Refresh process count only every 30th call (~30 min at 60s intervals)
 // to avoid the heavy enumerate-all-processes syscall on every poll
-static CALL_COUNTER: AtomicUsize = AtomicUsize::new(0);
+// Start at 1 so first call does NOT trigger the expensive refresh_processes()
+// Process count will be refreshed on call 30 (~30 minutes in)
+static CALL_COUNTER: AtomicUsize = AtomicUsize::new(1);
 static CACHED_PROCESS_COUNT: AtomicUsize = AtomicUsize::new(0);
 // Cache static system properties — they never change at runtime
 static CACHED_HOSTNAME: OnceLock<String> = OnceLock::new();
@@ -38,7 +40,8 @@ pub fn init_system(sys: &mut System) {
     sys.refresh_cpu_usage();
     sys.refresh_memory();
     // Do NOT sleep here — it blocks the entire app startup.
-    // Mark that we need a fresh read on first get_stats call.
+    // Do NOT call refresh_processes() — it's 50-200ms on Windows.
+    // Process count will be 0 until the background refresh kicks in.
     CACHED_CPU_USAGE.store(0f32.to_bits(), Ordering::Relaxed);
     // Leave LAST_CPU_REFRESH as None so the first get_stats always refreshes
 }

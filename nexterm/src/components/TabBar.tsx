@@ -5,7 +5,7 @@ import {
   Edit3, Bug, Sparkles, FileText, Shield, Gauge, LayoutGrid, HardDrive,
 } from "lucide-react";
 import { useAppStore } from "../store/appStore";
-import type { PanelTabType } from "../store/appStore";
+import type { PanelTabType, SSHConnection } from "../store/appStore";
 import { useT } from "../i18n";
 
 const shellIcons: Record<string, string> = {
@@ -93,6 +93,8 @@ export function TabBar() {
   const closeTab = useAppStore((s) => s.closeTab);
   const setActiveTab = useAppStore((s) => s.setActiveTab);
   const collabSessions = useAppStore((s) => s.collabSessions);
+  const sshConnections = useAppStore((s) => s.sshConnections);
+  const addSSHTab = useAppStore((s) => s.addSSHTab);
   const [showToolsMenu, setShowToolsMenu] = useState(false);
   const [menuPos, setMenuPos] = useState({ top: 0, left: 0 });
   const [availableShells, setAvailableShells] = useState<ShellInfo[]>([]);
@@ -152,6 +154,7 @@ export function TabBar() {
               // Terminal tab → use shell icon
               const s = tab.shellType.toLowerCase();
               if (s === "collab-guest") return <Users size={10} style={{ color: "#3fb950" }} />;
+              if (tab.sshConnectionId) return <Monitor size={10} style={{ color: "#58a6ff" }} />;
               if (s.includes("powershell")) return "PS";
               if (s.includes("cmd")) return ">_";
               if (s.includes("zsh")) return "%";
@@ -232,6 +235,38 @@ export function TabBar() {
               })}
             </div>
           </div>
+
+          {/* SSH Servers — connected servers get "New Terminal" buttons */}
+          {sshConnections.length > 0 && (
+            <div className="new-tab-menu-group">
+              <div className="new-tab-menu-group-header">
+                <Monitor size={12} />
+                <span>SSH Servers</span>
+              </div>
+              <div className="new-tab-menu-items">
+                {sshConnections.map((conn: SSHConnection) => (
+                  <button
+                    key={conn.id}
+                    className="new-tab-menu-item"
+                    onClick={() => { addSSHTab(conn.id); setShowToolsMenu(false); }}
+                    style={{ opacity: conn.status === "connected" ? 1 : 0.5 }}
+                  >
+                    <span className="new-tab-menu-item-icon">
+                      <span style={{
+                        width: 7, height: 7, borderRadius: "50%", display: "inline-block",
+                        background: conn.status === "connected" ? "#3fb950" : conn.status === "connecting" ? "#d29922" : "#484f58",
+                        boxShadow: conn.status === "connected" ? "0 0 4px #3fb950" : "none",
+                      }} />
+                    </span>
+                    <div className="new-tab-menu-item-text">
+                      <span className="new-tab-menu-item-label">{conn.name}</span>
+                      <span className="new-tab-menu-item-desc">{conn.username}@{conn.host}:{conn.port}</span>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Panel groups */}
           {menuGroups.map((group) => (

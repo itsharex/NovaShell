@@ -211,6 +211,7 @@ export const es: Record<string, any> = {
     clickToAdd: "Haz clic en + para agregar una.",
     keychainSavedTitle: "Contrasena guardada en el llavero del sistema",
     openTerminal: "Abrir Terminal",
+    newTab: "Nueva Pestana Terminal",
   },
 
   // Panel SFTP

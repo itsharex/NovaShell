@@ -14,6 +14,7 @@ import {
   Shield,
   ShieldCheck,
   Upload,
+  SquarePlus,
 } from "lucide-react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
@@ -127,6 +128,7 @@ export function SSHPanel() {
   const addSSHConnection = useAppStore((s) => s.addSSHConnection);
   const updateSSHConnection = useAppStore((s) => s.updateSSHConnection);
   const removeSSHConnection = useAppStore((s) => s.removeSSHConnection);
+  const addSSHTab = useAppStore((s) => s.addSSHTab);
   const theme = useAppStore((s) => s.theme);
   const customTheme = useAppStore((s) => s.customTheme);
   const t = useT();
@@ -1023,6 +1025,13 @@ export function SSHPanel() {
                     style={{ ...btnStyle, flex: 1, justifyContent: "center", background: "var(--accent-secondary)", color: "white", padding: "4px 8px" }}
                   >
                     <Play size={12} /> {t("ssh.openTerminal")}
+                  </button>
+                  <button
+                    onClick={() => addSSHTab(conn.id)}
+                    title={t("ssh.newTab")}
+                    style={{ ...btnStyle, background: "var(--accent-primary)", color: "white", padding: "4px 8px" }}
+                  >
+                    <SquarePlus size={12} />
                   </button>
                   <button
                     onClick={() => handleDisconnect(conn)}

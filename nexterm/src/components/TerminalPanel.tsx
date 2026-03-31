@@ -596,6 +596,69 @@ export function TerminalPanel() {
           return; // Skip normal PTY initialization
         }
 
+        // ──── SSH Terminal Tab Mode ────
+        // If this tab has sshConnectionId, connect directly to that SSH server
+        if (tab?.sshConnectionId) {
+          const store = useAppStore.getState();
+          const conn = store.sshConnections.find((c) => c.id === tab.sshConnectionId);
+          if (conn) {
+            terminal.write(`\x1b[36m[NovaShell]\x1b[0m Connecting to \x1b[1m${conn.name}\x1b[0m (${conn.host})...\r\n`);
+            try {
+              const credentials = await getConnectionCredentials(conn);
+              if (!credentials) {
+                terminal.write(`\x1b[31m[NovaShell]\x1b[0m No credentials for ${conn.name}. Connect via SSH panel first.\r\n`);
+                return;
+              }
+              const sshSessionId = await navigateToServer(conn, "~", credentials);
+
+              const tabName = tab.title || tabId;
+              const unlistenData = await listen<string>(`ssh-data-${sshSessionId}`, (event) => {
+                terminal.write(event.payload);
+                queueDebugParse(event.payload, tabName);
+              });
+              unlisteners.push(unlistenData);
+
+              const unlistenExit = await listen(`ssh-exit-${sshSessionId}`, () => {
+                terminal.write(`\r\n\x1b[31m[NovaShell]\x1b[0m SSH connection to ${conn.name} closed.\r\n`);
+              });
+              unlisteners.push(unlistenExit);
+
+              const unlistenError = await listen<string>(`ssh-error-${sshSessionId}`, (event) => {
+                terminal.write(`\r\n\x1b[31m[NovaShell]\x1b[0m SSH Error: ${event.payload}\r\n`);
+              });
+              unlisteners.push(unlistenError);
+
+              // Wire input → SSH write
+              const inputDisposable = terminal.onData((data) => {
+                invoke("ssh_write", { sessionId: sshSessionId, data }).catch(() => {});
+              });
+              disposables.push(inputDisposable);
+
+              sessionId = sshSessionId;
+              liveSession.id = sshSessionId;
+              liveSession.type = "ssh";
+              updateTab(tabId, { sessionId: sshSessionId });
+
+              terminalsRef.current.set(tabId, {
+                terminal, fitAddon, searchAddon,
+                sessionId: sshSessionId,
+                sessionType: "ssh",
+                disposables, unlisteners,
+              });
+              terminal.write(`\x1b[32m[NovaShell]\x1b[0m Connected to ${conn.name}\r\n`);
+              return; // Skip normal PTY initialization
+            } catch (e) {
+              terminal.write(`\r\n\x1b[31m[NovaShell]\x1b[0m SSH connection failed: ${e}\r\n`);
+              return;
+            }
+          } else {
+            // Connection was deleted — show error instead of silently opening local shell
+            terminal.write(`\x1b[31m[NovaShell]\x1b[0m SSH connection no longer exists. It may have been deleted.\r\n`);
+            terminal.write(`\x1b[90mClose this tab and reconnect from the SSH panel.\x1b[0m\r\n`);
+            return;
+          }
+        }
+
         // ──── Normal PTY Mode ────
         // shellType now stores the full path from get_available_shells
         const defaultShell = navigator.platform.startsWith("Win") ? "powershell.exe" : "/bin/bash";

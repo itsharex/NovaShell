@@ -148,6 +148,7 @@ export interface Tab {
   type: "terminal" | PanelTabType;
   shellType: string;
   sessionId: string | null;
+  sshConnectionId?: string; // If set, this terminal tab is an SSH session
 }
 
 export type SnippetRunMode = "stop-on-error" | "run-all";
@@ -515,6 +516,7 @@ interface AppState {
   tabs: Tab[];
   activeTabId: string;
   addTab: (shell?: string) => void;
+  addSSHTab: (connectionId: string) => void;
   openPanelTab: (panelType: PanelTabType) => void;
   closeTab: (id: string) => void;
   setActiveTab: (id: string) => void;
@@ -777,6 +779,24 @@ export const useAppStore = create<AppState>((set, get) => ({
     const id = `tab-${tabCounter}`;
     set((s) => ({
       tabs: [...s.tabs, { id, title: `Terminal ${s.tabs.length + 1}`, type: "terminal" as const, shellType: shell, sessionId: null }],
+      activeTabId: id,
+    }));
+  },
+
+  addSSHTab: (connectionId: string) => {
+    const conn = get().sshConnections.find((c) => c.id === connectionId);
+    if (!conn) return;
+    tabCounter++;
+    const id = `tab-${tabCounter}`;
+    set((s) => ({
+      tabs: [...s.tabs, {
+        id,
+        title: `SSH: ${conn.name}`,
+        type: "terminal" as const,
+        shellType: "",
+        sessionId: null,
+        sshConnectionId: connectionId,
+      }],
       activeTabId: id,
     }));
   },

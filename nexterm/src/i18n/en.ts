@@ -211,6 +211,7 @@ export const en: Record<string, any> = {
     clickToAdd: "Click + to add one.",
     keychainSavedTitle: "Password saved in system keychain",
     openTerminal: "Open Terminal",
+    newTab: "New Terminal Tab",
   },
 
   // SFTP Panel

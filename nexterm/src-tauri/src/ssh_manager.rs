@@ -319,6 +319,13 @@ impl SshSession {
                     Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock
                         || e.kind() == std::io::ErrorKind::TimedOut => {
                         consecutive_errors = 0;
+                        // Flush any pending batch data immediately on idle
+                        // This ensures prompt output isn't delayed by 4ms flusher wait
+                        if let Ok(mut b) = batch_reader.lock() {
+                            if !b.is_empty() {
+                                let _ = app_handle_reader.emit(&data_event_reader, std::mem::take(&mut *b));
+                            }
+                        }
                         // Send keepalive at proper intervals
                         if last_keepalive.elapsed() >= keepalive_interval {
                             if let Ok(session) = session_clone.lock() {
@@ -326,7 +333,6 @@ impl SshSession {
                             }
                             last_keepalive = Instant::now();
                         }
-                        // No sleep — session timeout (10ms) already paces the loop
                     }
                     Err(ref e) if e.kind() == std::io::ErrorKind::ConnectionReset
                         || e.kind() == std::io::ErrorKind::BrokenPipe

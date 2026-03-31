@@ -600,6 +600,555 @@ fn format_timestamp() -> String {
     format!("{:02}:{:02} UTC", hours, minutes)
 }
 
+// ═══════════════════════════════════════════════════════════════
+//  NEW: Ping Sweep, HTTP Security, WiFi, Subnet, DNS, HTTP Forge
+// ═══════════════════════════════════════════════════════════════
+
+#[derive(Serialize, Deserialize, Clone)]
+pub struct PingSweepResult {
+    pub ip: String,
+    pub alive: bool,
+    pub latency_ms: u64,
+    pub open_port: u16,
+}
+
+/// TCP connect sweep on a /24 subnet. Tests ports 80, 445, 22 with 200ms timeout.
+pub fn ping_sweep(subnet_base: &str) -> Result<Vec<PingSweepResult>, String> {
+    let base = subnet_base.trim().trim_end_matches('.');
+    // Validate base looks like an IP prefix
+    let parts: Vec<&str> = base.split('.').collect();
+    if parts.len() != 3 || parts.iter().any(|p| p.parse::<u8>().is_err()) {
+        return Err("Invalid subnet base. Use format: 192.168.1".to_string());
+    }
+
+    let probe_ports: &[u16] = &[80, 445, 22, 443, 3389];
+    let timeout = Duration::from_millis(200);
+
+    let results: Vec<PingSweepResult> = std::thread::scope(|s| {
+        let handles: Vec<_> = (1..=254u16).map(|host| {
+            let base = base.to_string();
+            s.spawn(move || {
+                let ip = format!("{}.{}", base, host);
+                let start = std::time::Instant::now();
+                for &port in probe_ports {
+                    let addr = format!("{}:{}", ip, port);
+                    if let Ok(parsed) = addr.parse::<std::net::SocketAddr>() {
+                        if TcpStream::connect_timeout(&parsed, timeout).is_ok() {
+                            return PingSweepResult {
+                                ip,
+                                alive: true,
+                                latency_ms: start.elapsed().as_millis() as u64,
+                                open_port: port,
+                            };
+                        }
+                    }
+                }
+                PingSweepResult {
+                    ip,
+                    alive: false,
+                    latency_ms: 0,
+                    open_port: 0,
+                }
+            })
+        }).collect();
+
+        handles.into_iter().filter_map(|h| {
+            let r = h.join().ok()?;
+            if r.alive { Some(r) } else { None }
+        }).collect()
+    });
+
+    Ok(results)
+}
+
+// ── HTTP Security Analyzer ──
+
+#[derive(Serialize, Deserialize, Clone)]
+pub struct HttpSecurityHeader {
+    pub name: String,
+    pub value: String,
+    pub present: bool,
+    pub rating: String, // "good" | "warning" | "bad"
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+pub struct HttpSecurityResult {
+    pub url: String,
+    pub status_code: u16,
+    pub headers_found: Vec<HttpSecurityHeader>,
+    pub score: u8,
+    pub grade: String,
+    pub findings: Vec<String>,
+    pub server: String,
+    pub cookies_secure: bool,
+}
+
+const SECURITY_HEADERS: &[(&str, u8)] = &[
+    ("content-security-policy", 15),
+    ("strict-transport-security", 15),
+    ("x-frame-options", 10),
+    ("x-content-type-options", 10),
+    ("referrer-policy", 10),
+    ("permissions-policy", 10),
+    ("x-xss-protection", 5),
+];
+
+pub async fn analyze_http_security(url: &str) -> Result<HttpSecurityResult, String> {
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(10))
+        .danger_accept_invalid_certs(true)
+        .redirect(reqwest::redirect::Policy::limited(3))
+        .build()
+        .map_err(|e| format!("HTTP client error: {}", e))?;
+
+    let resp = client.get(url).send().await
+        .map_err(|e| format!("Request failed: {}", e))?;
+
+    let status_code = resp.status().as_u16();
+    let headers = resp.headers().clone();
+
+    let mut score: u8 = 100;
+    let mut found = Vec::new();
+    let mut findings = Vec::new();
+
+    // Check security headers
+    for &(header_name, penalty) in SECURITY_HEADERS {
+        let value = headers.get(header_name).map(|v| v.to_str().unwrap_or("").to_string());
+        let present = value.is_some();
+        if !present {
+            score = score.saturating_sub(penalty);
+            findings.push(format!("Missing header: {}", header_name));
+        }
+        found.push(HttpSecurityHeader {
+            name: header_name.to_string(),
+            value: value.unwrap_or_default(),
+            present,
+            rating: if present { "good".to_string() } else { "bad".to_string() },
+        });
+    }
+
+    // Check Server header disclosure
+    let server = headers.get("server").map(|v| v.to_str().unwrap_or("").to_string()).unwrap_or_default();
+    if !server.is_empty() {
+        // Check for version disclosure
+        if server.chars().any(|c| c.is_ascii_digit()) {
+            findings.push(format!("Server version disclosed: {}", server));
+            score = score.saturating_sub(5);
+            found.push(HttpSecurityHeader {
+                name: "server".to_string(),
+                value: server.clone(),
+                present: true,
+                rating: "warning".to_string(),
+            });
+        }
+    }
+
+    // Check CORS
+    if let Some(cors) = headers.get("access-control-allow-origin") {
+        let v = cors.to_str().unwrap_or("");
+        if v == "*" {
+            findings.push("CORS allows all origins (*)".to_string());
+            score = score.saturating_sub(10);
+            found.push(HttpSecurityHeader {
+                name: "access-control-allow-origin".to_string(),
+                value: v.to_string(),
+                present: true,
+                rating: "bad".to_string(),
+            });
+        }
+    }
+
+    // Check cookies
+    let cookies_secure = if let Some(cookie) = headers.get("set-cookie") {
+        let c = cookie.to_str().unwrap_or("").to_lowercase();
+        let secure = c.contains("secure");
+        let httponly = c.contains("httponly");
+        let samesite = c.contains("samesite");
+        if !secure { findings.push("Cookie missing Secure flag".to_string()); score = score.saturating_sub(5); }
+        if !httponly { findings.push("Cookie missing HttpOnly flag".to_string()); score = score.saturating_sub(5); }
+        if !samesite { findings.push("Cookie missing SameSite attribute".to_string()); score = score.saturating_sub(3); }
+        secure && httponly
+    } else {
+        true // no cookies = OK
+    };
+
+    let grade = match score {
+        90..=100 => "A",
+        75..=89 => "B",
+        55..=74 => "C",
+        35..=54 => "D",
+        _ => "F",
+    }.to_string();
+
+    Ok(HttpSecurityResult {
+        url: url.to_string(),
+        status_code,
+        headers_found: found,
+        score,
+        grade,
+        findings,
+        server,
+        cookies_secure,
+    })
+}
+
+// ── WiFi Scanner (Windows) ──
+
+#[derive(Serialize, Deserialize, Clone)]
+pub struct WifiNetwork {
+    pub ssid: String,
+    pub bssid: String,
+    pub signal_percent: u8,
+    pub channel: u16,
+    pub auth: String,
+    pub encryption: String,
+}
+
+pub fn scan_wifi() -> Result<Vec<WifiNetwork>, String> {
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+
+        let output = std::process::Command::new("netsh")
+            .args(["wlan", "show", "networks", "mode=bssid"])
+            .creation_flags(CREATE_NO_WINDOW)
+            .output()
+            .map_err(|e| format!("WiFi scan failed: {}", e))?;
+
+        let text = String::from_utf8_lossy(&output.stdout);
+        let mut networks = Vec::new();
+        let mut current_ssid = String::new();
+        let mut current_auth = String::new();
+        let mut current_enc = String::new();
+
+        for line in text.lines() {
+            let line = line.trim();
+            if line.starts_with("SSID") && !line.starts_with("BSSID") && line.contains(':') {
+                current_ssid = line.split(':').skip(1).collect::<Vec<&str>>().join(":").trim().to_string();
+            } else if line.starts_with("Autenticaci") || line.starts_with("Authentication") {
+                current_auth = line.split(':').skip(1).collect::<Vec<&str>>().join(":").trim().to_string();
+            } else if line.starts_with("Cifrado") || line.starts_with("Cipher") || line.starts_with("Encryption") {
+                current_enc = line.split(':').skip(1).collect::<Vec<&str>>().join(":").trim().to_string();
+            } else if line.starts_with("BSSID") && line.contains(':') {
+                let bssid = line.split(" : ").nth(1).unwrap_or("").trim().to_string();
+                // Next lines should have signal and channel
+                let signal: u8 = 0;
+                let channel: u16 = 0;
+                // We'll parse in next iterations but for now push placeholder
+                networks.push(WifiNetwork {
+                    ssid: current_ssid.clone(),
+                    bssid,
+                    signal_percent: signal,
+                    channel,
+                    auth: current_auth.clone(),
+                    encryption: current_enc.clone(),
+                });
+            } else if (line.starts_with("Se") && line.contains('%')) || line.starts_with("Signal") {
+                if let Some(pct) = line.split(':').nth(1) {
+                    let pct = pct.trim().trim_end_matches('%').trim();
+                    if let Ok(v) = pct.parse::<u8>() {
+                        if let Some(last) = networks.last_mut() {
+                            last.signal_percent = v;
+                        }
+                    }
+                }
+            } else if line.starts_with("Canal") || line.starts_with("Channel") {
+                if let Some(ch) = line.split(':').nth(1) {
+                    if let Ok(v) = ch.trim().parse::<u16>() {
+                        if let Some(last) = networks.last_mut() {
+                            last.channel = v;
+                        }
+                    }
+                }
+            }
+        }
+        Ok(networks)
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        Err("WiFi scanning only available on Windows".to_string())
+    }
+}
+
+// ── Subnet Calculator ──
+
+#[derive(Serialize, Deserialize, Clone)]
+pub struct SubnetInfo {
+    pub network: String,
+    pub broadcast: String,
+    pub first_host: String,
+    pub last_host: String,
+    pub usable_hosts: u32,
+    pub cidr: u8,
+    pub netmask: String,
+    pub wildcard: String,
+    pub ip_class: String,
+    pub is_private: bool,
+}
+
+pub fn calculate_subnet(ip: &str, cidr: u8) -> Result<SubnetInfo, String> {
+    if cidr > 32 {
+        return Err("CIDR must be 0-32".to_string());
+    }
+
+    let octets: Vec<u8> = ip.split('.')
+        .map(|s| s.parse::<u8>().map_err(|_| "Invalid IP".to_string()))
+        .collect::<Result<Vec<u8>, String>>()?;
+
+    if octets.len() != 4 {
+        return Err("Invalid IP format".to_string());
+    }
+
+    let ip_u32 = ((octets[0] as u32) << 24)
+        | ((octets[1] as u32) << 16)
+        | ((octets[2] as u32) << 8)
+        | (octets[3] as u32);
+
+    let mask = if cidr == 0 { 0u32 } else { !0u32 << (32 - cidr) };
+    let wildcard = !mask;
+    let network = ip_u32 & mask;
+    let broadcast = network | wildcard;
+
+    let to_ip = |v: u32| -> String {
+        format!("{}.{}.{}.{}", (v >> 24) & 0xFF, (v >> 16) & 0xFF, (v >> 8) & 0xFF, v & 0xFF)
+    };
+
+    let usable = if cidr >= 31 { if cidr == 32 { 1 } else { 2 } } else { broadcast - network - 1 };
+
+    let first_host = if cidr >= 31 { network } else { network + 1 };
+    let last_host = if cidr >= 31 { broadcast } else { broadcast - 1 };
+
+    let ip_class = match octets[0] {
+        0..=127 => "A",
+        128..=191 => "B",
+        192..=223 => "C",
+        224..=239 => "D (Multicast)",
+        _ => "E (Reserved)",
+    }.to_string();
+
+    let is_private = matches!(
+        (octets[0], octets[1]),
+        (10, _) | (172, 16..=31) | (192, 168)
+    );
+
+    Ok(SubnetInfo {
+        network: to_ip(network),
+        broadcast: to_ip(broadcast),
+        first_host: to_ip(first_host),
+        last_host: to_ip(last_host),
+        usable_hosts: usable,
+        cidr,
+        netmask: to_ip(mask),
+        wildcard: to_ip(wildcard),
+        ip_class,
+        is_private,
+    })
+}
+
+// ── DNS Enumeration ──
+
+#[derive(Serialize, Deserialize, Clone)]
+pub struct DnsResult {
+    pub domain: String,
+    pub a_records: Vec<String>,
+    pub aaaa_records: Vec<String>,
+    pub mx_records: Vec<String>,
+    pub ns_records: Vec<String>,
+    pub txt_records: Vec<String>,
+    pub soa_record: String,
+    pub reverse_dns: Vec<String>,
+}
+
+pub fn dns_enumerate(domain: &str) -> Result<DnsResult, String> {
+    #[cfg(target_os = "windows")]
+    const CREATE_NO_WINDOW: u32 = 0x08000000;
+
+    let run_nslookup = |record_type: &str, target: &str| -> Vec<String> {
+        let mut cmd = std::process::Command::new("nslookup");
+        cmd.args([&format!("-type={}", record_type), target]);
+        #[cfg(target_os = "windows")]
+        {
+            use std::os::windows::process::CommandExt;
+            cmd.creation_flags(CREATE_NO_WINDOW);
+        }
+        let output = match cmd.output() {
+            Ok(o) => String::from_utf8_lossy(&o.stdout).to_string(),
+            Err(_) => return Vec::new(),
+        };
+        parse_nslookup_output(&output, record_type)
+    };
+
+    let a_records = run_nslookup("A", domain);
+    let aaaa_records = run_nslookup("AAAA", domain);
+    let mx_records = run_nslookup("MX", domain);
+    let ns_records = run_nslookup("NS", domain);
+    let txt_records = run_nslookup("TXT", domain);
+    let soa_raw = run_nslookup("SOA", domain);
+    let soa_record = soa_raw.first().cloned().unwrap_or_default();
+
+    // Reverse DNS for first A record
+    let reverse_dns = if let Some(ip) = a_records.first() {
+        run_nslookup("PTR", ip)
+    } else {
+        Vec::new()
+    };
+
+    Ok(DnsResult {
+        domain: domain.to_string(),
+        a_records,
+        aaaa_records,
+        mx_records,
+        ns_records,
+        txt_records,
+        soa_record,
+        reverse_dns,
+    })
+}
+
+fn parse_nslookup_output(output: &str, record_type: &str) -> Vec<String> {
+    let mut results = Vec::new();
+    let lines: Vec<&str> = output.lines().collect();
+    let mut past_header = false;
+
+    for line in &lines {
+        let line = line.trim();
+        // Skip the header (first server/address block)
+        if line.starts_with("Name:") || line.starts_with("Nombre:") {
+            past_header = true;
+        }
+        if !past_header && !line.contains("nameserver") && !line.contains("servidor") {
+            continue;
+        }
+
+        match record_type {
+            "A" | "AAAA" => {
+                if (line.starts_with("Address:") || line.starts_with("Direcci")) && past_header {
+                    if let Some(addr) = line.split(':').last() {
+                        let addr = addr.trim();
+                        if !addr.is_empty() && addr != "127.0.0.1" {
+                            results.push(addr.to_string());
+                        }
+                    }
+                }
+                // Also catch "Addresses:" lines
+                if line.starts_with("Addresses:") {
+                    for addr in line.split(':').skip(1).flat_map(|s| s.split(',')) {
+                        let addr = addr.trim();
+                        if !addr.is_empty() {
+                            results.push(addr.to_string());
+                        }
+                    }
+                }
+            }
+            "MX" => {
+                if line.contains("mail exchanger") || line.contains("MX preference") {
+                    results.push(line.to_string());
+                }
+            }
+            "NS" => {
+                if line.contains("nameserver") || line.contains("servidor de nombres") {
+                    if let Some(ns) = line.split('=').last().or_else(|| line.split(':').last()) {
+                        let ns = ns.trim();
+                        if !ns.is_empty() {
+                            results.push(ns.to_string());
+                        }
+                    }
+                }
+            }
+            "TXT" => {
+                if line.contains("text") || line.contains("texto") || line.starts_with('"') {
+                    results.push(line.trim_matches('"').to_string());
+                }
+            }
+            "SOA" => {
+                if line.contains("primary") || line.contains("origin") || line.contains("principal") || line.contains("responsable") {
+                    results.push(line.to_string());
+                }
+            }
+            "PTR" => {
+                if line.contains("name =") || line.contains("nombre =") {
+                    if let Some(name) = line.split('=').last() {
+                        results.push(name.trim().trim_end_matches('.').to_string());
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    results
+}
+
+// ── HTTP Request Forge ──
+
+#[derive(Serialize, Deserialize, Clone)]
+pub struct HttpForgeRequest {
+    pub method: String,
+    pub url: String,
+    pub headers: Vec<(String, String)>,
+    pub body: String,
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+pub struct HttpForgeResponse {
+    pub status: u16,
+    pub status_text: String,
+    pub headers: Vec<(String, String)>,
+    pub body: String,
+    pub time_ms: u64,
+}
+
+pub async fn http_forge(req: HttpForgeRequest) -> Result<HttpForgeResponse, String> {
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(30))
+        .danger_accept_invalid_certs(true)
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+        .map_err(|e| format!("Client error: {}", e))?;
+
+    let method: reqwest::Method = req.method.parse()
+        .map_err(|_| format!("Invalid method: {}", req.method))?;
+
+    let mut builder = client.request(method, &req.url);
+    for (k, v) in &req.headers {
+        if !k.is_empty() {
+            builder = builder.header(k.as_str(), v.as_str());
+        }
+    }
+    if !req.body.is_empty() {
+        builder = builder.body(req.body);
+    }
+
+    let start = std::time::Instant::now();
+    let resp = builder.send().await
+        .map_err(|e| format!("Request failed: {}", e))?;
+    let time_ms = start.elapsed().as_millis() as u64;
+
+    let status = resp.status().as_u16();
+    let status_text = resp.status().canonical_reason().unwrap_or("").to_string();
+
+    let resp_headers: Vec<(String, String)> = resp.headers().iter()
+        .map(|(k, v)| (k.to_string(), v.to_str().unwrap_or("").to_string()))
+        .collect();
+
+    let body = resp.text().await.unwrap_or_default();
+    // Limit body to 50KB to avoid UI freeze
+    let body = if body.len() > 50_000 {
+        format!("{}... [truncated, {} bytes total]", &body[..50_000], body.len())
+    } else {
+        body
+    };
+
+    Ok(HttpForgeResponse {
+        status,
+        status_text,
+        headers: resp_headers,
+        body,
+        time_ms,
+    })
+}
+
 /// Encrypt data using a simple XOR cipher with a key derived from the password
 /// For real security, use aes-gcm crate, but this avoids extra dependencies
 pub fn encrypt_data(data: &str, password: &str) -> Vec<u8> {

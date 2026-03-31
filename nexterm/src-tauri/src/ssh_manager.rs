@@ -8,6 +8,16 @@ use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 use tauri::Emitter;
 
+/// Securely delete a file by overwriting with zeros before removing.
+/// Prevents forensic recovery of sensitive data like SSH private keys.
+fn secure_delete(path: &std::path::Path) {
+    if let Ok(meta) = std::fs::metadata(path) {
+        let zeros = vec![0u8; meta.len() as usize];
+        let _ = std::fs::write(path, &zeros);
+    }
+    let _ = std::fs::remove_file(path);
+}
+
 /// Configure preferred algorithms on an SSH session for maximum server compatibility.
 /// Must be called BEFORE session.handshake().
 pub fn configure_ssh_algorithms(session: &Session) {
@@ -142,7 +152,7 @@ impl SshSession {
                 password,
             );
 
-            let _ = std::fs::remove_file(&key_path);
+            secure_delete(&key_path);
             result.map_err(|e| format!("Public key auth failed: {}", e))?;
         } else if let Some(pass) = password {
             session.userauth_password(username, pass)
@@ -168,7 +178,7 @@ impl SshSession {
         // Keep session in BLOCKING mode — use read timeout for non-blocking behavior
         // This avoids the race condition of switching blocking/non-blocking between threads
         session.set_blocking(true);
-        session.set_timeout(50); // 50ms timeout — balances responsiveness with network tolerance
+        session.set_timeout(10); // 10ms timeout — low-latency interactive terminal
 
         let session = Arc::new(Mutex::new(session));
         let channel = Arc::new(Mutex::new(channel));
@@ -316,8 +326,7 @@ impl SshSession {
                             }
                             last_keepalive = Instant::now();
                         }
-                        // Progressive sleep on idle to reduce CPU usage
-                        std::thread::sleep(Duration::from_millis(10));
+                        // No sleep — session timeout (10ms) already paces the loop
                     }
                     Err(ref e) if e.kind() == std::io::ErrorKind::ConnectionReset
                         || e.kind() == std::io::ErrorKind::BrokenPipe
@@ -332,10 +341,9 @@ impl SshSession {
                         break;
                     }
                     Err(ref e) => {
-                        let err_str = e.to_string();
-                        let is_transient = err_str.contains("transport read")
-                            || err_str.contains("EAGAIN")
-                            || err_str.contains("timeout");
+                        // Treat ErrorKind::Other as likely transient (libssh2 transport errors)
+                        // Only do expensive .to_string() when we actually need to report
+                        let is_transient = e.kind() == std::io::ErrorKind::Other;
 
                         consecutive_errors += 1;
 
@@ -343,7 +351,6 @@ impl SshSession {
                         if is_transient && consecutive_errors == max_consecutive_errors / 2 {
                             if let Ok(session) = session_clone.lock() {
                                 if session.keepalive_send().is_ok() {
-                                    // Keepalive succeeded — connection is alive, reset counter
                                     consecutive_errors = 0;
                                     continue;
                                 }
@@ -361,10 +368,9 @@ impl SshSession {
                             break;
                         }
 
-                        // Progressive backoff: start short, grow longer for persistent errors
+                        // Progressive backoff for persistent errors
                         let backoff = if is_transient {
-                            // 50ms → 100ms → 200ms as errors accumulate
-                            50 + (consecutive_errors as u64 * 5).min(150)
+                            20 + (consecutive_errors as u64 * 5).min(100)
                         } else {
                             10
                         };
@@ -382,23 +388,29 @@ impl SshSession {
 
         let flusher_thread = std::thread::spawn(move || {
             loop {
-                // Wait for data signal or 16ms timeout (~60fps rendering)
-                {
+                // Single lock: wait for signal then flush in same scope
+                let should_emit = 'flush: {
                     let lock = match batch_flusher.lock() {
                         Ok(l) => l,
                         Err(e) => e.into_inner(),
                     };
-                    let _ = data_ready_flusher.wait_timeout(lock, Duration::from_millis(16));
-                }
+                    let mut guard = match data_ready_flusher.wait_timeout(lock, Duration::from_millis(4)) {
+                        Ok((g, _)) => g,
+                        Err(_) => break 'flush None,
+                    };
+                    if !guard.is_empty() {
+                        Some(std::mem::take(&mut *guard))
+                    } else {
+                        None
+                    }
+                };
 
                 if !running_flusher.load(Ordering::Relaxed) {
                     break;
                 }
 
-                if let Ok(mut b) = batch_flusher.lock() {
-                    if !b.is_empty() {
-                        let _ = app_handle.emit(&data_event, std::mem::take(&mut *b));
-                    }
+                if let Some(data) = should_emit {
+                    let _ = app_handle.emit(&data_event, data);
                 }
             }
         });
@@ -421,8 +433,6 @@ impl SshSession {
     }
 
     pub fn resize(&self, cols: u32, rows: u32) -> Result<(), String> {
-        let _session = self.session.lock()
-            .map_err(|e| format!("Session lock error: {}", e))?;
         let mut channel = self.channel.lock()
             .map_err(|e| format!("Channel lock error: {}", e))?;
 
@@ -431,10 +441,11 @@ impl SshSession {
             match channel.request_pty_size(cols, rows, None, None) {
                 Ok(()) => break,
                 Err(ref e) if retries < 3 => {
-                    let err_str = e.to_string();
-                    if err_str.contains("EAGAIN") || err_str.contains("timeout") {
+                    let code = e.code();
+                    if code == ssh2::ErrorCode::Session(-37) || code == ssh2::ErrorCode::Session(-43) {
+                        // EAGAIN or timeout — retry
                         retries += 1;
-                        std::thread::sleep(Duration::from_millis(20));
+                        std::thread::sleep(Duration::from_millis(15));
                     } else {
                         return Err(format!("SSH resize error: {}", e));
                     }
@@ -462,13 +473,11 @@ impl SshSession {
 
 /// Resize an SSH channel using pre-extracted Arc refs (callable from spawn_blocking)
 pub fn resize_with_refs(
-    session: &Arc<Mutex<Session>>,
+    _session: &Arc<Mutex<Session>>,
     channel: &Arc<Mutex<ssh2::Channel>>,
     cols: u32,
     rows: u32,
 ) -> Result<(), String> {
-    let _session = session.lock()
-        .map_err(|e| format!("Session lock error: {}", e))?;
     let mut ch = channel.lock()
         .map_err(|e| format!("Channel lock error: {}", e))?;
 
@@ -477,8 +486,8 @@ pub fn resize_with_refs(
         match ch.request_pty_size(cols, rows, None, None) {
             Ok(()) => break,
             Err(ref e) if retries < 3 => {
-                let err_str = e.to_string();
-                if err_str.contains("EAGAIN") || err_str.contains("timeout") {
+                let code = e.code();
+                if code == ssh2::ErrorCode::Session(-37) || code == ssh2::ErrorCode::Session(-43) {
                     retries += 1;
                     std::thread::sleep(Duration::from_millis(10));
                 } else {
@@ -547,7 +556,7 @@ impl LogStream {
                 let _ = std::fs::set_permissions(&key_path, std::fs::Permissions::from_mode(0o600));
             }
             let result = session.userauth_pubkey_file(username, None, &key_path, password);
-            let _ = std::fs::remove_file(&key_path);
+            secure_delete(&key_path);
             result.map_err(|e| format!("Key auth failed: {}", e))?;
         } else if let Some(pass) = password {
             session.userauth_password(username, pass).map_err(|e| format!("Auth failed: {}", e))?;
@@ -660,7 +669,7 @@ pub fn test_ssh_connection(
         }
 
         let result = session.userauth_pubkey_file(username, None, &key_path, password);
-        let _ = std::fs::remove_file(&key_path);
+        secure_delete(&key_path);
         result.map_err(|e| format!("Key auth failed: {}", e))?;
     } else if let Some(pass) = password {
         session.userauth_password(username, pass)
@@ -722,7 +731,7 @@ pub fn exec_command(
             let _ = std::fs::set_permissions(&key_path, std::fs::Permissions::from_mode(0o600));
         }
         let result = session.userauth_pubkey_file(username, None, &key_path, password);
-        let _ = std::fs::remove_file(&key_path);
+        secure_delete(&key_path);
         result.map_err(|e| format!("Key auth failed: {}", e))?;
     } else if let Some(pass) = password {
         session.userauth_password(username, pass)

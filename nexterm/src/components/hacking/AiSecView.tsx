@@ -92,7 +92,7 @@ export function AiSecView() {
       content: userMsg,
       mode: mode.id,
     };
-    setChat((prev) => [...prev, userEntry]);
+    setChat((prev) => [...prev, userEntry].slice(-200));
     setLoading(true);
 
     try {
@@ -115,7 +115,7 @@ export function AiSecView() {
         content: response,
         mode: mode.id,
       };
-      setChat((prev) => [...prev, assistantEntry]);
+      setChat((prev) => [...prev, assistantEntry].slice(-200));
 
       addHackingLog({
         level: "info",
@@ -130,7 +130,7 @@ export function AiSecView() {
         content: `Error: ${err}`,
         mode: "error",
       };
-      setChat((prev) => [...prev, errorEntry]);
+      setChat((prev) => [...prev, errorEntry].slice(-200));
     }
 
     setLoading(false);

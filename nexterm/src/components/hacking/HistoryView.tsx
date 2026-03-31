@@ -13,6 +13,7 @@ export function HistoryView() {
   const t = useT();
   const hackingLogs = useAppStore((s) => s.hackingLogs);
   const clearHackingLogs = useAppStore((s) => s.clearHackingLogs);
+  const addHackingLog = useAppStore((s) => s.addHackingLog);
 
   const [savedSessions, setSavedSessions] = useState<string[]>([]);
   const [password, setPassword] = useState("");
@@ -42,8 +43,8 @@ export function HistoryView() {
       const data = JSON.stringify(hackingLogs, null, 2);
       await invoke<string>("hacking_save_session", { data, password });
       await loadSessionList();
-    } catch {
-      // Save failed silently
+    } catch (err) {
+      addHackingLog({ level: "danger", message: `Session save failed: ${err}`, source: "history", category: "general" });
     }
     setSaving(false);
   }, [hackingLogs, password, loadSessionList]);
@@ -64,8 +65,8 @@ export function HistoryView() {
       const { invoke } = await getTauriCore();
       await invoke("hacking_delete_session", { filename });
       await loadSessionList();
-    } catch {
-      // Delete failed
+    } catch (err) {
+      addHackingLog({ level: "danger", message: `Session delete failed: ${err}`, source: "history", category: "general" });
     }
   }, [loadSessionList]);
 

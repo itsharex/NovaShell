@@ -30,16 +30,17 @@ static CACHED_CPU_USAGE: AtomicU32 = AtomicU32::new(0);
 
 const MIN_CPU_REFRESH_INTERVAL: Duration = Duration::from_secs(2);
 
-/// Initialize the System with a proper CPU baseline.
-/// Must be called once at startup before any get_stats() call.
+/// Quick init: just capture CPU baseline without blocking.
+/// The first real reading will come from get_stats() after the frontend polls.
 pub fn init_system(sys: &mut System) {
+    // Record initial CPU times — first call is just a baseline, not accurate yet.
+    // The second call (from get_stats ~500ms later) will have a proper delta.
     sys.refresh_cpu_usage();
-    std::thread::sleep(Duration::from_millis(250));
-    sys.refresh_cpu_usage();
-    // Store the initial reading
-    let cpu = sys.global_cpu_info().cpu_usage();
-    CACHED_CPU_USAGE.store(cpu.to_bits(), Ordering::Relaxed);
-    *LAST_CPU_REFRESH.lock().unwrap() = Some(Instant::now());
+    sys.refresh_memory();
+    // Do NOT sleep here — it blocks the entire app startup.
+    // Mark that we need a fresh read on first get_stats call.
+    CACHED_CPU_USAGE.store(0f32.to_bits(), Ordering::Relaxed);
+    // Leave LAST_CPU_REFRESH as None so the first get_stats always refreshes
 }
 
 pub fn get_stats(sys: &mut System) -> SystemStats {
@@ -77,7 +78,8 @@ pub fn get_stats(sys: &mut System) -> SystemStats {
     let memory_used = sys.used_memory();
     let memory_total = sys.total_memory();
 
-    let cpu_usage = f32::from_bits(CACHED_CPU_USAGE.load(Ordering::Relaxed));
+    let cpu_raw = f32::from_bits(CACHED_CPU_USAGE.load(Ordering::Relaxed));
+    let cpu_usage = if cpu_raw.is_finite() { cpu_raw } else { 0.0 };
 
     SystemStats {
         cpu_usage,

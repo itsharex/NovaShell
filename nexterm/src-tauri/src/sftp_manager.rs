@@ -28,14 +28,6 @@ pub struct RemoteFileEntry {
     pub modified: u64,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct TransferProgress {
-    pub filename: String,
-    pub transferred: u64,
-    pub total: u64,
-    pub done: bool,
-}
-
 impl SftpSession {
     pub fn new(
         host: &str,
@@ -362,7 +354,7 @@ impl SftpSession {
     }
 
     fn download_dir_impl(&self, remote_dir: &str, local_dir: &str, depth: u16) -> Result<u64, String> {
-        if depth > 50 { return Err("Maximum directory depth exceeded (possible symlink loop)".to_string()); }
+        if depth >= 50 { return Err("Maximum directory depth exceeded (possible symlink loop)".to_string()); }
         let entries = self.list_dir(remote_dir)?;
 
         std::fs::create_dir_all(local_dir)
@@ -388,7 +380,7 @@ impl SftpSession {
     }
 
     fn upload_dir_impl(&self, local_dir: &str, remote_dir: &str, depth: u16) -> Result<u64, String> {
-        if depth > 50 { return Err("Maximum directory depth exceeded (possible symlink loop)".to_string()); }
+        if depth >= 50 { return Err("Maximum directory depth exceeded (possible symlink loop)".to_string()); }
         let normalized_remote = normalize_remote_path(remote_dir);
         // Create remote directory (ignore error if it already exists)
         let _ = self.mkdir(&normalized_remote);

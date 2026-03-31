@@ -110,13 +110,7 @@ export function StatusBar() {
           processes: stats.processes_count,
         });
       } catch {
-        setSystemStats({
-          cpu: 15 + Math.random() * 30,
-          memoryUsed: 8_000_000_000 + Math.random() * 2_000_000_000,
-          memoryTotal: 16_000_000_000,
-          memoryPercent: 50 + Math.random() * 15,
-          processes: 130 + Math.floor(Math.random() * 30),
-        });
+        // Don't set fake data — keep previous real stats or null
       }
     };
     // Defer initial stats fetch to avoid blocking startup

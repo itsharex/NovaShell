@@ -1,14 +1,23 @@
-import { useState } from "react";
-import { Hash, Code, Globe, Terminal, Copy, Check } from "lucide-react";
+import { useState, useCallback } from "react";
+import { Hash, Code, Globe, Terminal, Copy, Check, Key, Send, Shield } from "lucide-react";
 import { useT } from "../../i18n";
 
-type ToolTab = "hash" | "encode" | "revshell";
+type ToolTab = "hash" | "encode" | "revshell" | "jwt" | "passgen" | "http";
 
 const toolTabDefs: { id: ToolTab; icon: typeof Hash; labelKey: string }[] = [
   { id: "hash", icon: Hash, labelKey: "hacking.hash" },
   { id: "encode", icon: Code, labelKey: "hacking.encode" },
   { id: "revshell", icon: Terminal, labelKey: "hacking.revShell" },
+  { id: "jwt", icon: Shield, labelKey: "hacking.jwt" },
+  { id: "passgen", icon: Key, labelKey: "hacking.passGen" },
+  { id: "http", icon: Send, labelKey: "hacking.httpForge" },
 ];
+
+let invokeCache: typeof import("@tauri-apps/api/core")["invoke"] | null = null;
+async function getInvoke() {
+  if (!invokeCache) invokeCache = (await import("@tauri-apps/api/core")).invoke;
+  return invokeCache;
+}
 
 function CopyButton({ text }: { text: string }) {
   const t = useT();
@@ -140,7 +149,12 @@ function EncodeTool() {
   const encode = (): string => {
     if (!input) return "";
     try {
-      if (mode === "base64") return btoa(unescape(encodeURIComponent(input)));
+      if (mode === "base64") {
+        const bytes = new TextEncoder().encode(input);
+        let binary = "";
+        bytes.forEach((b) => binary += String.fromCharCode(b));
+        return btoa(binary);
+      }
       if (mode === "url") return encodeURIComponent(input);
       if (mode === "hex")
         return Array.from(new TextEncoder().encode(input))
@@ -153,7 +167,11 @@ function EncodeTool() {
   const decode = (): string => {
     if (!input) return "";
     try {
-      if (mode === "base64") return decodeURIComponent(escape(atob(input)));
+      if (mode === "base64") {
+        const binary = atob(input);
+        const bytes = Uint8Array.from(binary, (c) => c.charCodeAt(0));
+        return new TextDecoder().decode(bytes);
+      }
       if (mode === "url") return decodeURIComponent(input);
       if (mode === "hex") {
         const bytes = input.match(/.{1,2}/g)?.map((b) => parseInt(b, 16)) || [];
@@ -352,39 +370,418 @@ function RevShellTool() {
   );
 }
 
+// ── JWT Decoder ──
+
+function JwtTool() {
+  const t = useT();
+  const [token, setToken] = useState("");
+
+  const decoded = (() => {
+    if (!token.trim()) return null;
+    const parts = token.trim().split(".");
+    if (parts.length !== 3) return null;
+    try {
+      const decodeB64 = (s: string) => {
+        const pad = s.length % 4 === 0 ? s : s + "=".repeat(4 - (s.length % 4));
+        return JSON.parse(atob(pad.replace(/-/g, "+").replace(/_/g, "/")));
+      };
+      const header = decodeB64(parts[0]);
+      const payload = decodeB64(parts[1]);
+      const exp = payload.exp ? payload.exp * 1000 : null;
+      const isExpired = exp ? Date.now() > exp : null;
+      const iat = payload.iat ? new Date(payload.iat * 1000).toISOString() : null;
+      const expDate = exp ? new Date(exp).toISOString() : null;
+      return { header, payload, signature: parts[2], exp, isExpired, iat, expDate };
+    } catch {
+      return null;
+    }
+  })();
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+      <textarea
+        value={token}
+        onChange={(e) => setToken(e.target.value)}
+        placeholder={t("hacking.jwtInput")}
+        style={{
+          background: "var(--bg-primary)", border: "1px solid var(--border-subtle)",
+          borderRadius: "var(--radius-sm)", color: "var(--text-primary)",
+          padding: "6px 8px", fontSize: 10, fontFamily: "'JetBrains Mono', monospace",
+          resize: "vertical", minHeight: 50, outline: "none",
+        }}
+      />
+      {token.trim() && !decoded && (
+        <div style={{ color: "#ff6080", fontSize: 10 }}>{t("hacking.invalidJwt")}</div>
+      )}
+      {decoded && (
+        <>
+          {/* Expiration badge */}
+          {decoded.isExpired !== null && (
+            <div style={{
+              display: "flex", alignItems: "center", gap: 6,
+              padding: "4px 8px", borderRadius: "var(--radius-sm)",
+              background: decoded.isExpired ? "rgba(255,0,64,0.1)" : "rgba(0,255,65,0.1)",
+              border: `1px solid ${decoded.isExpired ? "rgba(255,0,64,0.3)" : "rgba(0,255,65,0.3)"}`,
+            }}>
+              <span style={{
+                fontSize: 10, fontWeight: 700,
+                color: decoded.isExpired ? "#ff6080" : "#00ff41",
+              }}>
+                {decoded.isExpired ? t("hacking.jwtExpired") : t("hacking.jwtValid")}
+              </span>
+              {decoded.expDate && (
+                <span style={{ fontSize: 9, color: "var(--text-muted)" }}>
+                  exp: {decoded.expDate}
+                </span>
+              )}
+            </div>
+          )}
+          <ResultBox label={t("hacking.jwtHeader")} value={JSON.stringify(decoded.header, null, 2)} />
+          <ResultBox label={t("hacking.jwtPayload")} value={JSON.stringify(decoded.payload, null, 2)} />
+          <ResultBox label={t("hacking.jwtSignature")} value={decoded.signature} />
+        </>
+      )}
+    </div>
+  );
+}
+
+// ── Password Generator ──
+
+function PassGenTool() {
+  const t = useT();
+  const [length, setLength] = useState(20);
+  const [upper, setUpper] = useState(true);
+  const [lower, setLower] = useState(true);
+  const [digits, setDigits] = useState(true);
+  const [symbols, setSymbols] = useState(true);
+  const [password, setPassword] = useState("");
+
+  const generate = useCallback(() => {
+    let charset = "";
+    if (upper) charset += "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+    if (lower) charset += "abcdefghijklmnopqrstuvwxyz";
+    if (digits) charset += "0123456789";
+    if (symbols) charset += "!@#$%^&*()-_=+[]{}|;:,.<>?";
+    if (!charset) charset = "abcdefghijklmnopqrstuvwxyz";
+
+    const arr = new Uint32Array(length);
+    crypto.getRandomValues(arr);
+    const pass = Array.from(arr, (v) => charset[v % charset.length]).join("");
+    setPassword(pass);
+  }, [length, upper, lower, digits, symbols]);
+
+  const charsetSize = (upper ? 26 : 0) + (lower ? 26 : 0) + (digits ? 10 : 0) + (symbols ? 27 : 0) || 26;
+  const entropy = Math.floor(length * Math.log2(charsetSize));
+  const strengthColor = entropy < 40 ? "#ff4444" : entropy < 60 ? "#d29922" : entropy < 80 ? "#ffaf00" : "#00ff41";
+  const strengthLabel = entropy < 40 ? t("hacking.passWeak") : entropy < 60 ? t("hacking.passFair") : entropy < 80 ? t("hacking.passGood") : t("hacking.passStrong");
+
+  const Toggle = ({ label, checked, onChange }: { label: string; checked: boolean; onChange: () => void }) => (
+    <button
+      onClick={onChange}
+      style={{
+        flex: 1, padding: "3px 4px", fontSize: 9, fontWeight: 600, borderRadius: 6,
+        border: "1px solid",
+        borderColor: checked ? "var(--accent-primary)" : "var(--border-subtle)",
+        background: checked ? "var(--accent-primary)" : "var(--bg-tertiary)",
+        color: checked ? "#000" : "var(--text-muted)",
+        cursor: "pointer",
+      }}
+    >
+      {label}
+    </button>
+  );
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+      {/* Length */}
+      <div>
+        <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
+          <span style={{ fontSize: 9, color: "var(--text-muted)" }}>{t("hacking.passLength")}: <strong style={{ color: "var(--text-primary)" }}>{length}</strong></span>
+          <span style={{ fontSize: 9, color: strengthColor, fontWeight: 700, marginLeft: "auto" }}>
+            {entropy} bits — {strengthLabel}
+          </span>
+        </div>
+        <input
+          type="range" min={4} max={128} value={length}
+          onChange={(e) => setLength(parseInt(e.target.value))}
+          style={{ width: "100%", accentColor: strengthColor }}
+        />
+        {/* Entropy bar */}
+        <div style={{ height: 3, background: "var(--bg-primary)", borderRadius: 2, marginTop: 4 }}>
+          <div style={{ height: "100%", width: `${Math.min(entropy, 128) / 128 * 100}%`, background: strengthColor, borderRadius: 2, transition: "width 0.2s" }} />
+        </div>
+      </div>
+
+      {/* Charset toggles */}
+      <div style={{ display: "flex", gap: 4 }}>
+        <Toggle label="ABC" checked={upper} onChange={() => setUpper(!upper)} />
+        <Toggle label="abc" checked={lower} onChange={() => setLower(!lower)} />
+        <Toggle label="123" checked={digits} onChange={() => setDigits(!digits)} />
+        <Toggle label="!@#" checked={symbols} onChange={() => setSymbols(!symbols)} />
+      </div>
+
+      <button
+        onClick={generate}
+        style={{
+          background: "var(--accent-primary)", border: "none", borderRadius: "var(--radius-sm)",
+          color: "#000", padding: "5px 12px", fontSize: 10, fontWeight: 700, cursor: "pointer",
+        }}
+      >
+        <Key size={10} style={{ marginRight: 4, verticalAlign: "middle" }} />
+        {t("hacking.generate")}
+      </button>
+
+      {password && <ResultBox label={t("hacking.password")} value={password} />}
+    </div>
+  );
+}
+
+// ── HTTP Request Forge ──
+
+interface ForgeResponse {
+  status: number; status_text: string; headers: [string, string][];
+  body: string; time_ms: number;
+}
+
+function HttpForgeTool() {
+  const t = useT();
+  const [method, setMethod] = useState("GET");
+  const [url, setUrl] = useState("https://");
+  const [headerRows, setHeaderRows] = useState<{ key: string; value: string }[]>([{ key: "", value: "" }]);
+  const [body, setBody] = useState("");
+  const [response, setResponse] = useState<ForgeResponse | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  const methods = ["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"];
+
+  const send = useCallback(async () => {
+    setLoading(true);
+    setError("");
+    setResponse(null);
+    try {
+      const invoke = await getInvoke();
+      const headers = headerRows.filter((h) => h.key.trim()).map((h) => [h.key, h.value] as [string, string]);
+      const res = await invoke<ForgeResponse>("hacking_http_forge", {
+        request: { method, url, headers, body },
+      });
+      setResponse(res);
+    } catch (e: any) {
+      setError(e?.toString() || "Request failed");
+    }
+    setLoading(false);
+  }, [method, url, headerRows, body]);
+
+  const statusColor = (s: number) => s < 300 ? "#00ff41" : s < 400 ? "#58a6ff" : s < 500 ? "#d29922" : "#ff4444";
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+      {/* Method + URL */}
+      <div style={{ display: "flex", gap: 4 }}>
+        <select
+          value={method}
+          onChange={(e) => setMethod(e.target.value)}
+          style={{
+            width: 80, background: "var(--bg-primary)", border: "1px solid var(--border-subtle)",
+            borderRadius: "var(--radius-sm)", color: "var(--accent-primary)",
+            padding: "4px 4px", fontSize: 10, fontWeight: 700, fontFamily: "monospace", outline: "none",
+          }}
+        >
+          {methods.map((m) => <option key={m} value={m}>{m}</option>)}
+        </select>
+        <input
+          value={url}
+          onChange={(e) => setUrl(e.target.value)}
+          placeholder="https://example.com/api"
+          onKeyDown={(e) => e.key === "Enter" && send()}
+          style={{
+            flex: 1, background: "var(--bg-primary)", border: "1px solid var(--border-subtle)",
+            borderRadius: "var(--radius-sm)", color: "var(--text-primary)",
+            padding: "4px 8px", fontSize: 10, fontFamily: "'JetBrains Mono', monospace", outline: "none",
+          }}
+        />
+        <button
+          onClick={send}
+          disabled={loading}
+          style={{
+            background: loading ? "var(--bg-active)" : "var(--accent-primary)",
+            border: "none", borderRadius: "var(--radius-sm)",
+            color: loading ? "var(--text-muted)" : "#000",
+            padding: "4px 12px", fontSize: 10, fontWeight: 700, cursor: loading ? "default" : "pointer",
+          }}
+        >
+          <Send size={10} style={{ marginRight: 3, verticalAlign: "middle" }} />
+          {loading ? "..." : t("hacking.send")}
+        </button>
+      </div>
+
+      {/* Headers */}
+      <div>
+        <div style={{ fontSize: 9, color: "var(--text-muted)", marginBottom: 2, fontWeight: 600 }}>{t("hacking.httpHeaders")}</div>
+        {headerRows.map((row, i) => (
+          <div key={i} style={{ display: "flex", gap: 4, marginBottom: 2 }}>
+            <input
+              value={row.key}
+              onChange={(e) => {
+                const rows = [...headerRows];
+                rows[i] = { ...rows[i], key: e.target.value };
+                setHeaderRows(rows);
+              }}
+              placeholder="Header"
+              style={{
+                flex: 1, background: "var(--bg-primary)", border: "1px solid var(--border-subtle)",
+                borderRadius: "var(--radius-sm)", color: "var(--text-primary)",
+                padding: "2px 6px", fontSize: 9, fontFamily: "monospace", outline: "none",
+              }}
+            />
+            <input
+              value={row.value}
+              onChange={(e) => {
+                const rows = [...headerRows];
+                rows[i] = { ...rows[i], value: e.target.value };
+                setHeaderRows(rows);
+              }}
+              placeholder="Value"
+              style={{
+                flex: 2, background: "var(--bg-primary)", border: "1px solid var(--border-subtle)",
+                borderRadius: "var(--radius-sm)", color: "var(--text-primary)",
+                padding: "2px 6px", fontSize: 9, fontFamily: "monospace", outline: "none",
+              }}
+            />
+            <button
+              onClick={() => {
+                if (headerRows.length > 1) setHeaderRows(headerRows.filter((_, j) => j !== i));
+              }}
+              style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: 12, padding: "0 4px" }}
+            >
+              x
+            </button>
+          </div>
+        ))}
+        <button
+          onClick={() => setHeaderRows([...headerRows, { key: "", value: "" }])}
+          style={{
+            background: "none", border: "1px dashed var(--border-subtle)", borderRadius: "var(--radius-sm)",
+            color: "var(--text-muted)", padding: "2px 8px", fontSize: 9, cursor: "pointer", width: "100%",
+          }}
+        >
+          {t("hacking.addHeader")}
+        </button>
+      </div>
+
+      {/* Body */}
+      {(method === "POST" || method === "PUT" || method === "PATCH") && (
+        <div>
+          <div style={{ fontSize: 9, color: "var(--text-muted)", marginBottom: 2, fontWeight: 600 }}>{t("hacking.httpBody")}</div>
+          <textarea
+            value={body}
+            onChange={(e) => setBody(e.target.value)}
+            placeholder='{"key": "value"}'
+            style={{
+              width: "100%", background: "var(--bg-primary)", border: "1px solid var(--border-subtle)",
+              borderRadius: "var(--radius-sm)", color: "var(--text-primary)",
+              padding: "4px 8px", fontSize: 10, fontFamily: "'JetBrains Mono', monospace",
+              resize: "vertical", minHeight: 40, outline: "none",
+            }}
+          />
+        </div>
+      )}
+
+      {error && <div style={{ color: "#ff6080", fontSize: 10 }}>{error}</div>}
+
+      {/* Response */}
+      {response && (
+        <div style={{
+          background: "var(--bg-tertiary)", border: "1px solid var(--border-subtle)",
+          borderRadius: "var(--radius-sm)", overflow: "hidden",
+        }}>
+          {/* Status bar */}
+          <div style={{
+            display: "flex", alignItems: "center", gap: 8, padding: "4px 8px",
+            borderBottom: "1px solid var(--border-subtle)", background: "var(--bg-primary)",
+          }}>
+            <span style={{
+              padding: "1px 8px", borderRadius: 8, fontSize: 10, fontWeight: 700,
+              color: "#000", background: statusColor(response.status),
+            }}>
+              {response.status} {response.status_text}
+            </span>
+            <span style={{ fontSize: 9, color: "var(--text-muted)", marginLeft: "auto" }}>
+              {response.time_ms}ms
+            </span>
+          </div>
+          {/* Response headers */}
+          <div style={{ padding: "4px 8px", borderBottom: "1px solid var(--border-subtle)", maxHeight: 100, overflowY: "auto" }}>
+            {response.headers.map(([k, v], i) => (
+              <div key={i} style={{ fontSize: 9, color: "var(--text-muted)", fontFamily: "monospace" }}>
+                <span style={{ color: "var(--accent-primary)" }}>{k}</span>: {v}
+              </div>
+            ))}
+          </div>
+          {/* Response body */}
+          <pre style={{
+            margin: 0, padding: 8, fontSize: 9, fontFamily: "'JetBrains Mono', monospace",
+            color: "var(--text-primary)", whiteSpace: "pre-wrap", wordBreak: "break-all",
+            maxHeight: 300, overflowY: "auto",
+          }}>
+            {(() => {
+              try { return JSON.stringify(JSON.parse(response.body), null, 2); } catch { return response.body; }
+            })()}
+          </pre>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function ToolsView() {
   const t = useT();
   const [activeTab, setActiveTab] = useState<ToolTab>("hash");
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-      {/* Tool tabs */}
-      <div style={{ display: "flex", gap: 4 }}>
-        {toolTabDefs.map((tab) => (
-          <button
-            key={tab.id}
-            onClick={() => setActiveTab(tab.id)}
-            style={{
-              flex: 1,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              gap: 4,
-              padding: "4px 8px",
-              fontSize: 10,
-              fontWeight: 600,
-              borderRadius: 8,
-              border: "1px solid",
-              borderColor: activeTab === tab.id ? "var(--accent-primary)" : "var(--border-subtle)",
-              background: activeTab === tab.id ? "var(--accent-primary)" : "var(--bg-tertiary)",
-              color: activeTab === tab.id ? "#000" : "var(--text-secondary)",
-              cursor: "pointer",
-            }}
-          >
-            <tab.icon size={10} />
-            {t(tab.labelKey)}
-          </button>
-        ))}
+      {/* Tool tabs - 2 rows for 6 tools */}
+      <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+        <div style={{ display: "flex", gap: 4 }}>
+          {toolTabDefs.slice(0, 3).map((tab) => (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              style={{
+                flex: 1, display: "flex", alignItems: "center", justifyContent: "center",
+                gap: 3, padding: "4px 6px", fontSize: 9, fontWeight: 600, borderRadius: 8,
+                border: "1px solid",
+                borderColor: activeTab === tab.id ? "var(--accent-primary)" : "var(--border-subtle)",
+                background: activeTab === tab.id ? "var(--accent-primary)" : "var(--bg-tertiary)",
+                color: activeTab === tab.id ? "#000" : "var(--text-secondary)",
+                cursor: "pointer",
+              }}
+            >
+              <tab.icon size={10} />
+              {t(tab.labelKey)}
+            </button>
+          ))}
+        </div>
+        <div style={{ display: "flex", gap: 4 }}>
+          {toolTabDefs.slice(3).map((tab) => (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              style={{
+                flex: 1, display: "flex", alignItems: "center", justifyContent: "center",
+                gap: 3, padding: "4px 6px", fontSize: 9, fontWeight: 600, borderRadius: 8,
+                border: "1px solid",
+                borderColor: activeTab === tab.id ? "var(--accent-primary)" : "var(--border-subtle)",
+                background: activeTab === tab.id ? "var(--accent-primary)" : "var(--bg-tertiary)",
+                color: activeTab === tab.id ? "#000" : "var(--text-secondary)",
+                cursor: "pointer",
+              }}
+            >
+              <tab.icon size={10} />
+              {t(tab.labelKey)}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Tool content */}
@@ -392,6 +789,9 @@ export function ToolsView() {
         {activeTab === "hash" && <HashTool />}
         {activeTab === "encode" && <EncodeTool />}
         {activeTab === "revshell" && <RevShellTool />}
+        {activeTab === "jwt" && <JwtTool />}
+        {activeTab === "passgen" && <PassGenTool />}
+        {activeTab === "http" && <HttpForgeTool />}
       </div>
     </div>
   );

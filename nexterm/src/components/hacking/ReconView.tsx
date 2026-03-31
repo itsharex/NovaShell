@@ -102,7 +102,10 @@ export function ReconView() {
           const trimmed = p.trim();
           if (trimmed.includes("-")) {
             const [start, end] = trimmed.split("-").map(Number);
-            return Array.from({ length: end - start + 1 }, (_, i) => start + i);
+            if (start > 0 && end > 0 && end >= start && end <= 65535) {
+              return Array.from({ length: Math.min(end - start + 1, 1000) }, (_, i) => start + i);
+            }
+            return [];
           }
           return [Number(trimmed)];
         }).flat().filter((p) => p > 0 && p <= 65535);

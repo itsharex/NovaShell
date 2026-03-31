@@ -8,6 +8,7 @@ import {
   Clock,
   Power,
   Wrench,
+  Network,
 } from "lucide-react";
 import { useAppStore } from "../store/appStore";
 import { useT } from "../i18n";
@@ -17,11 +18,13 @@ import { AiSecView } from "./hacking/AiSecView";
 import { AlertsView } from "./hacking/AlertsView";
 import { HistoryView } from "./hacking/HistoryView";
 import { ToolsView } from "./hacking/ToolsView";
+import { NetworkView } from "./hacking/NetworkView";
 
-type HackingSubTab = "recon" | "exploit" | "tools" | "ai" | "alerts" | "history";
+type HackingSubTab = "recon" | "network" | "exploit" | "tools" | "ai" | "alerts" | "history";
 
 const subTabDefs: { id: HackingSubTab; icon: typeof Radar; labelKey: string }[] = [
   { id: "recon", icon: Radar, labelKey: "hacking.recon" },
+  { id: "network", icon: Network, labelKey: "hacking.network" },
   { id: "exploit", icon: Zap, labelKey: "hacking.exploit" },
   { id: "tools", icon: Wrench, labelKey: "hacking.tools" },
   { id: "ai", icon: Brain, labelKey: "hacking.aiSec" },
@@ -139,8 +142,8 @@ export function HackingPanel() {
                   display: "flex",
                   alignItems: "center",
                   gap: 4,
-                  padding: "6px 10px",
-                  fontSize: 10,
+                  padding: "6px 6px",
+                  fontSize: 9,
                   fontWeight: activeSubTab === tab.id ? 700 : 400,
                   color: activeSubTab === tab.id ? "var(--accent-primary)" : "var(--text-muted)",
                   background: "none",
@@ -180,6 +183,7 @@ export function HackingPanel() {
             minHeight: 0,
           }} className="hacking-log-container">
             {activeSubTab === "recon" && <ReconView />}
+            {activeSubTab === "network" && <NetworkView />}
             {activeSubTab === "exploit" && <ExploitView />}
             {activeSubTab === "tools" && <ToolsView />}
             {activeSubTab === "ai" && <AiSecView />}

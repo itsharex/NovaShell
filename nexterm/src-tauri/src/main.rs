@@ -1304,6 +1304,41 @@ fn hacking_delete_session(filename: String) -> Result<(), String> {
     std::fs::remove_file(&filepath).map_err(|e| format!("Delete error: {}", e))
 }
 
+// ──────────── NEW Hacking Commands ────────────
+
+#[tauri::command]
+async fn hacking_ping_sweep(subnet: String) -> Result<Vec<hacking_manager::PingSweepResult>, String> {
+    tokio::task::spawn_blocking(move || hacking_manager::ping_sweep(&subnet))
+        .await.map_err(|e| format!("Task join error: {}", e))?
+}
+
+#[tauri::command]
+async fn hacking_http_security(url: String) -> Result<hacking_manager::HttpSecurityResult, String> {
+    hacking_manager::analyze_http_security(&url).await
+}
+
+#[tauri::command]
+async fn hacking_wifi_scan() -> Result<Vec<hacking_manager::WifiNetwork>, String> {
+    tokio::task::spawn_blocking(|| hacking_manager::scan_wifi())
+        .await.map_err(|e| format!("Task join error: {}", e))?
+}
+
+#[tauri::command]
+fn hacking_subnet_calc(ip: String, cidr: u8) -> Result<hacking_manager::SubnetInfo, String> {
+    hacking_manager::calculate_subnet(&ip, cidr)
+}
+
+#[tauri::command]
+async fn hacking_dns_enum(domain: String) -> Result<hacking_manager::DnsResult, String> {
+    tokio::task::spawn_blocking(move || hacking_manager::dns_enumerate(&domain))
+        .await.map_err(|e| format!("Task join error: {}", e))?
+}
+
+#[tauri::command]
+async fn hacking_http_forge(request: hacking_manager::HttpForgeRequest) -> Result<hacking_manager::HttpForgeResponse, String> {
+    hacking_manager::http_forge(request).await
+}
+
 // ──────────── SFTP Commands ────────────
 
 #[tauri::command]
@@ -2067,6 +2102,12 @@ fn main() {
             hacking_load_session,
             hacking_list_sessions,
             hacking_delete_session,
+            hacking_ping_sweep,
+            hacking_http_security,
+            hacking_wifi_scan,
+            hacking_subnet_calc,
+            hacking_dns_enum,
+            hacking_http_forge,
             sftp_connect,
             sftp_disconnect,
             sftp_list_dir,

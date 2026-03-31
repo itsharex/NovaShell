@@ -1302,7 +1302,7 @@ const StatsPanel = memo(function StatsPanel() {
     return () => clearInterval(interval);
   }, [sessionStartTime]);
 
-  const stats = systemStats || { cpu: 23, memoryUsed: 8_500_000_000, memoryTotal: 16_000_000_000, memoryPercent: 53, processes: 142 };
+  const stats = systemStats || { cpu: 0, memoryUsed: 0, memoryTotal: 1, memoryPercent: 0, processes: 0 };
   const formatBytes = (bytes: number) => `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
 
   return (

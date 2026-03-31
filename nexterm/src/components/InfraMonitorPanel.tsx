@@ -96,7 +96,8 @@ const MetricBar = memo(function MetricBar({
       : value >= warningThreshold
         ? "#d29922"
         : "#3fb950";
-  const pct = Math.min(100, Math.max(0, value));
+  const safeValue = isFinite(value) ? value : 0;
+  const pct = Math.min(100, Math.max(0, safeValue));
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11 }}>
       <span style={{ width: 32, color: "var(--text-muted)", textAlign: "right" }}>{label}</span>
@@ -120,7 +121,7 @@ const MetricBar = memo(function MetricBar({
         />
       </div>
       <span style={{ width: 36, color, fontWeight: 600, textAlign: "right" }}>
-        {value.toFixed(0)}%
+        {safeValue.toFixed(0)}%
       </span>
     </div>
   );

@@ -1991,7 +1991,11 @@ fn main() {
             ssh_sessions: RwLock::new(HashMap::new()),
             sftp_sessions: Mutex::new(HashMap::new()),
             log_streams: Mutex::new(HashMap::new()),
-            system: Mutex::new(sysinfo::System::new()),
+            system: Mutex::new({
+                let mut sys = sysinfo::System::new();
+                system_info::init_system(&mut sys);
+                sys
+            }),
             cached_path_commands: Mutex::new(None),
             log_manager: Mutex::new(log_manager::LogManager::new()),
             session_doc_manager: Mutex::new(session_doc_manager::SessionDocManager::new()),

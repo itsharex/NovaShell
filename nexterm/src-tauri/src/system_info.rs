@@ -1,7 +1,9 @@
 use serde::{Deserialize, Serialize};
 use sysinfo::System;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicUsize, AtomicU32, Ordering};
 use std::sync::OnceLock;
+use std::time::{Instant, Duration};
+use std::sync::Mutex;
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct SystemStats {
@@ -22,9 +24,44 @@ static CACHED_PROCESS_COUNT: AtomicUsize = AtomicUsize::new(0);
 // Cache static system properties — they never change at runtime
 static CACHED_HOSTNAME: OnceLock<String> = OnceLock::new();
 static CACHED_OS_NAME: OnceLock<String> = OnceLock::new();
+// Debounce: minimum 2 seconds between CPU refreshes to get accurate deltas
+static LAST_CPU_REFRESH: Mutex<Option<Instant>> = Mutex::new(None);
+static CACHED_CPU_USAGE: AtomicU32 = AtomicU32::new(0);
+
+const MIN_CPU_REFRESH_INTERVAL: Duration = Duration::from_secs(2);
+
+/// Initialize the System with a proper CPU baseline.
+/// Must be called once at startup before any get_stats() call.
+pub fn init_system(sys: &mut System) {
+    sys.refresh_cpu_usage();
+    std::thread::sleep(Duration::from_millis(250));
+    sys.refresh_cpu_usage();
+    // Store the initial reading
+    let cpu = sys.global_cpu_info().cpu_usage();
+    CACHED_CPU_USAGE.store(cpu.to_bits(), Ordering::Relaxed);
+    *LAST_CPU_REFRESH.lock().unwrap() = Some(Instant::now());
+}
 
 pub fn get_stats(sys: &mut System) -> SystemStats {
-    sys.refresh_cpu_usage();
+    // Only refresh CPU if enough time has passed since last refresh
+    // to avoid short deltas that produce inaccurate readings
+    let should_refresh_cpu = {
+        let mut last = LAST_CPU_REFRESH.lock().unwrap();
+        match *last {
+            Some(t) if t.elapsed() < MIN_CPU_REFRESH_INTERVAL => false,
+            _ => {
+                *last = Some(Instant::now());
+                true
+            }
+        }
+    };
+
+    if should_refresh_cpu {
+        sys.refresh_cpu_usage();
+        let cpu = sys.global_cpu_info().cpu_usage();
+        CACHED_CPU_USAGE.store(cpu.to_bits(), Ordering::Relaxed);
+    }
+
     sys.refresh_memory();
 
     let count = CALL_COUNTER.fetch_add(1, Ordering::Relaxed);
@@ -40,8 +77,10 @@ pub fn get_stats(sys: &mut System) -> SystemStats {
     let memory_used = sys.used_memory();
     let memory_total = sys.total_memory();
 
+    let cpu_usage = f32::from_bits(CACHED_CPU_USAGE.load(Ordering::Relaxed));
+
     SystemStats {
-        cpu_usage: sys.global_cpu_info().cpu_usage(),
+        cpu_usage,
         memory_used,
         memory_total,
         memory_percent: if memory_total > 0 {
@@ -64,8 +103,30 @@ pub struct ProcessInfo {
     pub memory_bytes: u64,
 }
 
+// Debounce process refresh: minimum 5 seconds between full enumerations
+// refresh_processes() is extremely heavy on Windows (NtQuerySystemInformation)
+static LAST_PROCESS_REFRESH: Mutex<Option<Instant>> = Mutex::new(None);
+const MIN_PROCESS_REFRESH_INTERVAL: Duration = Duration::from_secs(5);
+
 pub fn get_top_processes(sys: &mut System, limit: usize) -> Vec<ProcessInfo> {
-    sys.refresh_processes();
+    let should_refresh = {
+        let mut last = LAST_PROCESS_REFRESH.lock().unwrap();
+        match *last {
+            Some(t) if t.elapsed() < MIN_PROCESS_REFRESH_INTERVAL => false,
+            _ => {
+                *last = Some(Instant::now());
+                true
+            }
+        }
+    };
+
+    if should_refresh {
+        sys.refresh_processes();
+    }
+
+    // Normalize per-process CPU by dividing by number of cores
+    // sysinfo reports per-core (e.g. 800% on 8 cores), we want 0-100%
+    let num_cpus = sys.cpus().len().max(1) as f32;
 
     let mut procs: Vec<ProcessInfo> = sys.processes()
         .values()
@@ -73,7 +134,7 @@ pub fn get_top_processes(sys: &mut System, limit: usize) -> Vec<ProcessInfo> {
         .map(|p| ProcessInfo {
             pid: p.pid().as_u32(),
             name: p.name().to_string(),
-            cpu_usage: p.cpu_usage(),
+            cpu_usage: p.cpu_usage() / num_cpus,
             memory_bytes: p.memory(),
         })
         .collect();

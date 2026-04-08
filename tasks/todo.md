@@ -232,6 +232,41 @@
 - [x] Fix SSH terminal black screen on reopen: double-resize trick to trigger SIGWINCH shell redraw
 - [x] TypeScript + Rust compilation verified
 
+## Completed (Paste fix nano/vim)
+- [x] Fix paste into nano/vim adding extra spaces — replace manual `\x1b[200~...\x1b[201~` wrapping with `terminal.paste(text)` in SSHPanel.tsx and TerminalPanel.tsx (xterm.js handles BPM detection + CRLF→CR normalization)
+- [x] Verified xterm.js 5.5.0 typings expose `paste(data)` and `bracketedPasteMode` mode tracking — fix is correct
+
+## Completed (SSH old-connections dead-end fix)
+- [x] Add `pendingSSHConnectId` + `requestSSHConnect()` + `clearPendingSSHConnect()` to appStore
+- [x] SSHPanel: useEffect consumes `pendingSSHConnectId` and auto-triggers `startConnect` (opens password prompt for old saved connections without stored credentials)
+- [x] TerminalPanel: when SSH-tab credentials are missing, route through `requestSSHConnect` instead of dead-ending with "Connect via SSH panel first"
+- [x] TabBar: SSH-server quick-add menu now routes disconnected connections through `requestSSHConnect` instead of creating a broken tab
+- [x] TypeScript compilation verified
+
+## Completed (Deep audit pass 2 — verified bugs only)
+- [x] HIGH (security): SFTP temp key file used `std::fs::remove_file` (recoverable from disk slack); replaced with `ssh_manager::secure_delete` (zero-overwrite) — `sftp_manager.rs:80`
+- [x] HIGH (UX): SFTPPanel had the same encrypted-private-key silent-failure bug as SSHPanel; ported `isPassphraseError` + `isPassphrase` prompt mode + keychain pre-load to SFTPPanel
+- [x] LOW (defense in depth): `log_manager::load_session`/`delete_session` only filtered `..`, `/`, `\` but didn't canonicalize. Added `safe_resolve()` helper that canonicalizes log_dir + canonicalizes the resolved path and verifies `starts_with(log_dir)` to defeat symlink-based escape
+- [x] Made `secure_delete` `pub` in ssh_manager so sftp_manager can reuse it
+- [x] TypeScript + Rust compilation verified clean
+
+### False positives ruled out during the audit (do NOT re-flag in future)
+- 10× "Zustand array mutation via `.length =`/`.splice()`" in appStore — all are on FRESH local arrays created with spread `[...]`, not on state. Safe.
+- 4× "camelCase vs snake_case mismatch" in collab commands — Tauri 2 default behavior auto-converts `camelCase` JS args → `snake_case` Rust args. Safe.
+- "saveWorkspace stale closure" — `get()` is synchronous, immediately followed by `set()`. No async gap. Safe.
+- "SSHPanel:374 microtask stale activeSessionId" — closure correctly captures the activeSessionId from the effect that was active when the keystroke was queued; if user switches sessions, the IPC still goes to the correct session A in Rust. Safe.
+- "PTY reader thread no join → zombie" — intentional. ConPTY blocks `read()` until master is dropped, which happens after `Drop::drop` returns. Documented and correct.
+- "infra_monitor.rs:136 unwrap on systemctl parse" — actually `unwrap_or(trimmed)`, not `unwrap()`. Cannot panic.
+- "collab failed_attempts TOCTOU" — cleanup and check are inside the SAME lock acquisition. Safe.
+- "Sidebar interval stale closure" — effect deps `[sharedFolderIds]` recompute on folder add/remove, re-running effect with fresh closure.
+
+## Completed (Bug-fix sweep — all HIGH/MED/LOW resolved)
+- [x] HIGH: Encrypted private keys — added `isPassphrase` mode to passwordPrompt; `handleConnect` now detects libssh2 passphrase errors (passphrase/decrypt/extract/init/callback) and opens prompt; `startConnect` pre-loads stored passphrase from keychain for keyed connections
+- [x] HIGH: `beforeunload` flush — pre-cache `cachedInvoke` during `loadConfig` (was only set after first save); reduced debounce 3000ms→800ms; new `flushAllPendingSync` flushes config + debug logs on `pagehide`/`beforeunload`/`visibilitychange`
+- [x] MED: SSH session limit TOCTOU — added `ssh_in_flight: AtomicUsize` to AppState; `ssh_connect` reserves a slot via `fetch_add` BEFORE the handshake (RAII drop guard guarantees decrement on panic/error); final authoritative re-check inside the write-lock insert
+- [x] LOW: Hard-coded session limits — extracted to `MAX_PTY_SESSIONS=50`, `MAX_SSH_SESSIONS=30`, `MAX_SFTP_SESSIONS=30` constants; PTY/SFTP now check limit BEFORE the slow spawn/handshake; error messages now tell users what to do ("Disconnect an existing session and try again")
+- [x] TypeScript + Rust compilation verified clean
+
 ## Pending
 - [ ] Test Collaborative Terminal with two NovaShell instances on LAN
 - [ ] Test Cross-Server Navigation with real SSH servers

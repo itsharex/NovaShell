@@ -129,6 +129,8 @@ export function SSHPanel() {
   const updateSSHConnection = useAppStore((s) => s.updateSSHConnection);
   const removeSSHConnection = useAppStore((s) => s.removeSSHConnection);
   const addSSHTab = useAppStore((s) => s.addSSHTab);
+  const pendingSSHConnectId = useAppStore((s) => s.pendingSSHConnectId);
+  const clearPendingSSHConnect = useAppStore((s) => s.clearPendingSSHConnect);
   const theme = useAppStore((s) => s.theme);
   const customTheme = useAppStore((s) => s.customTheme);
   const t = useT();
@@ -240,6 +242,19 @@ export function SSHPanel() {
     setTesting(false);
   };
 
+  // Detect errors that mean "the encrypted private key needs a passphrase".
+  // libssh2 surfaces these via several phrasings depending on key format.
+  const isPassphraseError = (msg: string): boolean => {
+    const m = msg.toLowerCase();
+    return (
+      m.includes("passphrase") ||
+      m.includes("decrypt") ||
+      m.includes("unable to extract public key") ||
+      m.includes("unable to initialize private key") ||
+      m.includes("callback returned error") // OpenSSH new-format encrypted
+    );
+  };
+
   const handleConnect = useCallback(async (conn: SSHConnection, password?: string) => {
     updateSSHConnection(conn.id, { status: "connecting", errorMessage: undefined });
 
@@ -256,7 +271,15 @@ export function SSHPanel() {
       updateSSHConnection(conn.id, { status: "connected", sessionId });
       setActiveSessionId(sessionId);
     } catch (e) {
-      updateSSHConnection(conn.id, { status: "error", errorMessage: String(e) });
+      const errMsg = String(e);
+      // If this was a private-key auth that failed because the key is
+      // encrypted, open the passphrase prompt instead of dead-ending.
+      if (conn.privateKey && isPassphraseError(errMsg)) {
+        updateSSHConnection(conn.id, { status: "disconnected", errorMessage: undefined });
+        setPasswordPrompt({ connId: conn.id, password: "", saveMode: "keychain", isPassphrase: true });
+        return;
+      }
+      updateSSHConnection(conn.id, { status: "error", errorMessage: errMsg });
     }
   }, [updateSSHConnection]);
 
@@ -353,11 +376,12 @@ export function SSHPanel() {
       });
     };
 
-    // Wrap pasted text with bracketed paste sequences so editors
-    // like nano/vim don't auto-indent each line
+    // Delegate to xterm.js paste(): it normalizes CRLF/LF → CR and wraps
+    // with bracketed-paste markers ONLY when the remote app enabled BPM
+    // (DECSET 2004). Routes through terminal.onData → writeQueue.
+    // Fixes: extra spaces / phantom newlines in nano, vim, bash prompt.
     const pasteToSession = (text: string) => {
-      writeQueue += `\x1b[200~${text}\x1b[201~`;
-      scheduleWriteFlush();
+      terminal.paste(text);
     };
 
     // Copy/paste for SSH terminal — paste routes through writeQueue for optimal batching
@@ -576,12 +600,23 @@ export function SSHPanel() {
     };
   }, []);
 
-  // Password prompt state for connections without stored keys
-  const [passwordPrompt, setPasswordPrompt] = useState<{ connId: string; password: string; saveMode: "none" | "session" | "keychain" } | null>(null);
+  // Password prompt state. `isPassphrase` switches the UI text/labels to ask
+  // for a private-key passphrase instead of a login password. The keychain
+  // entry is shared (one entry per connectionId) — for keyed connections it
+  // stores the passphrase, for password connections it stores the password.
+  const [passwordPrompt, setPasswordPrompt] = useState<{ connId: string; password: string; saveMode: "none" | "session" | "keychain"; isPassphrase?: boolean } | null>(null);
 
   const startConnect = async (conn: SSHConnection) => {
     if (conn.privateKey) {
-      handleConnect(conn);
+      // Try stored passphrase from keychain (no-op for unencrypted keys —
+      // libssh2 ignores the passphrase arg when the key isn't encrypted).
+      try {
+        const { invoke } = await getTauriCore();
+        const storedPassphrase = await invoke<string | null>("keychain_get_password", { connectionId: conn.id });
+        handleConnect(conn, storedPassphrase || undefined);
+      } catch {
+        handleConnect(conn);
+      }
       return;
     }
     // Try session password first
@@ -599,8 +634,23 @@ export function SSHPanel() {
       }
     } catch {}
     // No stored password found, prompt user
-    setPasswordPrompt({ connId: conn.id, password: "", saveMode: "keychain" });
+    setPasswordPrompt({ connId: conn.id, password: "", saveMode: "keychain", isPassphrase: false });
   };
+
+  // External request: another component (TabBar / TerminalPanel) asked to
+  // connect a saved server. Trigger the same flow as clicking "Connect" so
+  // the password prompt opens if no credentials are stored.
+  useEffect(() => {
+    if (!pendingSSHConnectId) return;
+    const conn = sshConnections.find((c) => c.id === pendingSSHConnectId);
+    clearPendingSSHConnect();
+    if (conn && conn.status !== "connected" && conn.status !== "connecting") {
+      startConnect(conn);
+    }
+    // startConnect / sshConnections intentionally not in deps:
+    // we want to react only when a new request arrives.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingSSHConnectId]);
 
   const statusColor = (status: SSHConnection["status"]) => {
     switch (status) {
@@ -887,10 +937,12 @@ export function SSHPanel() {
           marginBottom: 12,
           border: "1px solid var(--accent-primary)",
         }}>
-          <label style={labelStyle}>{t("ssh.enterPassword")} {sshConnections.find((c) => c.id === passwordPrompt.connId)?.name}</label>
+          <label style={labelStyle}>
+            {passwordPrompt.isPassphrase ? "Key passphrase for" : t("ssh.enterPassword")} {sshConnections.find((c) => c.id === passwordPrompt.connId)?.name}
+          </label>
           <input
             type="password"
-            placeholder={t("ssh.enterPasswordPlaceholder")}
+            placeholder={passwordPrompt.isPassphrase ? "Enter SSH key passphrase" : t("ssh.enterPasswordPlaceholder")}
             value={passwordPrompt.password}
             onChange={(e) => setPasswordPrompt({ ...passwordPrompt, password: e.target.value })}
             onKeyDown={async (e) => {

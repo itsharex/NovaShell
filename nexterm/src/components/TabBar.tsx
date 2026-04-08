@@ -95,6 +95,7 @@ export function TabBar() {
   const collabSessions = useAppStore((s) => s.collabSessions);
   const sshConnections = useAppStore((s) => s.sshConnections);
   const addSSHTab = useAppStore((s) => s.addSSHTab);
+  const requestSSHConnect = useAppStore((s) => s.requestSSHConnect);
   const [showToolsMenu, setShowToolsMenu] = useState(false);
   const [menuPos, setMenuPos] = useState({ top: 0, left: 0 });
   const [availableShells, setAvailableShells] = useState<ShellInfo[]>([]);
@@ -248,7 +249,18 @@ export function TabBar() {
                   <button
                     key={conn.id}
                     className="new-tab-menu-item"
-                    onClick={() => { addSSHTab(conn.id); setShowToolsMenu(false); }}
+                    onClick={() => {
+                      // If already connected, spawn a new terminal tab on it.
+                      // If not, route to SSH panel which prompts for password
+                      // (avoids the dead-end "no credentials" error for old
+                      // saved connections without a stored password/key).
+                      if (conn.status === "connected") {
+                        addSSHTab(conn.id);
+                      } else {
+                        requestSSHConnect(conn.id);
+                      }
+                      setShowToolsMenu(false);
+                    }}
                     style={{ opacity: conn.status === "connected" ? 1 : 0.5 }}
                   >
                     <span className="new-tab-menu-item-icon">

@@ -1,5 +1,41 @@
 # NovaTerm - Lessons Learned
 
+## Audit Discipline — Verify Every Agent Finding Before Acting
+- Sub-agent audits produce a high false-positive rate (~70% in this codebase). Common false positives:
+  - **"Zustand array mutation"** — flagged on `.length =` / `.splice()` calls that operate on a FRESH local array created via `[...s.foo, ...]`, not on state. These are safe.
+  - **"Tauri camelCase mismatch"** — Tauri 2 default behavior auto-converts `camelCase` JS args → `snake_case` Rust args. Manually using either side is fine.
+  - **"unwrap panic"** — agents misread `unwrap_or` as `unwrap`. Always read the line.
+  - **"stale closure"** — when the closed-over variable is captured at effect-time and the effect re-runs on dependency change, it's not stale.
+  - **"PTY reader zombie"** — intentional pattern: ConPTY blocks `read()` until master is dropped (which happens after `Drop::drop` returns).
+- Rule: every agent finding must be verified by reading the cited file:line. Do NOT fix on faith. Track confirmed-vs-rejected so future audits don't re-litigate the same false positives.
+
+## libssh2 Encrypted Private Keys — Reuse `password` Argument as Passphrase
+- `userauth_pubkey_file(username, None, &key_path, password)` from the ssh2 crate uses the `password` arg as the **passphrase** when the key is encrypted. So you don't need a separate "passphrase" field on the wire — pipe the existing password channel through.
+- libssh2 surfaces passphrase failures via several phrasings depending on key format: `"passphrase"`, `"decrypt"`, `"unable to extract public key"`, `"unable to initialize private key"`, and (for OpenSSH new-format) `"callback returned error"`. Match all of these.
+- Detection-by-content of key text is unreliable (PEM has `Proc-Type: 4,ENCRYPTED` but new-format OpenSSH stores cipher metadata in a binary blob). Better pattern: try unencrypted first, catch the error, then prompt and retry.
+
+## Tauri Beforeunload Persistence — Pre-Cache invoke
+- Tauri's `@tauri-apps/api/core` `invoke` is async-imported. If the only place you cache it is inside a save handler that hasn't fired yet, then `beforeunload` will hit `cachedInvoke=null` and fall back to a dynamic import that **never resolves before unload**.
+- Fix pattern: pre-cache `invoke` during `loadConfig` (which always runs at startup), so the cached reference is available from the very first frame.
+- Use BOTH `pagehide` and `beforeunload` listeners. Tauri webviews fire `pagehide` more reliably than `beforeunload` on window close. Also flush opportunistically on `visibilitychange === "hidden"`.
+- Async work cannot be awaited during unload — fire-and-forget the IPC call after pre-caching, the kernel sends it to Rust before the window dies.
+
+## TOCTOU on Session Limits — Reserve Before Slow Work
+- Pattern: lock → check limit → release lock → DO SLOW THING (handshake) → lock → insert. The window between check and insert is wide enough that 11+ concurrent connects can all do the slow handshake before 1 gets rejected at insert.
+- Fix: an `AtomicUsize` counter for in-flight operations. `fetch_add` BEFORE the handshake, RAII guard with Drop impl to `fetch_sub` on success/failure/panic. Total = `sessions.len() + in_flight`.
+- Always keep a final authoritative re-check at insert time inside the write lock — defends against extreme races where the established count itself grew since the reserve.
+
+## SSH Quick-Tab Path Must Handle Missing Credentials
+- The SSH-tab feature added in v3.3.1 (`TabBar.tsx`/`TerminalPanel.tsx::sshConnectionId` branch) calls `getConnectionCredentials(conn)` which only checks privateKey/sessionPassword/keychain. For old saved connections with no keychain entry it returns `null` and the tab dead-ends with "Connect via SSH panel first" — leaving users with no way to recover.
+- Fix pattern: route to SSH panel and signal it via `requestSSHConnect(connectionId)` (store action), which sets `pendingSSHConnectId`. SSHPanel watches that field and auto-runs `startConnect` so the existing password prompt UI opens.
+- Lesson: any new "shortcut" entry point to SSH (palette, sidebar, tab+menu) MUST go through the same prompt-capable path, not bypass it. Never write a code path that produces an actionable error the user can't act on.
+
+## Bracketed Paste — NEVER wrap manually
+- Sending `\x1b[200~...\x1b[201~` unconditionally is WRONG. Those markers must only be emitted when the remote app has enabled BPM via DECSET 2004 (`\x1b[?2004h`). Otherwise the leading ESC is read as Meta+`[`, the literal `200~` reaches the shell as keystrokes, and the body of the paste is still subject to vim/nano auto-indent → "extra spaces" symptom the user reported.
+- Also, manual wrapping skips CRLF→CR normalization, so Windows clipboard `\r\n` produces double newlines.
+- CORRECT: call `terminal.paste(text)` from xterm.js. It tracks BPM state internally, normalizes line endings, and emits via `onData` so existing write queues still apply.
+- Files: `SSHPanel.tsx::pasteToSession`, `TerminalPanel.tsx::pasteToLiveSession`.
+
 ## UTF-8 Boundary Handling — CRITICAL (v2.4.9)
 - A 16KB read buffer can split a multi-byte UTF-8 character (e.g., emoji, CJK) between two reads
 - `str::from_utf8()` fails with `Utf8Error` which has `valid_up_to()` and `error_len()`

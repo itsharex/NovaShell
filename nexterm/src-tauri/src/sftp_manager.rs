@@ -77,7 +77,10 @@ impl SftpSession {
             let result =
                 session.userauth_pubkey_file(username, None, &key_path, password);
 
-            let _ = std::fs::remove_file(&key_path);
+            // Securely overwrite the temp key file before removal so the
+            // private key bytes aren't recoverable from disk slack space.
+            // Matches ssh_manager's pattern.
+            ssh_manager::secure_delete(&key_path);
             result.map_err(|e| format!("Public key auth failed: {}", e))?;
         } else if let Some(pass) = password {
             session

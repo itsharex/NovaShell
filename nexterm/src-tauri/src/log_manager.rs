@@ -138,16 +138,36 @@ impl LogManager {
         Ok(sessions)
     }
 
-    pub fn load_session(&self, filename: &str) -> Result<Vec<LogEntry>, String> {
-        // Validate filename to prevent path traversal
-        if filename.contains("..") || filename.contains('/') || filename.contains('\\') {
+    /// Resolve a user-supplied filename inside log_dir, defending against
+    /// path traversal AND symlink-based escape. Returns the canonical path
+    /// only if it stays inside log_dir.
+    fn safe_resolve(&self, filename: &str) -> Result<std::path::PathBuf, String> {
+        // 1. Reject obvious traversal attempts in the filename
+        if filename.is_empty()
+            || filename.contains("..")
+            || filename.contains('/')
+            || filename.contains('\\')
+            || filename.contains('\0')
+        {
             return Err("Invalid filename".to_string());
         }
 
-        let path = self.log_dir.join(filename);
-        if !path.exists() {
-            return Err("File not found".to_string());
+        // 2. Canonicalize the parent directory and join, then verify the
+        //    final canonical path is still inside log_dir. This blocks
+        //    symlinks placed inside log_dir from escaping it.
+        let dir = fs::canonicalize(&self.log_dir)
+            .map_err(|e| format!("log_dir canonicalize error: {}", e))?;
+        let candidate = dir.join(filename);
+        let resolved = fs::canonicalize(&candidate)
+            .map_err(|_| "File not found".to_string())?;
+        if !resolved.starts_with(&dir) {
+            return Err("Invalid filename".to_string());
         }
+        Ok(resolved)
+    }
+
+    pub fn load_session(&self, filename: &str) -> Result<Vec<LogEntry>, String> {
+        let path = self.safe_resolve(filename)?;
 
         let content = fs::read_to_string(&path)
             .map_err(|e| format!("Read error: {}", e))?;
@@ -209,16 +229,15 @@ impl LogManager {
     }
 
     pub fn delete_session(&self, filename: &str) -> Result<(), String> {
-        if filename.contains("..") || filename.contains('/') || filename.contains('\\') {
-            return Err("Invalid filename".to_string());
-        }
-
-        let path = self.log_dir.join(filename);
+        let path = self.safe_resolve(filename)?;
 
         // Don't allow deleting current session
         if let Some(ref current) = self.current_file {
-            if path == *current {
-                return Err("Cannot delete active session log".to_string());
+            // Compare canonical paths so a symlink can't bypass this check.
+            if let Ok(current_canon) = fs::canonicalize(current) {
+                if path == current_canon {
+                    return Err("Cannot delete active session log".to_string());
+                }
             }
         }
 

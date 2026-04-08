@@ -478,10 +478,12 @@ export function TerminalPanel() {
         liveWriteQueue += text;
         scheduleLiveWriteFlush();
       };
-      // Wrap pasted text with bracketed paste sequences so editors
-      // like nano/vim don't auto-indent each line
+      // Delegate to xterm.js paste(): it normalizes CRLF/LF → CR and wraps
+      // with bracketed-paste markers ONLY when the remote app enabled BPM
+      // (DECSET 2004). Routes through terminal.onData → liveWriteQueue.
+      // Fixes: extra spaces / phantom newlines in nano, vim, bash prompt.
       const pasteToLiveSession = (text: string) => {
-        writeToLiveSession(`\x1b[200~${text}\x1b[201~`);
+        terminal.paste(text);
       };
 
       // Copy: Ctrl+C with selection copies to clipboard (otherwise sends SIGINT)
@@ -606,7 +608,11 @@ export function TerminalPanel() {
             try {
               const credentials = await getConnectionCredentials(conn);
               if (!credentials) {
-                terminal.write(`\x1b[31m[NovaShell]\x1b[0m No credentials for ${conn.name}. Connect via SSH panel first.\r\n`);
+                terminal.write(`\x1b[33m[NovaShell]\x1b[0m No saved credentials for ${conn.name}. Opening password prompt...\r\n`);
+                // Route to SSH panel which will show the password prompt.
+                // After the user authenticates there, they can click the
+                // "+ tab" button on the connected card to spawn a new tab.
+                useAppStore.getState().requestSSHConnect(conn.id);
                 return;
               }
               const sshSessionId = await navigateToServer(conn, "~", credentials);

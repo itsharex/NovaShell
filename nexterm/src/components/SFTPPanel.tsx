@@ -111,7 +111,21 @@ export function SFTPPanel() {
     conn: SSHConnection;
     password: string;
     saveMode: "none" | "session" | "keychain";
+    isPassphrase?: boolean;
   } | null>(null);
+
+  // Detect errors meaning "the encrypted private key needs a passphrase".
+  // libssh2 surfaces these via several phrasings depending on key format.
+  const isPassphraseError = (msg: string): boolean => {
+    const m = msg.toLowerCase();
+    return (
+      m.includes("passphrase") ||
+      m.includes("decrypt") ||
+      m.includes("unable to extract public key") ||
+      m.includes("unable to initialize private key") ||
+      m.includes("callback returned error")
+    );
+  };
 
   const handleConnect = useCallback(async (conn: SSHConnection, password?: string) => {
     setConnecting(true);
@@ -129,7 +143,15 @@ export function SFTPPanel() {
       setConnectedName(conn.name);
       setView("explorer");
     } catch (e) {
-      setConnectError(String(e));
+      const errMsg = String(e);
+      // If this was a private-key auth that failed because the key is
+      // encrypted, open the passphrase prompt instead of dead-ending.
+      if (conn.privateKey && isPassphraseError(errMsg)) {
+        setPasswordPrompt({ conn, password: "", saveMode: "keychain", isPassphrase: true });
+        setConnectError(null);
+      } else {
+        setConnectError(errMsg);
+      }
     }
     setConnecting(false);
   }, []);
@@ -147,7 +169,16 @@ export function SFTPPanel() {
 
   const startConnect = async (conn: SSHConnection) => {
     if (conn.privateKey) {
-      handleConnect(conn);
+      // Pre-load stored passphrase from keychain (no-op for unencrypted
+      // keys — libssh2 ignores the passphrase arg). If wrong/missing, the
+      // catch in handleConnect detects passphrase errors and opens prompt.
+      try {
+        const { invoke } = await getTauriCore();
+        const storedPassphrase = await invoke<string | null>("keychain_get_password", { connectionId: conn.id });
+        handleConnect(conn, storedPassphrase || undefined);
+      } catch {
+        handleConnect(conn);
+      }
       return;
     }
     if (conn.sessionPassword) {
@@ -162,7 +193,7 @@ export function SFTPPanel() {
         return;
       }
     } catch {}
-    setPasswordPrompt({ conn, password: "", saveMode: "keychain" });
+    setPasswordPrompt({ conn, password: "", saveMode: "keychain", isPassphrase: false });
   };
 
   const submitPassword = async () => {
@@ -218,10 +249,14 @@ export function SFTPPanel() {
           marginBottom: 12,
           border: "1px solid var(--accent-primary)",
         }}>
-          <label style={labelStyle}>{t("sftp.passwordFor", { name: passwordPrompt.conn.name })}</label>
+          <label style={labelStyle}>
+            {passwordPrompt.isPassphrase
+              ? `Key passphrase for ${passwordPrompt.conn.name}`
+              : t("sftp.passwordFor", { name: passwordPrompt.conn.name })}
+          </label>
           <input
             type="password"
-            placeholder={t("sftp.passwordPlaceholder")}
+            placeholder={passwordPrompt.isPassphrase ? "Enter SSH key passphrase" : t("sftp.passwordPlaceholder")}
             value={passwordPrompt.password}
             onChange={(e) => setPasswordPrompt({ ...passwordPrompt, password: e.target.value })}
             onKeyDown={(e) => { if (e.key === "Enter") submitPassword(); }}

@@ -15,12 +15,25 @@ mod system_info;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::sync::{Mutex, RwLock};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use tauri::{Manager, State};
 use std::time::UNIX_EPOCH;
+
+// Session capacity limits — bumped from earlier conservative defaults.
+// These cap real concurrent connections; bumped upward so power users
+// hitting the limit is rare. Surfaced in error messages for clarity.
+pub const MAX_PTY_SESSIONS: usize = 50;
+pub const MAX_SSH_SESSIONS: usize = 30;
+pub const MAX_SFTP_SESSIONS: usize = 30;
 
 pub struct AppState {
     pub sessions: Mutex<HashMap<String, pty_manager::PtySession>>,
     pub ssh_sessions: RwLock<HashMap<String, ssh_manager::SshSession>>,
+    // Counts in-flight SSH connect handshakes (not yet inserted into
+    // ssh_sessions). Reserved BEFORE the handshake so concurrent connects
+    // can't all do an expensive handshake just to be rejected at insert
+    // time. Decremented on both success and failure.
+    pub ssh_in_flight: AtomicUsize,
     pub sftp_sessions: Mutex<HashMap<String, std::sync::Arc<sftp_manager::SftpSession>>>,
     pub log_streams: Mutex<HashMap<String, ssh_manager::LogStream>>,
     pub system: Mutex<sysinfo::System>,
@@ -105,14 +118,31 @@ async fn create_pty_session(
     state: State<'_, AppState>,
     app_handle: tauri::AppHandle,
 ) -> Result<String, String> {
+    // Check limit BEFORE spawning the shell process to avoid wasting a fork
+    // when at capacity (the previous code spawned then dropped on overflow).
+    {
+        let sessions = state.sessions.lock()
+            .map_err(|e| format!("Session lock error: {}", e))?;
+        if sessions.len() >= MAX_PTY_SESSIONS {
+            return Err(format!(
+                "Maximum number of terminal sessions reached ({}). Close an existing tab and try again.",
+                MAX_PTY_SESSIONS
+            ));
+        }
+    }
     let session_id = uuid::Uuid::new_v4().to_string();
     let session = pty_manager::PtySession::new(&shell_path, &session_id, app_handle)
         .map_err(|e| e.to_string())?;
 
     let mut sessions = state.sessions.lock()
         .map_err(|e| format!("Session lock error: {}", e))?;
-    if sessions.len() >= 20 {
-        return Err("Maximum number of terminal sessions reached (20)".to_string());
+    // Re-check after the (slow) spawn — defends against concurrent creates
+    // racing past the first check.
+    if sessions.len() >= MAX_PTY_SESSIONS {
+        return Err(format!(
+            "Maximum number of terminal sessions reached ({}). Close an existing tab and try again.",
+            MAX_PTY_SESSIONS
+        ));
     }
     sessions.insert(session_id.clone(), session);
     Ok(session_id)
@@ -361,13 +391,32 @@ async fn ssh_connect(
     state: State<'_, AppState>,
     app_handle: tauri::AppHandle,
 ) -> Result<String, String> {
-    {
-        let sessions = state.ssh_sessions.read()
-            .map_err(|e| format!("SSH session lock error: {}", e))?;
-        if sessions.len() >= 10 {
-            return Err("Maximum number of SSH sessions reached (10)".to_string());
+    // Reserve a slot atomically BEFORE the (slow) handshake. This prevents
+    // 11 concurrent connects from all spending ~10s on a handshake just for
+    // 1 to be rejected at insert time. Counts established + in-flight.
+    let current_established = state.ssh_sessions.read()
+        .map_err(|e| format!("SSH session lock error: {}", e))?
+        .len();
+    let in_flight = state.ssh_in_flight.fetch_add(1, Ordering::SeqCst);
+    if current_established + in_flight + 1 > MAX_SSH_SESSIONS {
+        state.ssh_in_flight.fetch_sub(1, Ordering::SeqCst);
+        return Err(format!(
+            "Maximum number of SSH sessions reached ({}). Disconnect an existing session and try again.",
+            MAX_SSH_SESSIONS
+        ));
+    }
+
+    // RAII guard: ensures the in-flight counter is always decremented even
+    // if the handshake panics or returns an error early. Without this, a
+    // panic during handshake would permanently leak a slot.
+    struct InFlightGuard<'a>(&'a AtomicUsize);
+    impl Drop for InFlightGuard<'_> {
+        fn drop(&mut self) {
+            self.0.fetch_sub(1, Ordering::SeqCst);
         }
     }
+    let _guard = InFlightGuard(&state.ssh_in_flight);
+
     let session_id = uuid::Uuid::new_v4().to_string();
     let sid = session_id.clone();
     let session = tokio::task::spawn_blocking(move || {
@@ -381,8 +430,14 @@ async fn ssh_connect(
     {
         let mut sessions = state.ssh_sessions.write()
             .map_err(|e| format!("SSH session lock error: {}", e))?;
-        if sessions.len() >= 10 {
-            return Err("Maximum number of SSH sessions reached (10)".to_string());
+        // Final authoritative check (defends against an extreme race where
+        // multiple connects all reserved simultaneously and the established
+        // count grew between the reserve and the insert).
+        if sessions.len() >= MAX_SSH_SESSIONS {
+            return Err(format!(
+                "Maximum number of SSH sessions reached ({}). Disconnect an existing session and try again.",
+                MAX_SSH_SESSIONS
+            ));
         }
         sessions.insert(session_id.clone(), session);
     }
@@ -1353,8 +1408,11 @@ async fn sftp_connect(
     {
         let sessions = state.sftp_sessions.lock()
             .map_err(|e| format!("SFTP session lock error: {}", e))?;
-        if sessions.len() >= 10 {
-            return Err("Maximum number of SFTP sessions reached (10)".to_string());
+        if sessions.len() >= MAX_SFTP_SESSIONS {
+            return Err(format!(
+                "Maximum number of SFTP sessions reached ({}). Disconnect an existing session and try again.",
+                MAX_SFTP_SESSIONS
+            ));
         }
     }
     let session_id = uuid::Uuid::new_v4().to_string();
@@ -1366,9 +1424,19 @@ async fn sftp_connect(
         )
     }).await.map_err(|e| format!("Task join error: {}", e))??;
 
-    state.sftp_sessions.lock()
-        .map_err(|e| format!("SFTP session lock error: {}", e))?
-        .insert(session_id.clone(), std::sync::Arc::new(session));
+    {
+        let mut sessions = state.sftp_sessions.lock()
+            .map_err(|e| format!("SFTP session lock error: {}", e))?;
+        // Re-check after the (slow) handshake to defend against concurrent
+        // creates that all passed the initial check.
+        if sessions.len() >= MAX_SFTP_SESSIONS {
+            return Err(format!(
+                "Maximum number of SFTP sessions reached ({}). Disconnect an existing session and try again.",
+                MAX_SFTP_SESSIONS
+            ));
+        }
+        sessions.insert(session_id.clone(), std::sync::Arc::new(session));
+    }
 
     Ok(session_id)
 }
@@ -2024,6 +2092,7 @@ fn main() {
         .manage(AppState {
             sessions: Mutex::new(HashMap::new()),
             ssh_sessions: RwLock::new(HashMap::new()),
+            ssh_in_flight: AtomicUsize::new(0),
             sftp_sessions: Mutex::new(HashMap::new()),
             log_streams: Mutex::new(HashMap::new()),
             system: Mutex::new({

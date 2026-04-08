@@ -425,6 +425,10 @@ let saveTimer: ReturnType<typeof setTimeout> | null = null;
 async function loadConfig(): Promise<PersistedConfig> {
   try {
     const { invoke } = await import("@tauri-apps/api/core");
+    // Pre-cache invoke so beforeunload can call it without an async import
+    // race. Without this, closing the app before any save mutation has
+    // happened leaves cachedInvoke=null and config never persists.
+    cachedInvoke = invoke;
     const raw = await invoke<string>("load_app_config");
     return JSON.parse(raw) as PersistedConfig;
   } catch {
@@ -461,17 +465,23 @@ let lastSavedJson = "";
 function scheduleSave() {
   if (!configLoaded) return; // Don't save until initial config is loaded — prevents overwriting
   if (saveTimer) clearTimeout(saveTimer);
+  // 800ms debounce: small enough that closing the app rarely loses data,
+  // large enough to coalesce bursts of edits (terminal typing, resize, etc.)
   saveTimer = setTimeout(() => {
     saveTimer = null;
     const config = buildPersistedConfig();
     const json = JSON.stringify(config);
     if (json === lastSavedJson) return; // Skip if unchanged
     lastSavedJson = json;
-    import("@tauri-apps/api/core").then(({ invoke }) => {
-      cachedInvoke = invoke;
-      invoke("save_app_config", { data: json }).catch(() => {});
-    }).catch(() => {});
-  }, 3000);
+    if (cachedInvoke) {
+      cachedInvoke("save_app_config", { data: json }).catch(() => {});
+    } else {
+      import("@tauri-apps/api/core").then(({ invoke }) => {
+        cachedInvoke = invoke;
+        invoke("save_app_config", { data: json }).catch(() => {});
+      }).catch(() => {});
+    }
+  }, 800);
 }
 
 // Save shared folder data (snippets + subFolders) to its JSON file
@@ -604,6 +614,12 @@ interface AppState {
   addSSHConnection: (conn: Omit<SSHConnection, "id" | "status">) => void;
   updateSSHConnection: (id: string, updates: Partial<SSHConnection>) => void;
   removeSSHConnection: (id: string) => void;
+  // Cross-component signal: when set, SSHPanel auto-triggers startConnect
+  // for this connection (opens password prompt if needed). Used by TabBar
+  // and TerminalPanel to recover from "no credentials" on saved connections.
+  pendingSSHConnectId: string | null;
+  requestSSHConnect: (connectionId: string) => void;
+  clearPendingSSHConnect: () => void;
 
   debugLogs: DebugLogEntry[];
   debugEnabled: boolean;
@@ -1080,6 +1096,15 @@ export const useAppStore = create<AppState>((set, get) => ({
     set((s) => ({ sshConnections: s.sshConnections.filter((c) => c.id !== id) }));
     scheduleSave();
   },
+
+  pendingSSHConnectId: null,
+  requestSSHConnect: (connectionId) => {
+    // Switch to SSH panel tab so the password prompt becomes visible,
+    // then signal SSHPanel to auto-trigger its connect/prompt flow.
+    get().openPanelTab("ssh");
+    set({ pendingSSHConnectId: connectionId });
+  },
+  clearPendingSSHConnect: () => set({ pendingSSHConnectId: null }),
 
   debugLogs: [],
   debugEnabled: true,
@@ -1832,25 +1857,59 @@ async function flushToDisk() {
   }
 }
 
-// Flush ALL pending data on page unload (config + debug logs)
-if (typeof window !== "undefined") {
-  window.addEventListener("beforeunload", () => {
-    // Flush config save immediately using cached invoke (no async import race)
-    if (saveTimer) {
-      clearTimeout(saveTimer);
-      saveTimer = null;
+// Flush ALL pending data on page unload (config + debug logs).
+// Important: Tauri/browser unload doesn't await async work — we MUST use the
+// pre-cached invoke (set during loadConfig) to avoid the dynamic import race.
+// We listen on BOTH `pagehide` and `beforeunload` because pagehide is more
+// reliable in Tauri webviews and beforeunload handles regular browser refresh.
+function flushAllPendingSync() {
+  // 1. Config — clear debounce, build current snapshot, fire-and-forget save
+  if (saveTimer) {
+    clearTimeout(saveTimer);
+    saveTimer = null;
+  }
+  if (configLoaded) {
+    try {
       const config = buildPersistedConfig();
-      if (cachedInvoke) {
-        cachedInvoke("save_app_config", { data: JSON.stringify(config) });
-      } else {
-        // Fallback: try async import (may not complete before unload)
-        import("@tauri-apps/api/core").then(({ invoke }) => {
-          invoke("save_app_config", { data: JSON.stringify(config) });
-        }).catch(() => {});
+      const json = JSON.stringify(config);
+      if (json !== lastSavedJson && cachedInvoke) {
+        lastSavedJson = json;
+        // Fire-and-forget — no await possible during unload, but Tauri's
+        // IPC kicks the request to Rust before the window closes.
+        cachedInvoke("save_app_config", { data: json });
       }
-    }
-    if (debugPersistQueue.length > 0) {
-      flushToDisk();
-    }
+    } catch { /* swallow — better to lose this save than block unload */ }
+  }
+
+  // 2. Debug logs — drain queue synchronously into one IPC call
+  if (flushTimer) {
+    clearTimeout(flushTimer);
+    flushTimer = null;
+  }
+  if (debugPersistQueue.length > 0 && cachedInvoke) {
+    try {
+      const batch = debugPersistQueue.splice(0, debugPersistQueue.length);
+      cachedInvoke("debug_log_save", {
+        entries: batch.map((e) => ({
+          id: e.id,
+          timestamp: e.timestamp,
+          level: e.level,
+          message: e.message,
+          source: e.source,
+        })),
+      });
+    } catch { /* swallow */ }
+  }
+}
+
+if (typeof window !== "undefined") {
+  // pagehide fires reliably on Tauri window close (unlike beforeunload which
+  // can be skipped if there are no listeners earlier in the chain).
+  window.addEventListener("pagehide", flushAllPendingSync);
+  window.addEventListener("beforeunload", flushAllPendingSync);
+  // visibilitychange when going hidden — opportunistic flush in case the
+  // window is being minimized/backgrounded before close.
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden") flushAllPendingSync();
   });
 }

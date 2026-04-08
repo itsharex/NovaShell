@@ -10,7 +10,7 @@ use tauri::Emitter;
 
 /// Securely delete a file by overwriting with zeros before removing.
 /// Prevents forensic recovery of sensitive data like SSH private keys.
-fn secure_delete(path: &std::path::Path) {
+pub fn secure_delete(path: &std::path::Path) {
     if let Ok(meta) = std::fs::metadata(path) {
         let zeros = vec![0u8; meta.len() as usize];
         let _ = std::fs::write(path, &zeros);

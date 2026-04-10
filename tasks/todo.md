@@ -267,6 +267,15 @@
 - [x] LOW: Hard-coded session limits — extracted to `MAX_PTY_SESSIONS=50`, `MAX_SSH_SESSIONS=30`, `MAX_SFTP_SESSIONS=30` constants; PTY/SFTP now check limit BEFORE the slow spawn/handshake; error messages now tell users what to do ("Disconnect an existing session and try again")
 - [x] TypeScript + Rust compilation verified clean
 
+## Completed (SSH Lag Fix + Session Persistence)
+- [x] SSH Lag: Treat libssh2 ErrorKind::Other timeout-like errors as idle (not transient with backoff)
+- [x] SSH Lag: Reduced backoff for real transient errors from 20ms+ to 5ms+
+- [x] SSH Scrollback: Added 64KB rolling scrollback buffer to SshSession (mirrors PTY pattern)
+- [x] SSH Scrollback: Flusher thread + reader direct-emit paths all save to scrollback
+- [x] SSH Scrollback: Added ssh_get_scrollback Tauri command
+- [x] SSH Scrollback: SSHPanel restores scrollback when re-opening terminal for active session
+- [x] Rust compilation verified (cargo check passed)
+
 ## Pending
 - [ ] Test Collaborative Terminal with two NovaShell instances on LAN
 - [ ] Test Cross-Server Navigation with real SSH servers

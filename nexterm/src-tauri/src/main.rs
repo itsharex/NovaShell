@@ -483,6 +483,20 @@ async fn ssh_resize(
 }
 
 #[tauri::command]
+fn ssh_get_scrollback(
+    session_id: String,
+    state: State<'_, AppState>,
+) -> Result<String, String> {
+    let sessions = state.ssh_sessions.read()
+        .map_err(|e| format!("SSH session lock error: {}", e))?;
+    if let Some(session) = sessions.get(&session_id) {
+        Ok(session.get_scrollback())
+    } else {
+        Err(format!("SSH session '{}' not found", session_id))
+    }
+}
+
+#[tauri::command]
 fn ssh_disconnect(
     session_id: String,
     state: State<'_, AppState>,
@@ -2124,6 +2138,7 @@ fn main() {
             ssh_write,
             ssh_resize,
             ssh_disconnect,
+            ssh_get_scrollback,
             ssh_test_connection,
             ssh_exec,
             server_map_scan,

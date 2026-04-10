@@ -65,6 +65,8 @@ pub struct SshSession {
     _flusher_thread: Option<JoinHandle<()>>,
     running: Arc<AtomicBool>,
     write_tx: mpsc::SyncSender<Vec<u8>>,
+    /// Rolling scrollback buffer (last 64KB) for restoring terminal on re-open
+    scrollback: Arc<Mutex<String>>,
 }
 
 impl Drop for SshSession {
@@ -193,6 +195,9 @@ impl SshSession {
         let batch: Arc<Mutex<String>> = Arc::new(Mutex::new(String::new()));
         let data_ready = Arc::new(Condvar::new());
 
+        // Rolling scrollback buffer (last 64KB) — mirrors PTY pattern
+        let scrollback: Arc<Mutex<String>> = Arc::new(Mutex::new(String::new()));
+
         // Pre-build event names to avoid repeated allocations
         let data_event = format!("ssh-data-{}", sid);
         let exit_event = format!("ssh-exit-{}", sid);
@@ -205,12 +210,29 @@ impl SshSession {
         let session_clone = Arc::clone(&session);
         let batch_reader = Arc::clone(&batch);
         let data_ready_reader = Arc::clone(&data_ready);
+        let scrollback_reader = Arc::clone(&scrollback);
         let app_handle_reader = app_handle.clone();
         let data_event_reader = data_event.clone();
         let exit_event_reader = exit_event.clone();
         let error_event_reader = error_event.clone();
 
         let reader_thread = std::thread::spawn(move || {
+            // Helper: append data to scrollback buffer when reader emits directly (bypassing flusher)
+            let append_scrollback = |data: &str| {
+                if let Ok(mut sb) = scrollback_reader.lock() {
+                    sb.push_str(data);
+                    if sb.len() > 65536 {
+                        let mut trim = sb.len() - 65536;
+                        while trim < sb.len() && !sb.is_char_boundary(trim) {
+                            trim += 1;
+                        }
+                        if trim < sb.len() {
+                            sb.drain(..trim);
+                        }
+                    }
+                }
+            };
+
             let mut buf = [0u8; 16384]; // 16KB buffer
             let mut utf8_remainder: Vec<u8> = Vec::new(); // holds incomplete UTF-8 bytes between reads
             let mut consecutive_errors: u32 = 0;
@@ -248,7 +270,9 @@ impl SshSession {
                     if ch.eof() {
                         if let Ok(mut b) = batch_reader.lock() {
                             if !b.is_empty() {
-                                let _ = app_handle_reader.emit(&data_event_reader, std::mem::take(&mut *b));
+                                let data = std::mem::take(&mut *b);
+                                append_scrollback(&data);
+                                let _ = app_handle_reader.emit(&data_event_reader, data);
                             }
                         }
                         let _ = app_handle_reader.emit(&exit_event_reader, ());
@@ -263,7 +287,9 @@ impl SshSession {
                     Ok(0) => {
                         if let Ok(mut b) = batch_reader.lock() {
                             if !b.is_empty() {
-                                let _ = app_handle_reader.emit(&data_event_reader, std::mem::take(&mut *b));
+                                let data = std::mem::take(&mut *b);
+                                append_scrollback(&data);
+                                let _ = app_handle_reader.emit(&data_event_reader, data);
                             }
                         }
                         let _ = app_handle_reader.emit(&exit_event_reader, ());
@@ -309,7 +335,9 @@ impl SshSession {
                             }
                             // Flush immediately if batch is large (fast output like `ls -la`)
                             if b.len() > 8192 {
-                                let _ = app_handle_reader.emit(&data_event_reader, std::mem::take(&mut *b));
+                                let data = std::mem::take(&mut *b);
+                                append_scrollback(&data);
+                                let _ = app_handle_reader.emit(&data_event_reader, data);
                             } else {
                                 // Signal flusher that data is ready
                                 data_ready_reader.notify_one();
@@ -323,7 +351,9 @@ impl SshSession {
                         // This ensures prompt output isn't delayed by 4ms flusher wait
                         if let Ok(mut b) = batch_reader.lock() {
                             if !b.is_empty() {
-                                let _ = app_handle_reader.emit(&data_event_reader, std::mem::take(&mut *b));
+                                let data = std::mem::take(&mut *b);
+                                append_scrollback(&data);
+                                let _ = app_handle_reader.emit(&data_event_reader, data);
                             }
                         }
                         // Send keepalive at proper intervals
@@ -339,7 +369,9 @@ impl SshSession {
                         || e.kind() == std::io::ErrorKind::ConnectionAborted => {
                         if let Ok(mut b) = batch_reader.lock() {
                             if !b.is_empty() {
-                                let _ = app_handle_reader.emit(&data_event_reader, std::mem::take(&mut *b));
+                                let data = std::mem::take(&mut *b);
+                                append_scrollback(&data);
+                                let _ = app_handle_reader.emit(&data_event_reader, data);
                             }
                         }
                         let msg = format!("SSH connection lost: {}", e);
@@ -347,14 +379,42 @@ impl SshSession {
                         break;
                     }
                     Err(ref e) => {
-                        // Treat ErrorKind::Other as likely transient (libssh2 transport errors)
-                        // Only do expensive .to_string() when we actually need to report
-                        let is_transient = e.kind() == std::io::ErrorKind::Other;
+                        // libssh2 on Windows often maps timeouts/EAGAIN as ErrorKind::Other
+                        // instead of WouldBlock/TimedOut. Check the error message to distinguish
+                        // harmless timeouts from real transport errors.
+                        let is_other = e.kind() == std::io::ErrorKind::Other;
+                        let is_timeout_like = if is_other {
+                            let msg = e.to_string().to_lowercase();
+                            msg.contains("timeout") || msg.contains("would block")
+                                || msg.contains("eagain") || msg.contains("timed out")
+                                || msg.contains("-37") || msg.contains("-43")
+                        } else {
+                            false
+                        };
+
+                        // If it's actually a timeout/EAGAIN from libssh2, treat like WouldBlock
+                        if is_timeout_like {
+                            consecutive_errors = 0;
+                            if let Ok(mut b) = batch_reader.lock() {
+                                if !b.is_empty() {
+                                    let data = std::mem::take(&mut *b);
+                                    append_scrollback(&data);
+                                    let _ = app_handle_reader.emit(&data_event_reader, data);
+                                }
+                            }
+                            if last_keepalive.elapsed() >= keepalive_interval {
+                                if let Ok(session) = session_clone.lock() {
+                                    let _ = session.keepalive_send();
+                                }
+                                last_keepalive = Instant::now();
+                            }
+                            continue;
+                        }
 
                         consecutive_errors += 1;
 
                         // Before giving up on transient errors, try keepalive to verify connection
-                        if is_transient && consecutive_errors == max_consecutive_errors / 2 {
+                        if is_other && consecutive_errors == max_consecutive_errors / 2 {
                             if let Ok(session) = session_clone.lock() {
                                 if session.keepalive_send().is_ok() {
                                     consecutive_errors = 0;
@@ -366,7 +426,9 @@ impl SshSession {
                         if consecutive_errors >= max_consecutive_errors {
                             if let Ok(mut b) = batch_reader.lock() {
                                 if !b.is_empty() {
-                                    let _ = app_handle_reader.emit(&data_event_reader, std::mem::take(&mut *b));
+                                    let data = std::mem::take(&mut *b);
+                                    append_scrollback(&data);
+                                    let _ = app_handle_reader.emit(&data_event_reader, data);
                                 }
                             }
                             let msg = format!("SSH connection lost: {}", e);
@@ -374,11 +436,11 @@ impl SshSession {
                             break;
                         }
 
-                        // Progressive backoff for persistent errors
-                        let backoff = if is_transient {
-                            20 + (consecutive_errors as u64 * 5).min(100)
+                        // Short backoff for real transient errors (not timeouts)
+                        let backoff = if is_other {
+                            5 + (consecutive_errors as u64 * 2).min(50)
                         } else {
-                            10
+                            5
                         };
                         std::thread::sleep(Duration::from_millis(backoff));
                     }
@@ -391,6 +453,7 @@ impl SshSession {
         let running_flusher = Arc::clone(&running);
         let batch_flusher = Arc::clone(&batch);
         let data_ready_flusher = Arc::clone(&data_ready);
+        let scrollback_flusher = Arc::clone(&scrollback);
 
         let flusher_thread = std::thread::spawn(move || {
             loop {
@@ -416,6 +479,20 @@ impl SshSession {
                 }
 
                 if let Some(data) = should_emit {
+                    // Append to scrollback buffer (keep last 64KB)
+                    if let Ok(mut sb) = scrollback_flusher.lock() {
+                        sb.push_str(&data);
+                        if sb.len() > 65536 {
+                            let mut trim = sb.len() - 65536;
+                            while trim < sb.len() && !sb.is_char_boundary(trim) {
+                                trim += 1;
+                            }
+                            if trim < sb.len() {
+                                sb.drain(..trim);
+                            }
+                        }
+                    }
+
                     let _ = app_handle.emit(&data_event, data);
                 }
             }
@@ -428,6 +505,7 @@ impl SshSession {
             _flusher_thread: Some(flusher_thread),
             running,
             write_tx,
+            scrollback,
         })
     }
 
@@ -474,6 +552,14 @@ impl SshSession {
     /// Get Arc refs for resize without borrowing self (allows use from spawn_blocking)
     pub fn get_resize_refs(&self) -> (Arc<Mutex<Session>>, Arc<Mutex<ssh2::Channel>>) {
         (Arc::clone(&self.session), Arc::clone(&self.channel))
+    }
+
+    /// Get the current scrollback buffer content (for restoring terminal on re-open).
+    pub fn get_scrollback(&self) -> String {
+        self.scrollback
+            .lock()
+            .map(|sb| sb.clone())
+            .unwrap_or_default()
     }
 }
 

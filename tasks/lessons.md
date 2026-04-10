@@ -228,6 +228,20 @@
 - Frontend buffered write queue further helps: batches rapid keystrokes into fewer IPC calls
 - Combined with flusher at 16ms (60fps) instead of 50ms, SSH now feels as responsive as local PTY
 
+## SSH ErrorKind::Other on Windows — CRITICAL
+- libssh2 on Windows frequently maps EAGAIN/timeout errors as `ErrorKind::Other` instead of `WouldBlock`/`TimedOut`
+- The previous code treated ALL `ErrorKind::Other` as transient with progressive backoff (20ms + errors*5ms, up to 100ms sleep)
+- If every idle timeout hit this path, the read loop would sleep 20ms+ per iteration instead of immediately continuing — causing visible input lag
+- Fix: check the error message for timeout indicators ("timeout", "would block", "eagain", "-37", "-43") and treat those as idle, not transient
+- The error codes -37 (LIBSSH2_ERROR_EAGAIN) and -43 (LIBSSH2_ERROR_TIMEOUT) are the libssh2 internal codes that ssh2-rs may include in error messages
+
+## SSH Scrollback — Mirror PTY Pattern
+- PTY has a 64KB scrollback buffer in its flusher thread; SSH had none
+- When SSHPanel navigates away and back, the xterm Terminal is DESTROYED and re-created — without scrollback, the user sees a blank terminal
+- Fix: add scrollback buffer to SshSession, save data in flusher AND in reader's direct-emit paths (large batch >8KB, idle flush, EOF flush, error flush)
+- The `ssh_get_scrollback` command returns the buffer, and SSHPanel writes it to the new Terminal on init
+- This does NOT replay the live session — it's a raw dump of the last 64KB of output, which is enough to restore visual context
+
 ## Windows / Antivirus
 - Unsigned compiled `.exe` files in project root trigger Windows Defender false positives
 - Add `*.exe`, `*.msi`, `*.dmg`, etc. to `.gitignore` to prevent accidental commits

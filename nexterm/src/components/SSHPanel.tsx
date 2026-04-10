@@ -273,8 +273,18 @@ export function SSHPanel() {
     } catch (e) {
       const errMsg = String(e);
       // If this was a private-key auth that failed because the key is
-      // encrypted, open the passphrase prompt instead of dead-ending.
-      if (conn.privateKey && isPassphraseError(errMsg)) {
+      // encrypted: silently check keychain for a stored passphrase and
+      // retry once. Only show the prompt if the keychain has nothing.
+      if (conn.privateKey && !password && isPassphraseError(errMsg)) {
+        try {
+          const { invoke: inv } = await getTauriCore();
+          const storedPass = await inv<string | null>("keychain_get_password", { connectionId: conn.id });
+          if (storedPass) {
+            // Retry with stored passphrase — no UI flash
+            handleConnect(conn, storedPass);
+            return;
+          }
+        } catch { /* keychain unavailable — fall through to prompt */ }
         updateSSHConnection(conn.id, { status: "disconnected", errorMessage: undefined });
         setPasswordPrompt({ connId: conn.id, password: "", saveMode: "keychain", isPassphrase: true });
         return;
@@ -456,6 +466,16 @@ export function SSHPanel() {
         });
         unlisteners.push(unError);
 
+        // Restore scrollback from previous session (if terminal was re-opened)
+        try {
+          const scrollback = await invoke<string>("ssh_get_scrollback", { sessionId: activeSessionId });
+          if (scrollback) {
+            terminal.write(scrollback);
+          }
+        } catch {
+          // No scrollback available — fresh session
+        }
+
         // Terminal input → fire-and-forget via writeQueue
         let sshInputBuffer = "";
         const dataDisposable = terminal.onData((data) => {
@@ -608,15 +628,12 @@ export function SSHPanel() {
 
   const startConnect = async (conn: SSHConnection) => {
     if (conn.privateKey) {
-      // Try stored passphrase from keychain (no-op for unencrypted keys —
-      // libssh2 ignores the passphrase arg when the key isn't encrypted).
-      try {
-        const { invoke } = await getTauriCore();
-        const storedPassphrase = await invoke<string | null>("keychain_get_password", { connectionId: conn.id });
-        handleConnect(conn, storedPassphrase || undefined);
-      } catch {
-        handleConnect(conn);
-      }
+      // Fast path: try without passphrase first. Unencrypted keys succeed
+      // instantly (same speed as v3.3.1). Encrypted keys fail fast and
+      // handleConnect's catch detects passphrase error → opens prompt.
+      // Keychain lookup moved INSIDE handleConnect's passphrase-error catch
+      // so it never blocks the fast path.
+      handleConnect(conn);
       return;
     }
     // Try session password first

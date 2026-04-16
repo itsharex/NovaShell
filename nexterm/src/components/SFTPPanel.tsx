@@ -145,8 +145,17 @@ export function SFTPPanel() {
     } catch (e) {
       const errMsg = String(e);
       // If this was a private-key auth that failed because the key is
-      // encrypted, open the passphrase prompt instead of dead-ending.
-      if (conn.privateKey && isPassphraseError(errMsg)) {
+      // encrypted: silently check keychain for stored passphrase and retry
+      // once. Only show the prompt if the keychain has nothing.
+      if (conn.privateKey && !password && isPassphraseError(errMsg)) {
+        try {
+          const { invoke: inv } = await getTauriCore();
+          const storedPass = await inv<string | null>("keychain_get_password", { connectionId: conn.id });
+          if (storedPass) {
+            handleConnect(conn, storedPass);
+            return;
+          }
+        } catch { /* keychain unavailable — fall through to prompt */ }
         setPasswordPrompt({ conn, password: "", saveMode: "keychain", isPassphrase: true });
         setConnectError(null);
       } else {
@@ -169,16 +178,10 @@ export function SFTPPanel() {
 
   const startConnect = async (conn: SSHConnection) => {
     if (conn.privateKey) {
-      // Pre-load stored passphrase from keychain (no-op for unencrypted
-      // keys — libssh2 ignores the passphrase arg). If wrong/missing, the
-      // catch in handleConnect detects passphrase errors and opens prompt.
-      try {
-        const { invoke } = await getTauriCore();
-        const storedPassphrase = await invoke<string | null>("keychain_get_password", { connectionId: conn.id });
-        handleConnect(conn, storedPassphrase || undefined);
-      } catch {
-        handleConnect(conn);
-      }
+      // Fast path: try without passphrase first. Unencrypted keys succeed
+      // instantly. Encrypted keys fail fast → handleConnect detects the
+      // passphrase error → checks keychain silently → retries or prompts.
+      handleConnect(conn);
       return;
     }
     if (conn.sessionPassword) {

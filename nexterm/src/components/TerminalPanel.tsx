@@ -634,9 +634,26 @@ export function TerminalPanel() {
               });
               unlisteners.push(unlistenError);
 
-              // Wire input → SSH write
+              // Wire input → SSH write via batched queue (matches SSHPanel's
+              // optimised pattern: all keystrokes from the same microtask are
+              // coalesced into a single IPC call, avoiding per-keystroke overhead).
+              let sshTabWriteQueue = "";
+              let sshTabFlushScheduled = false;
+              const scheduleSshTabFlush = () => {
+                if (sshTabFlushScheduled) return;
+                sshTabFlushScheduled = true;
+                queueMicrotask(() => {
+                  sshTabFlushScheduled = false;
+                  if (sshTabWriteQueue) {
+                    const toSend = sshTabWriteQueue;
+                    sshTabWriteQueue = "";
+                    invoke("ssh_write", { sessionId: sshSessionId, data: toSend }).catch(() => {});
+                  }
+                });
+              };
               const inputDisposable = terminal.onData((data) => {
-                invoke("ssh_write", { sessionId: sshSessionId, data }).catch(() => {});
+                sshTabWriteQueue += data;
+                scheduleSshTabFlush();
               });
               disposables.push(inputDisposable);
 

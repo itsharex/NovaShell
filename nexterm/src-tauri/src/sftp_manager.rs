@@ -69,9 +69,10 @@ impl SftpSession {
 
         // Authenticate
         if let Some(key_content) = private_key {
+            let key_bytes = ssh_manager::prepare_private_key(key_content)?;
             let temp_dir = std::env::temp_dir();
             let key_path = temp_dir.join(format!("novashell_sftp_key_{}", session_id));
-            std::fs::write(&key_path, key_content)
+            std::fs::write(&key_path, &key_bytes)
                 .map_err(|e| format!("Failed to write temp key: {}", e))?;
 
             let result =

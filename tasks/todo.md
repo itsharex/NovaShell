@@ -276,6 +276,13 @@
 - [x] SSH Scrollback: SSHPanel restores scrollback when re-opening terminal for active session
 - [x] Rust compilation verified (cargo check passed)
 
+## Completed (SSH private key auth fix — CRLF/whitespace/PPK)
+- [x] Add `prepare_private_key()` helper in ssh_manager.rs — normalizes CRLF→LF, trims whitespace, ensures trailing LF, detects PPK format with clear error, validates PEM header
+- [x] Apply normalizer in all 4 ssh_manager paths (connect, log stream, test, exec_command)
+- [x] Apply normalizer in sftp_manager.rs via `ssh_manager::prepare_private_key`
+- [x] Frontend `isPassphraseError` already ignores new helpful errors — PPK/invalid-format errors go straight to banner instead of triggering passphrase prompt
+- [x] Rust cargo check passed
+
 ## Pending
 - [ ] Test Collaborative Terminal with two NovaShell instances on LAN
 - [ ] Test Cross-Server Navigation with real SSH servers

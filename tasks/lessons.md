@@ -9,6 +9,12 @@
   - **"PTY reader zombie"** — intentional pattern: ConPTY blocks `read()` until master is dropped (which happens after `Drop::drop` returns).
 - Rule: every agent finding must be verified by reading the cited file:line. Do NOT fix on faith. Track confirmed-vs-rejected so future audits don't re-litigate the same false positives.
 
+## libssh2 Private Keys — Normalize Before Writing to Temp File
+- Error `public key auth:[session(-1)] unknown error` from libssh2 is a generic parse failure. On Windows the usual cause is the textarea/file-upload adding CRLF line endings, or leading/trailing whitespace, or a missing trailing newline. libssh2 is strict: it needs LF-only + trailing `\n` + no leading whitespace.
+- Always funnel private-key writes through a single helper (`prepare_private_key` in ssh_manager.rs) that: rejects empty input, detects PPK (`PuTTY-User-Key-File-`) with a clear "convert in PuTTYgen" message, validates the `-----BEGIN` header, replaces `\r\n` and `\r` with `\n`, trims, and appends one trailing `\n`.
+- Five call sites that MUST use it: ssh_manager (ssh_connect, log_stream, test_ssh_connection, exec_command) + sftp_manager. Missing any one reproduces the bug intermittently depending on which flow the user triggers first.
+- When adding new error messages from the backend, double-check the frontend's `isPassphraseError` heuristic doesn't accidentally match them (would trigger a wrong passphrase prompt). "PPK", "Invalid private key format", "Private key is empty" are all safe.
+
 ## libssh2 Encrypted Private Keys — Reuse `password` Argument as Passphrase
 - `userauth_pubkey_file(username, None, &key_path, password)` from the ssh2 crate uses the `password` arg as the **passphrase** when the key is encrypted. So you don't need a separate "passphrase" field on the wire — pipe the existing password channel through.
 - libssh2 surfaces passphrase failures via several phrasings depending on key format: `"passphrase"`, `"decrypt"`, `"unable to extract public key"`, `"unable to initialize private key"`, and (for OpenSSH new-format) `"callback returned error"`. Match all of these.

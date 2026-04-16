@@ -18,6 +18,53 @@ pub fn secure_delete(path: &std::path::Path) {
     let _ = std::fs::remove_file(path);
 }
 
+/// Normalize private key content for libssh2.
+///
+/// libssh2 is strict about key format: CRLF line endings, missing trailing
+/// newline, or leading/trailing whitespace all cause the opaque error
+/// `public key auth:[session(-1)] unknown error`. When users paste a key
+/// into a textarea on Windows, or load one via drag-and-drop, any of those
+/// can happen silently.
+///
+/// This helper:
+///   1. Detects PPK (PuTTY) format and returns a clear error — libssh2
+///      cannot read .ppk files directly.
+///   2. Normalizes `\r\n` and bare `\r` line endings to `\n`.
+///   3. Trims leading/trailing whitespace and re-adds a single trailing `\n`.
+///   4. Verifies the content starts with a PEM/OpenSSH header.
+pub fn prepare_private_key(key_content: &str) -> Result<Vec<u8>, String> {
+    let trimmed = key_content.trim();
+
+    if trimmed.is_empty() {
+        return Err("Private key is empty".to_string());
+    }
+
+    // PPK (PuTTY) keys are not supported by libssh2. Tell the user how to fix.
+    if trimmed.starts_with("PuTTY-User-Key-File-") {
+        return Err(
+            "PPK (PuTTY) keys are not supported. Convert to OpenSSH format: \
+             open the key in PuTTYgen → Conversions → Export OpenSSH key."
+                .to_string(),
+        );
+    }
+
+    // Validate header — must be a recognizable PEM/OpenSSH private key.
+    if !trimmed.starts_with("-----BEGIN") {
+        return Err(
+            "Invalid private key format: expected a PEM block starting with \
+             '-----BEGIN ... PRIVATE KEY-----'. If you pasted a public key \
+             (id_rsa.pub), paste the matching private key instead."
+                .to_string(),
+        );
+    }
+
+    // Normalize line endings: CRLF → LF, lone CR → LF. Ensure single trailing LF.
+    let mut normalized = trimmed.replace("\r\n", "\n").replace('\r', "\n");
+    normalized.push('\n');
+
+    Ok(normalized.into_bytes())
+}
+
 /// Configure preferred algorithms on an SSH session for maximum server compatibility.
 /// Must be called BEFORE session.handshake().
 pub fn configure_ssh_algorithms(session: &Session) {
@@ -137,9 +184,10 @@ impl SshSession {
 
         // Authenticate
         if let Some(key_content) = private_key {
+            let key_bytes = prepare_private_key(key_content)?;
             let temp_dir = std::env::temp_dir();
             let key_path = temp_dir.join(format!("novashell_ssh_key_{}", session_id));
-            std::fs::write(&key_path, key_content)
+            std::fs::write(&key_path, &key_bytes)
                 .map_err(|e| format!("Failed to write temp key: {}", e))?;
             #[cfg(unix)]
             {
@@ -639,9 +687,10 @@ impl LogStream {
 
         // Authenticate
         if let Some(key_content) = private_key {
+            let key_bytes = prepare_private_key(key_content)?;
             let temp_dir = std::env::temp_dir();
             let key_path = temp_dir.join(format!("novashell_logstream_{}", stream_id));
-            std::fs::write(&key_path, key_content).map_err(|e| format!("Key write error: {}", e))?;
+            std::fs::write(&key_path, &key_bytes).map_err(|e| format!("Key write error: {}", e))?;
             #[cfg(unix)]
             {
                 use std::os::unix::fs::PermissionsExt;
@@ -750,9 +799,10 @@ pub fn test_ssh_connection(
         .map_err(|e| format!("Handshake failed: {}", e))?;
 
     if let Some(key_content) = private_key {
+        let key_bytes = prepare_private_key(key_content)?;
         let temp_dir = std::env::temp_dir();
         let key_path = temp_dir.join(format!("novashell_ssh_test_{}", uuid::Uuid::new_v4()));
-        std::fs::write(&key_path, key_content)
+        std::fs::write(&key_path, &key_bytes)
             .map_err(|e| format!("Failed to write temp key: {}", e))?;
         #[cfg(unix)]
         {
@@ -813,9 +863,10 @@ pub fn exec_command(
 
     // Authenticate
     if let Some(key_content) = private_key {
+        let key_bytes = prepare_private_key(key_content)?;
         let temp_dir = std::env::temp_dir();
         let key_path = temp_dir.join(format!("novashell_exec_{}", uuid::Uuid::new_v4()));
-        std::fs::write(&key_path, key_content)
+        std::fs::write(&key_path, &key_bytes)
             .map_err(|e| format!("Failed to write temp key: {}", e))?;
         #[cfg(unix)]
         {

@@ -32,12 +32,13 @@ futures-util = { version = "0.3", default-features = false, features = ["sink"] 
 rand = "0.8"
 
 # On Windows, libssh2-sys defaults to the WinCNG crypto backend, which does
-# NOT support ed25519 keys. Enable vendored-openssl on Windows targets only
-# so libssh2 links against a bundled OpenSSL — this gives us ed25519 support
-# and unlocks the in-memory `userauth_pubkey_memory` API. Unix/macOS already
-# use OpenSSL by default, so no feature is needed there.
+# NOT support ed25519 keys. Two features are needed:
+#   - vendored-openssl: compiles OpenSSL from source (provides the library)
+#   - openssl-on-win32: tells libssh2-sys build.rs to define LIBSSH2_OPENSSL
+#     instead of LIBSSH2_WINCNG (without this, libssh2 ignores OpenSSL!)
+# Unix/macOS already use OpenSSL by default, so no feature is needed there.
 [target.'cfg(windows)'.dependencies]
-ssh2 = { version = "0.9", features = ["vendored-openssl"] }
+ssh2 = { version = "0.9", features = ["vendored-openssl", "openssl-on-win32"] }
 
 [features]
 default = ["custom-protocol"]

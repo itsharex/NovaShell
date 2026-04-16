@@ -24,6 +24,13 @@ uuid = { version = "1", features = ["v4"] }
 dirs = "5"
 ssh2 = "0.9"
 socket2 = "0.5"
+
+# On Windows, libssh2-sys defaults to the WinCNG crypto backend, which does
+# NOT support ed25519 keys. Enable vendored-openssl so libssh2 links against
+# a bundled OpenSSL — this gives us ed25519 support, unlocks the in-memory
+# auth API (`userauth_pubkey_memory`), and matches macOS/Linux behaviour.
+[target.'cfg(windows)'.dependencies]
+ssh2 = { version = "0.9", features = ["vendored-openssl"] }
 keyring = "2"
 reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
 tokio = { version = "1", features = ["rt", "net", "sync", "macros", "time"] }

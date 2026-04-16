@@ -8,16 +8,6 @@ use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 use tauri::Emitter;
 
-/// Securely delete a file by overwriting with zeros before removing.
-/// Prevents forensic recovery of sensitive data like SSH private keys.
-pub fn secure_delete(path: &std::path::Path) {
-    if let Ok(meta) = std::fs::metadata(path) {
-        let zeros = vec![0u8; meta.len() as usize];
-        let _ = std::fs::write(path, &zeros);
-    }
-    let _ = std::fs::remove_file(path);
-}
-
 /// Normalize private key content for libssh2.
 ///
 /// libssh2 is strict about key format: CRLF line endings, missing trailing
@@ -32,7 +22,7 @@ pub fn secure_delete(path: &std::path::Path) {
 ///   2. Normalizes `\r\n` and bare `\r` line endings to `\n`.
 ///   3. Trims leading/trailing whitespace and re-adds a single trailing `\n`.
 ///   4. Verifies the content starts with a PEM/OpenSSH header.
-pub fn prepare_private_key(key_content: &str) -> Result<Vec<u8>, String> {
+pub fn prepare_private_key(key_content: &str) -> Result<String, String> {
     let trimmed = key_content.trim();
 
     if trimmed.is_empty() {
@@ -62,7 +52,7 @@ pub fn prepare_private_key(key_content: &str) -> Result<Vec<u8>, String> {
     let mut normalized = trimmed.replace("\r\n", "\n").replace('\r', "\n");
     normalized.push('\n');
 
-    Ok(normalized.into_bytes())
+    Ok(normalized)
 }
 
 /// Configure preferred algorithms on an SSH session for maximum server compatibility.
@@ -184,26 +174,11 @@ impl SshSession {
 
         // Authenticate
         if let Some(key_content) = private_key {
-            let key_bytes = prepare_private_key(key_content)?;
-            let temp_dir = std::env::temp_dir();
-            let key_path = temp_dir.join(format!("novashell_ssh_key_{}", session_id));
-            std::fs::write(&key_path, &key_bytes)
-                .map_err(|e| format!("Failed to write temp key: {}", e))?;
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::PermissionsExt;
-                let _ = std::fs::set_permissions(&key_path, std::fs::Permissions::from_mode(0o600));
-            }
-
-            let result = session.userauth_pubkey_file(
-                username,
-                None,
-                &key_path,
-                password,
-            );
-
-            secure_delete(&key_path);
-            result.map_err(|e| format!("Public key auth failed: {}", e))?;
+            let key = prepare_private_key(key_content)?;
+            // In-memory auth — no temp file, works for all key formats libssh2
+            // supports (including ed25519 when linked against OpenSSL).
+            session.userauth_pubkey_memory(username, None, &key, password)
+                .map_err(|e| format!("Public key auth failed: {}", e))?;
         } else if let Some(pass) = password {
             session.userauth_password(username, pass)
                 .map_err(|e| format!("Password auth failed: {}", e))?;
@@ -687,18 +662,9 @@ impl LogStream {
 
         // Authenticate
         if let Some(key_content) = private_key {
-            let key_bytes = prepare_private_key(key_content)?;
-            let temp_dir = std::env::temp_dir();
-            let key_path = temp_dir.join(format!("novashell_logstream_{}", stream_id));
-            std::fs::write(&key_path, &key_bytes).map_err(|e| format!("Key write error: {}", e))?;
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::PermissionsExt;
-                let _ = std::fs::set_permissions(&key_path, std::fs::Permissions::from_mode(0o600));
-            }
-            let result = session.userauth_pubkey_file(username, None, &key_path, password);
-            secure_delete(&key_path);
-            result.map_err(|e| format!("Key auth failed: {}", e))?;
+            let key = prepare_private_key(key_content)?;
+            session.userauth_pubkey_memory(username, None, &key, password)
+                .map_err(|e| format!("Key auth failed: {}", e))?;
         } else if let Some(pass) = password {
             session.userauth_password(username, pass).map_err(|e| format!("Auth failed: {}", e))?;
         } else {
@@ -799,20 +765,9 @@ pub fn test_ssh_connection(
         .map_err(|e| format!("Handshake failed: {}", e))?;
 
     if let Some(key_content) = private_key {
-        let key_bytes = prepare_private_key(key_content)?;
-        let temp_dir = std::env::temp_dir();
-        let key_path = temp_dir.join(format!("novashell_ssh_test_{}", uuid::Uuid::new_v4()));
-        std::fs::write(&key_path, &key_bytes)
-            .map_err(|e| format!("Failed to write temp key: {}", e))?;
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            let _ = std::fs::set_permissions(&key_path, std::fs::Permissions::from_mode(0o600));
-        }
-
-        let result = session.userauth_pubkey_file(username, None, &key_path, password);
-        secure_delete(&key_path);
-        result.map_err(|e| format!("Key auth failed: {}", e))?;
+        let key = prepare_private_key(key_content)?;
+        session.userauth_pubkey_memory(username, None, &key, password)
+            .map_err(|e| format!("Key auth failed: {}", e))?;
     } else if let Some(pass) = password {
         session.userauth_password(username, pass)
             .map_err(|e| format!("Password auth failed: {}", e))?;
@@ -863,19 +818,9 @@ pub fn exec_command(
 
     // Authenticate
     if let Some(key_content) = private_key {
-        let key_bytes = prepare_private_key(key_content)?;
-        let temp_dir = std::env::temp_dir();
-        let key_path = temp_dir.join(format!("novashell_exec_{}", uuid::Uuid::new_v4()));
-        std::fs::write(&key_path, &key_bytes)
-            .map_err(|e| format!("Failed to write temp key: {}", e))?;
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            let _ = std::fs::set_permissions(&key_path, std::fs::Permissions::from_mode(0o600));
-        }
-        let result = session.userauth_pubkey_file(username, None, &key_path, password);
-        secure_delete(&key_path);
-        result.map_err(|e| format!("Key auth failed: {}", e))?;
+        let key = prepare_private_key(key_content)?;
+        session.userauth_pubkey_memory(username, None, &key, password)
+            .map_err(|e| format!("Key auth failed: {}", e))?;
     } else if let Some(pass) = password {
         session.userauth_password(username, pass)
             .map_err(|e| format!("Password auth failed: {}", e))?;

@@ -92,15 +92,21 @@ jobs:
           echo "OPENSSL_LIB_DIR=/usr/local/opt/openssl@3/lib" >> $GITHUB_ENV
           echo "PKG_CONFIG_ALLOW_CROSS=1" >> $GITHUB_ENV
 
-      - name: Prepend Strawberry Perl to PATH (Windows)
+      - name: Point openssl-src at Strawberry Perl (Windows)
         if: runner.os == 'Windows'
         shell: bash
-        # Git Bash's minimal Perl lacks Locale::Maketext::Simple, which
-        # openssl-src's `./Configure` requires when building vendored OpenSSL.
+        # openssl-src's ./Configure requires Locale::Maketext::Simple, which
+        # Git Bash's minimal Perl lacks. Prepending Strawberry Perl to PATH
+        # via $GITHUB_PATH doesn't survive Git Bash's PATH reshuffling, so
+        # we set the PERL env var directly — openssl-src reads it first
+        # before falling back to the PATH `perl`.
         # GitHub's windows-latest image ships Strawberry Perl at C:\Strawberry.
         run: |
+          echo "PERL=C:\\Strawberry\\perl\\bin\\perl.exe" >> $GITHUB_ENV
           echo "C:\Strawberry\perl\bin" >> $GITHUB_PATH
           echo "C:\Strawberry\c\bin" >> $GITHUB_PATH
+          # Sanity check — if this fails, the build will too.
+          /c/Strawberry/perl/bin/perl.exe -MLocale::Maketext::Simple -e 'print "Strawberry Perl OK\n"'
 
       - name: Install frontend dependencies
         working-directory: nexterm

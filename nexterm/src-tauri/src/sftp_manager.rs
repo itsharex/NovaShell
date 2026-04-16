@@ -35,7 +35,7 @@ impl SftpSession {
         username: &str,
         password: Option<&str>,
         private_key: Option<&str>,
-        _session_id: &str,
+        session_id: &str,
     ) -> Result<Self, String> {
         let addr = format!("{}:{}", host, port);
 
@@ -67,13 +67,18 @@ impl SftpSession {
 
         session.set_keepalive(true, 30);
 
-        // Authenticate
+        // Authenticate — file-based (see v3.3.6 notes in ssh_manager)
         if let Some(key_content) = private_key {
             let key = ssh_manager::prepare_private_key(key_content)?;
-            // In-memory auth — no temp file, no disk slack to worry about.
-            session
-                .userauth_pubkey_memory(username, None, &key, password)
-                .map_err(|e| format!("Public key auth failed: {}", e))?;
+            let temp_dir = std::env::temp_dir();
+            let key_path = temp_dir.join(format!("novashell_sftp_key_{}", session_id));
+            std::fs::write(&key_path, key.as_bytes())
+                .map_err(|e| format!("Failed to write temp key: {}", e))?;
+
+            let result =
+                session.userauth_pubkey_file(username, None, &key_path, password);
+            ssh_manager::secure_delete(&key_path);
+            result.map_err(|e| format!("Public key auth failed: {}", e))?;
         } else if let Some(pass) = password {
             session
                 .userauth_password(username, pass)

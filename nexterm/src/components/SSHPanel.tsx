@@ -861,14 +861,20 @@ export function SSHPanel() {
                     input.accept = ".pem,.key,.pub,.ppk,id_rsa,id_ed25519,id_ecdsa,*";
                     input.onchange = () => {
                       const file = input.files?.[0];
-                      if (file) {
-                        const reader = new FileReader();
-                        reader.onload = () => {
-                          const text = reader.result as string;
-                          if (text) setFormKey(text);
-                        };
-                        reader.readAsText(file);
-                      }
+                      if (!file) return;
+                      const reader = new FileReader();
+                      reader.onload = () => {
+                        const text = typeof reader.result === "string" ? reader.result : "";
+                        if (text) {
+                          setFormKey(text);
+                        } else {
+                          setTestResult({ type: "error", message: t("ssh.keyFileEmpty") || "Key file is empty or not readable as text." });
+                        }
+                      };
+                      reader.onerror = () => {
+                        setTestResult({ type: "error", message: (t("ssh.keyFileReadError") || "Failed to read key file: ") + (reader.error?.message ?? "unknown error") });
+                      };
+                      reader.readAsText(file);
                     };
                     input.click();
                   }}
